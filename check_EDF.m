@@ -4,7 +4,7 @@
 
 % There are 3 potential issues related to the conversion of raw signals to
 % EDF formats:
-
+a
 % 1. Signal clipping: signal cut once it exceeds an amplitude threshold
 % (the min-max range set before conversion was too narrow)
 
