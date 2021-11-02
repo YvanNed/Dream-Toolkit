@@ -22,7 +22,9 @@ ft_defaults;
 all_problematicFiles=[];
 redo=1;
 
-for nF=1:length(files)
+% for nF=1:length(files)
+for nF=1
+
     
     % Which subject
     file_name = files(nF).name;
@@ -90,10 +92,10 @@ for nF=1:length(files)
     % Add scoring labels to each 30s epoch
     addpath([path_data filesep 'Hypno'])
     ScoringLabels = readcell([path_data filesep 'Hypno' filesep sprintf('%sS.TXT',SubID)]);
-
-ft_databrowser(cfg, data)
-
-
-
+    cfg.ScoringLabels = ScoringLabels;
+    % ft_databrowser(cfg, data)
+    
+    
+    
 end
 

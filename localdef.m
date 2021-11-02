@@ -8,3 +8,4 @@ path_data_Edison = '/Users/nico/Documents/ICM/Edison/Data';
 
 path_fieldtrip = '/Users/nico/Documents/MATLAB/FieldTrip2021';
 path_fieldtrip_adv = '/Users/nico/Documents/MATLAB/FieldTrip2021/fileio';
+path_fieldtrip_adv2 = '/Users/nico/Documents/MATLAB/FieldTrip2021/utilities';

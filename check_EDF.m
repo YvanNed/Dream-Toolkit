@@ -4,7 +4,7 @@
 
 % There are 3 potential issues related to the conversion of raw signals to
 % EDF formats:
-a
+
 % 1. Signal clipping: signal cut once it exceeds an amplitude threshold
 % (the min-max range set before conversion was too narrow)
 
@@ -23,6 +23,7 @@ addpath '/Users/nico/Documents/ICM/Edison/Scripts'
 run localdef.m
 addpath((path_fieldtrip));
 addpath((path_fieldtrip_adv));
+addpath((path_fieldtrip_adv2));
 
 % Loop across subjects
 Subs_healthy = {'73','75','91','94','98','99','104','106','107','109'};
