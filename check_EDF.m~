@@ -74,6 +74,7 @@ for S = 1
         xlim([-1.05 1.05]*max(abs(Data)))
         t = title('Data points distribution');
         t.FontWeight = 'normal';
+
         xlabel('Amplitude'); ylabel('Distribution')
         ax.FontSize = 14;
 
@@ -84,15 +85,20 @@ for S = 1
 
         delta_ampl = abs(diff(Data));
 
-        histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1')
+        histogram(delta_ampl,0:0.01:30,'EdgeColor','#1167b1')
+        histogram(delta_ampl,-max(delta_ampl):0.01:max(delta_ampl),'EdgeColor','#1167b1') 
+        xlim([-1.05 1.05]*max(abs(delta_ampl)))
 
         t = title({'Absolute difference in amplitude between';'neighboring data points'});
         t.FontWeight = 'normal';
+
         xlabel('Delta amplitude'); ylabel('Distribution') 
         ax.FontSize = 14;
         f.Position = [459,1143,906,420];
+
         T = sgtitle({sprintf('Subject %s',Sub);sprintf('Channel %s',all_channels(i))}); 
         T.FontWeight = 'bold';
+
         f.Position = [-96,1387,906,420];
 
     end

@@ -24,7 +24,6 @@ redo=1;
 
 % for nF=1:length(files)
 for nF=1
-
     
     % Which subject
     file_name = files(nF).name;
@@ -35,8 +34,9 @@ for nF=1
         
     % Read header
     hdr=ft_read_header([folder_name filesep file_name]);
+    all_channels = string(hdr.label);
 
-    %%% Define epochs
+    % Define epochs
     cfg=[];
     cfg.trialfun                = 'ET_trialfun';
     cfg.SubID                   = SubID;
@@ -44,22 +44,8 @@ for nF=1
     cfg.trialdef.lengthSegments = 30; % in seconds;
     cfg = ft_definetrial(cfg);
 
-    % A messy code to return the correct EEG channel indices
-    all_channels = string(hdr.label);
-    eeg_channels_orig_idx = find(contains(string(hdr.orig.Transducer),'EEG'));
-
-    for y = 1:numel(eeg_channels_orig_idx)
-        full_label = hdr.orig.Transducer(eeg_channels_orig_idx(y),:);
-        separator2 = strfind(full_label,' '); 
-        short_label = full_label(separator2(1)+1:separator2(2)-1);
-
-        EEG_channels_idx(y) = find(contains(string(hdr.label),short_label));
-    end
-
-    EEG_channels = all_channels(EEG_channels_idx)';
-
-    % Paramters for filtering / referencing
-    cfg.channel        = cellstr(EEG_channels);
+    % Filtering
+    cfg.channel        = cellstr(all_channels);
     cfg.demean         = 'yes';
     cfg.lpfilter       = 'yes';        % enable high-pass filtering
     cfg.lpfilttype     = 'but';
@@ -71,31 +57,35 @@ for nF=1
     cfg.hpfreq         = 0.1;
     cfg.dftfilter      = 'yes';        % enable notch filtering to eliminate power line noise
     cfg.dftfreq        = [50 100 150]; % set up the frequencies for notch filtering
+    
+    % Re-referencing to linked mastoids
+    cfg.reref = 'yes';
+    cfg.refmethod = 'avg';
+    cfg.refchannel = {'A1', 'A2'}; % linked mastoids
 
-    cfg.reref      = 'yes';
-    cfg.refchannel = 'all';
-
-    % Preprocess the data
+    % Preprocessing
     dat                = ft_preprocessing(cfg); 
 
-    % Resample the data
+    % Resampling
     cfgbs=[];
-    cfgbs.resamplefs      = 256;
-    cfgbs.detrend         = 'no';
-    cfgbs.demean          = 'yes';
-    data                  = ft_resampledata(cfgbs,dat); % read raw data
-
-    % Save the structure
-    % save([path_data filesep 'f_ft_' file_name(1:end-4)],'data');
-
+    cfgbs.resamplefs   = 256;
+    cfgbs.detrend      = 'no';
+    cfgbs.demean       = 'yes';
+    data               = ft_resampledata(cfgbs,dat); 
     
     % Add scoring labels to each 30s epoch
     addpath([path_data filesep 'Hypno'])
     ScoringLabels = readcell([path_data filesep 'Hypno' filesep sprintf('%sS.TXT',SubID)]);
     cfg.ScoringLabels = ScoringLabels;
-    % ft_databrowser(cfg, data)
+    %ft_databrowser(cfg, data)
     
+    % Save the structure
+    % save([path_data filesep 'f_ft_' file_name(1:end-4)],'data');
     
     
 end
+
+
+
+
 
