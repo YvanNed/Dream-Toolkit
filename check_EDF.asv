@@ -88,7 +88,7 @@ for S = 1:length(filelist)
 
         H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
         xlim([-1.05 1.05]*max(abs(Data)))
-        ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
+        ylim([0 ])
         t = title('Data points distribution');
         t.FontWeight = 'normal';
         xlabel('Amplitude'); ylabel('Distribution')
@@ -101,7 +101,7 @@ for S = 1:length(filelist)
 
         delta_ampl = abs(diff(Data));
 
-        H2=histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1')
+        histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1')
 
         t = title({'Absolute difference in amplitude between';'neighboring data points'});
         t.FontWeight = 'normal';
@@ -111,7 +111,6 @@ for S = 1:length(filelist)
         T = sgtitle({sprintf('Subject %s',Sub);sprintf('Channel %s',all_channels{i})}); 
         T.FontWeight = 'bold';
         f.Position = [-96,1387,906,420];
-        ylim([0 1]*max(H2.Values(H2.BinEdges(1:end-1)>=0.01)))
 
     end
 
