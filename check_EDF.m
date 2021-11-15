@@ -18,11 +18,20 @@
 clear;
 close all;
 
-% Healthy or Park subjects?
-rootdir = '/Users/nico/Documents/ICM/Iceberg/Data/PARK';
+% Path to edf files
+datadir = '/Users/nico/Documents/ICM/Iceberg/Data/PARK';
 
-addpath '/Users/nico/Documents/GitHub/Dream-Toolkit'
+% Path to localdef script
+scriptdir = '/Users/nico/Documents/GitHub/Dream-Toolkit';
+addpath(scriptdir)
 run localdef.m
+
+% Return the subject IDs from the data folder
+filelist = dir(datadir);
+files = find(double(contains({filelist.name}.','.edf')) == 1);
+SubID = {filelist(files).name};
+separator = strfind(SubID,'.edf'); 
+Sub = SubID(1:separator(1)-1);
 
 Subs_healthy = {'73','75','91','94','98','99','104','106','107','109'};
 Subs_parks = {'79','95','165','185','193','222','246','269','282','284'};
@@ -37,7 +46,7 @@ for S = 1
 
     % Import the data
     cfg = [];
-    cfg.dataset = [rootdir filesep subID];
+    cfg.dataset = [datadir filesep subID];
     
     fprintf(1,'Importing data from Subject %s...\n',Sub)
     data = ft_read_data(cfg.dataset);
@@ -118,7 +127,7 @@ for S = 1
     ax.XAxis.TickLength = [0 0];
     ax.YAxis.TickLength = [0 0];
     xtickangle(ax,45)
-    t = title({sprintf('Subject %s',Sub);'Correlation between channels'});
+    t = title({sprintf('Subject %s',Sub);'Correlation between all channels'});
     t.FontWeight = 'normal';
     
     % Add text for negative correlation (r < -0.2)
@@ -139,6 +148,9 @@ for S = 1
     
     ax.FontSize = 14;
     g.Position = [811,1185,773,623];
+    
+    fprintf(1,'Done.\n')
+
     
 
 end
