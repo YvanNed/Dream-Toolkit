@@ -16,6 +16,13 @@
 clear;
 close all;
 set(0,'DefaultUIControlFontSize',16);
+if exist('ft_read_data.m')==0
+    warning('You need to add fiedltrip to your path!')
+    fprintf('>>> Select the fieldtrip main folder\n')
+    ft_folder = uigetdir('','Select the fieldtrip main folder');
+    addpath(ft_folder)
+    ft_defaults;
+end
 
 % Path to EDF files: select folder containing the EDF files
 fprintf('>>> Select the folder containing the EDF files\n')
@@ -31,6 +38,7 @@ summary_table.File=categorical(summary_table.File);
 summary_table.Channel=categorical(summary_table.Channel);
 summary_table.Unit=categorical(summary_table.Unit);
 
+    nc=0;
 for S = 1:length(filelist)
     % Parameters subject
     subID = filelist(S).name;
@@ -51,7 +59,6 @@ for S = 1:length(filelist)
     %%%  Visualise the data
     
     %% Check for signal clipping and bit depth issue
-    nc=0;
     for i = 1:length(all_channels)
         nc=nc+1;
         Data = data((i),:);
