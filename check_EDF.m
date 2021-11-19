@@ -2,47 +2,35 @@
 
 %% EDF format checks
 
-% There are 3 potential issues related to the conversion of raw signals to
-% EDF formats:
+% There are 3 potential issues related to the conversion of raw signals to EDF:
 
-% 1. Signal clipping: signal cut once it exceeds an amplitude threshold
-% (the min-max range set before edf conversion was too narrow)
-
-% 2. Bit depth: signal shows a stair-like progression (the min-max
-% range set before edf conversion was too wide)
-
-% 3. Inverted polarity: signal multiplied by -1 
+% 1. Signal clipping:    signal cut once it exceeds an amplitude threshold
+%                        (the min-max range set before EDF conversion was 
+%                        too narrow)
+% 2. Bit depth:          signal shows a stair-like progression (the min-max
+%                        range set before EDF conversion was too wide)
+% 3. Inverted polarity:  signal multiplied by -1 
 
 %% Initialise paths and toolboxes
 
 clear;
 close all;
+set(0,'DefaultUIControlFontSize',16);
 
-% Path to edf files: select folder containing the EDF files
-fprintf('>>> Select EDF folder with the dialog box\n')
-datadir = uigetdir('','Select EDF folder');
-
-% Path to localdef script
-curdir=pwd;
-findsep=findstr(curdir,filesep);
-curdir=curdir(findsep(1):end);
-if isempty(findstr(curdir,'Dream-Toolkit'))
-    fprintf('>>> Select the Dream-Toolbox GIT folder with the dialog box\n')
-    scriptdir = uigetdir([],'Select GIT folder');
-else
-    scriptdir=pwd;
-end
-addpath(genpath(scriptdir))
-
+% Path to EDF files: select folder containing the EDF files
+fprintf('>>> Select the folder containing the EDF files\n')
+subfolder = uigetdir('','Select the folder containing the EDF files');
 
 %% Select EDFs to check
+
 % Return the subject IDs from the data folder
-filelist = dir([datadir filesep '**' filesep '*.edf']);
-pick=listdlg('ListString',{filelist.name},'PromptString','Select the EDF to check');
+filelist = dir([subfolder filesep '**' filesep '*.edf']);
+pick=listdlg('ListString',{filelist.name},'PromptString','Select the EDF file to check');
 filelist = filelist(pick);
 fprintf('>>> You have selected %g EDF files\n',length(filelist))
 
 %% Loop across subjects
+
 for S = 1:length(filelist)
 
     % Parameters subject
@@ -58,20 +46,20 @@ for S = 1:length(filelist)
     data = ft_read_data(cfg.dataset);
     hdr = ft_read_header(cfg.dataset);
     
+    % Pick the channels to check
     pick_channels = listdlg('ListString',hdr.label,'PromptString','Select the channels to check');
     all_channels  = hdr.label(pick_channels);
     Num_ch = numel(all_channels);
      
-%%%   Visualise the data
-%     cfg             = [];
-%     cfg.dataset     = [rootdir filesep subID];
-%     fg.channel      = cellstr(Channels);
-%     Preproc_data    = ft_preprocessing(cfg);
-%     cfg.blocksize   = 30; % in sec
-%     cfg.channel     = cellstr(Channels); 
-%     cfg.viewmode    = 'vertical';
-%     ft_databrowser(cfg, Preproc_data);
-    
+%%%  Visualise the data
+%    cfg             = [];
+%    cfg.dataset     = [rootdir filesep subID];
+%    cfg.channel      = cellstr(Channels);
+%    Preproc_data    = ft_preprocessing(cfg);
+%    cfg.blocksize   = 30; % in sec
+%    cfg.channel     = cellstr(Channels); 
+%    cfg.viewmode    = 'vertical';
+%    ft_databrowser(cfg, Preproc_data);
     
     %% Check for signal clipping and bit depth issue
         
@@ -83,51 +71,46 @@ for S = 1:length(filelist)
 
         f=figure;
 
-        % Signal clipping: outstanding values (ie, min/max) in the histogram?
+        % Check for signal clipping issue
         subplot(1,2,1); ax=gca;
 
         H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
         xlim([-1.05 1.05]*max(abs(Data)))
         ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
-        t = title('Data points distribution');
+        t = title('Amplitude distribution');
         t.FontWeight = 'normal';
-        xlabel('Amplitude'); ylabel('Distribution')
+        xlabel('Amplitude (μV)'); ylabel('Data points distribution')
         ax.FontSize = 14;
 
-        % Plot the absolute difference in amplitude between neihboring data points 
-        % --> Signal clipping if two values peak out
-        % --> Bit depth issue if gaps observed between evenly distributed values
+        % Check for bit depth issue 
         subplot(1,2,2); ax=gca;
 
+        % Plot the absolute difference in amplitude between neihboring data points 
         delta_ampl = abs(diff(Data));
 
-        H2=histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1')
-
+        H2=histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1');
+        xlabel('Delta amplitude (μV)'); ylabel('Data points distribution') 
         t = title({'Absolute difference in amplitude between';'neighboring data points'});
         t.FontWeight = 'normal';
-        xlabel('Delta amplitude'); ylabel('Distribution') 
         ax.FontSize = 14;
-        f.Position = [459,1143,906,420];
+        
         T = sgtitle({sprintf('Subject %s',Sub);sprintf('Channel %s',all_channels{i})}); 
         T.FontWeight = 'bold';
-        f.Position = [-96,1387,906,420];
         ylim([0 1]*max(H2.Values(H2.BinEdges(1:end-1)>=0.01)))
+        f.Position = [-96,1387,906,420];
+        set(gcf,'color','w');
 
     end
 
     %% Check for polarity issue
     fprintf(1,'>>> >>> >>> Checking potential polarity issues...\n')
 
-    % Compute the correlation between the channels. Positive correlation
-    % means that all channels have the same polarity (but doesn't rule out the
-    % possibilty that all have an inverse polarity——needs to be manually
-    % checked by comparing with raw signals on Compumedics)
+    % Plot the correlation matrix between the selected channels.
     [r, pV] = corr(data(pick_channels,:)');
-
-    % Plot the correlation matrix
+    
     g=figure; ax=gca;
+    
     imagesc(r); 
-
     colorbar
     caxis([-1 1])
     xticks(1:Num_ch)
@@ -142,7 +125,7 @@ for S = 1:length(filelist)
     
     % Add text for negative correlation (r < -0.2)
     t = cell(Num_ch, Num_ch);
-    
+ 
     for i=1:Num_ch
         for j=1:Num_ch
             t(i, j) = cellstr(num2str(round(r(i,j), 2)));
@@ -151,19 +134,23 @@ for S = 1:length(filelist)
     
     t = cellfun(@str2num,t);
     [x,y] = find(t<=-0.2);
-    
     for i = 1:numel(x)
         text(x(i), y(i), string(t(x(i),y(i))), 'HorizontalAlignment', 'Center', 'FontSize', 12);
     end
-    
+
     ax.FontSize = 14;
     g.Position = [811,1185,773,623];
+    set(gcf,'color','w');
     
-    fprintf(1,'Press SPACE to continue to next EDF file.\n')
-
-    pause;
-    close all;
+    if length(filelist)>1
+        fprintf(1,'Press SPACE to continue to next EDF file.\n')
+        pause;
+        close all;
+    end
+    
 end
+
+
 
 
 
