@@ -79,7 +79,7 @@ for S = 1:length(filelist)
         ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
         t = title('Amplitude distribution');
         t.FontWeight = 'normal';
-        xlabel('Amplitude (μV)'); ylabel('Data points distribution')
+        xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution')
         ax.FontSize = 14;
 
         % Check for bit depth issue 
@@ -89,7 +89,7 @@ for S = 1:length(filelist)
         delta_ampl = abs(diff(Data));
 
         H2=histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1');
-        xlabel('Delta amplitude (μV)'); ylabel('Data points distribution') 
+        xlabel('Delta amplitude (%s)',hdr.orig.PhysDim(i,1:2)); ylabel('Data points distribution') 
         t = title({'Absolute difference in amplitude between';'neighboring data points'});
         t.FontWeight = 'normal';
         ax.FontSize = 14;
