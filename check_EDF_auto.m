@@ -38,13 +38,11 @@ fprintf('>>> %s EDF files found\n',string(numel(filelist)))
 
 %% Loop across subjects
 
-summary_table=array2table(zeros(0,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});
+summary_table=array2table(zeros(15*numel(filelist),6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});
 summary_table.File=categorical(summary_table.File);
 summary_table.Channel=categorical(summary_table.Channel);
 summary_table.Unit=categorical(summary_table.Unit);
 nc=0;
-
-%for S = 1:length(filelist)
 
 for S = 1:length(filelist)
 % for S = 13:16    
@@ -64,7 +62,7 @@ for S = 1:length(filelist)
     all_channels  = hdr.label;
         
     %% Check for signal clipping and bit depth issue
-   
+       
     for i = 1:length(all_channels)
         
         nc = nc+1;
@@ -84,35 +82,48 @@ for S = 1:length(filelist)
     end
 end
 
-%% Store problematic files. Can possibly inspect data 
+emptyrows = find(summary_table.File == '0');
+summary_table(emptyrows,:) = [];
+
+%% Store problematic files and inspect them 
 
 mVchan = find(summary_table.Unit == 'mV');
 uVchan = find(summary_table.Unit == 'uV');
 
 % Signal clipping (SC) files
 SC_files_idx = sort([uVchan(summary_table.Min(uVchan)>-500 | summary_table.Max(uVchan)<500) ...
-                       mVchan(summary_table.Min(mVchan)>-0.050 | summary_table.Max(mVchan)<0.050)]); 
+                       mVchan(summary_table.Min(mVchan)>-0.50 | summary_table.Max(mVchan)<0.50)]); 
 SignalClipping_files = [summary_table(SC_files_idx,1) summary_table(SC_files_idx,2)];    
 
 if ~isempty(SignalClipping_files)
-    fprintf('>>> %s EDF files might have a signal clipping issue.\n\n',string(numel(unique(SignalClipping_files(:,1)))));
+    fprintf('>>> %s chanels (from %s EDF files) might have a signal clipping issue.\n\n',string(size(SignalClipping_files,1)),string(numel(unique(SignalClipping_files(:,1)))));
     disp(SignalClipping_files)
-    reply = input('Do you want to visually inspect these channels? Press ''y'' for YES or ''n'' for NO > ','s');
+    reply = input('Do you want to visually inspect these channels? Press ''y'' (YES) or ''n'' (NO) > ','s');
     if reply == 'y'
-        fprintf('>>> Ok, Plotting histograms for these %s channels...\n',string(size(SignalClipping_files,1)));
+        fprintf('>>> Ok, plotting histograms for these %s channels...\n',string(size(SignalClipping_files,1)));
         for S = 1:size(SignalClipping_files,1)
-            cfg.dataset = [subfolder filesep char(SignalClipping_files.File(S))];
-            data = ft_read_data(cfg.dataset);
-            hdr = ft_read_header(cfg.dataset);
-            all_channels  = hdr.label;
-            the_channel  = char(SignalClipping_files.Channel(S));
+            if strcmp(cfg.dataset,[subfolder filesep char(SignalClipping_files.File(S))])
+                the_channel = char(SignalClipping_files.Channel(S));  % Stay on that dataset, just switch channel
+            else
+                cfg.dataset = [subfolder filesep char(SignalClipping_files.File(S))];
+                data = ft_read_data(cfg.dataset);
+                hdr = ft_read_header(cfg.dataset);
+                all_channels = hdr.label;
+                the_channel = char(SignalClipping_files.Channel(S));
+            end
             % Plot figure
             f=figure;ax=gca;
             chan_idx = find(contains(all_channels, string(the_channel)));
             Data = data(chan_idx,:);
-            H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
+            if hdr.orig.PhysDim(chan_idx,1:2) == 'uV'
+                H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
+            else
+                H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
+            end
             xlim([-1.05 1.05]*max(abs(Data)))
-            ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
+            % ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
+            ylim([0 (H.Values(numel(H.Values)/2)*1.5)])
+
             t = title({sprintf('%s (%s)',char(SignalClipping_files.File(S)),the_channel);'Amplitude distribution'},'Interpreter','none');
             t.FontWeight = 'normal';
             xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(chan_idx,1:2))); ylabel('Data points distribution')
@@ -121,31 +132,38 @@ if ~isempty(SignalClipping_files)
         fprintf(1,'Press SPACE to continue to the resolution issue.\n')
         pause;
     else
-        return
+        fprintf(1,'Press SPACE to continue to the resolution issue.\n')
+        pause;
     end
 else
     fprintf('>>> No signal clipping issue was detected.\n');
+
 end
 
 % Bit Depth (BD) files
-BD_files_idx = sort([uVchan(summary_table.BinGap(uVchan)>0.1) mVchan(summary_table.BinGap(mVchan)>0.00001)]); 
-BitDepth_files = summary_table.File(BD_files_idx);
+BD_files_idx = sort([uVchan(summary_table.BinGap(uVchan)>0.1);mVchan(summary_table.BinGap(mVchan)>0.001)]); 
+BitDepth_files = [summary_table(BD_files_idx,1) summary_table(BD_files_idx,2)];
 if ~isempty(BitDepth_files)
-    fprintf('>>> %s EDF files might have a bit depth issue. Please check the following channels\n\n',string(numel(unique(BitDepth_files(:,1)))));
+    fprintf('>>> %s channels (from %s EDF files) might have a bit depth issue.\n\n',string(size(BitDepth_files,1)),string(numel(unique(BitDepth_files(:,1)))));
     disp(BitDepth_files)
-    reply = input('Do you want to visually inspect the data? Press ''y'' for YES or ''n'' for NO > ','s');
+    reply = input('Do you want to visually inspect the data? Press ''y'' (YES) or ''n'' (NO) > ','s');
     if reply == 'y'
-        fprintf('>>> Plotting a figure for the %s channels where bit depth might be present...\n',string(size(BitDepth_files,1)));
+        fprintf('>>> Ok, plotting histograms for these %s channels...\n',string(size(BitDepth_files,1)));
         for S = 1:size(BitDepth_files,1)
-            cfg.dataset = [subfolder filesep char(BitDepth_files.File(S))];
-            data = ft_read_data(cfg.dataset);
-            hdr = ft_read_header(cfg.dataset);
-            all_channels = hdr.label;
-            the_channel = char(BitDepth_files.Channel(S));
-            delta_ampl = abs(diff(Data));
+            if strcmp(cfg.dataset,[subfolder filesep char(BitDepth_files.File(S))])
+                the_channel = char(BitDepth_files.Channel(S));  % Stay on that dataset, just switch channel
+            else
+                cfg.dataset = [subfolder filesep char(BitDepth_files.File(S))];
+                data = ft_read_data(cfg.dataset);
+                hdr = ft_read_header(cfg.dataset);
+                all_channels = hdr.label;
+                the_channel = char(BitDepth_files.Channel(S));
+            end
             % Plot figure
             f=figure; ax=gca;
             chan_idx = find(contains(all_channels, string(the_channel)));
+            Data = data(chan_idx,:);
+            delta_ampl = abs(diff(Data));
             H2=histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1');
             xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(chan_idx,1:2))); ylabel('Data points distribution') 
             t = title({sprintf('%s (%s)',char(BitDepth_files.File(S)),the_channel);'Absolute difference in amplitude between neighboring data points'},'Interpreter','none');
