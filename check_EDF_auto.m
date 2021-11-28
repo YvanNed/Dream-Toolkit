@@ -13,7 +13,8 @@
 
 % The present script is an fully automatic version of the semi-automatic 
 % code: loops across all datasets and generates a table that summarises the
-% issues (if any) detected in each dataset and channel.
+% issues (if any) detected in each dataset and channel. For problematic
+% files, visual inspection of data is available
 
 %% Initialise paths and toolboxes
 
@@ -91,7 +92,7 @@ mVchan = find(summary_table.Unit == 'mV');
 uVchan = find(summary_table.Unit == 'uV');
 
 % Signal clipping (SC) files
-SC_files_idx = sort([uVchan(summary_table.Min(uVchan)>-500 | summary_table.Max(uVchan)<500) ...
+SC_files_idx = sort([uVchan(summary_table.Min(uVchan)>-500 | summary_table.Max(uVchan)<500); ...
                        mVchan(summary_table.Min(mVchan)>-0.50 | summary_table.Max(mVchan)<0.50)]); 
 SignalClipping_files = [summary_table(SC_files_idx,1) summary_table(SC_files_idx,2)];    
 
@@ -122,7 +123,7 @@ if ~isempty(SignalClipping_files)
             end
             xlim([-1.05 1.05]*max(abs(Data)))
             % ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
-            ylim([0 (H.Values(numel(H.Values)/2)*1.5)])
+            ylim([0 (H.Values(round(numel(H.Values)/2))*1.3)])
 
             t = title({sprintf('%s (%s)',char(SignalClipping_files.File(S)),the_channel);'Amplitude distribution'},'Interpreter','none');
             t.FontWeight = 'normal';

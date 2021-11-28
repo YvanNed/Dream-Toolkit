@@ -11,6 +11,10 @@
 %                        range set before EDF conversion was too wide)
 % 3. Inverted polarity:  signal multiplied by -1 
 
+% The present script is semi-automated: for each subject and channel,
+% figures are plotted to make a visual inspection. Problematic files are
+% stored in a table.
+
 %% Initialise paths and toolboxes
 
 clear;
@@ -51,15 +55,15 @@ for S = 1:length(filelist)
     all_channels  = hdr.label(pick_channels);
     Num_ch = numel(all_channels);
      
-%%%  Visualise the data
-%    cfg             = [];
-%    cfg.dataset     = [rootdir filesep subID];
-%    cfg.channel      = cellstr(Channels);
-%    Preproc_data    = ft_preprocessing(cfg);
-%    cfg.blocksize   = 30; % in sec
-%    cfg.channel     = cellstr(Channels); 
-%    cfg.viewmode    = 'vertical';
-%    ft_databrowser(cfg, Preproc_data);
+%%  Visualise the data
+   cfg             = [];
+   cfg.dataset     = [subfolder filesep subID];
+   cfg.channel      = cellstr(all_channels);
+   Preproc_data    = ft_preprocessing(cfg);
+   cfg.blocksize   = 30; % in sec
+   cfg.channel     = 'EOG D'; 
+   cfg.viewmode    = 'vertical';
+   ft_databrowser(cfg, Preproc_data);
     
     %% Check for signal clipping and bit depth issue
         
@@ -74,9 +78,14 @@ for S = 1:length(filelist)
         % Check for signal clipping issue
         subplot(1,2,1); ax=gca;
 
-        H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
+        if hdr.orig.PhysDim(pick_channels(i),1:2) == 'uV'
+            H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
+        else
+            H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
+        end
         xlim([-1.05 1.05]*max(abs(Data)))
         ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
+        ylim([0 (H.Values(round(numel(H.Values)/2))*1.1)])
         t = title('Amplitude distribution');
         t.FontWeight = 'normal';
         xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution')
@@ -88,13 +97,17 @@ for S = 1:length(filelist)
         % Plot the absolute difference in amplitude between neihboring data points 
         delta_ampl = abs(diff(Data));
 
-        H2=histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1');
-        xlabel('Delta amplitude (%s)',hdr.orig.PhysDim(i,1:2)); ylabel('Data points distribution') 
+        if hdr.orig.PhysDim(pick_channels(i),1:2) == 'uV'
+            H2 = histogram(delta_ampl,0:0.05:50,'EdgeColor','#1167b1'); 
+        else
+            H2 = histogram(delta_ampl,0:0.00005:0.5,'EdgeColor','#1167b1'); 
+        end
+        xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution') 
         t = title({'Absolute difference in amplitude between';'neighboring data points'});
         t.FontWeight = 'normal';
         ax.FontSize = 14;
         
-        T = sgtitle({sprintf('Subject %s',Sub);sprintf('Channel %s',all_channels{i})}); 
+        T = sgtitle({sprintf('Subject %s',Sub);sprintf('Channel %s',all_channels{i})},'Interpreter','none'); 
         T.FontWeight = 'bold';
         ylim([0 1]*max(H2.Values(H2.BinEdges(1:end-1)>=0.01)))
         f.Position = [-96,1387,906,420];
