@@ -126,8 +126,7 @@ if ~isempty(SC_files)
             %ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
             Max2 = sort(H.Values(H.BinEdges>-0.1 & H.BinEdges<0.1),'descend');
             ylim([0 Max2(2)*1.3])  % Take a Bin Edge close to 0 as the ylimit
-            % find(max(H.Values(2:end-1)))
-
+            % ylim([0 find(H.Values == max(H.Values(2:end-1))-1)])
             t = title({sprintf('%s (%s)',char(SC_files.File(S)),the_channel);'Amplitude distribution'},'Interpreter','none');
             t.FontWeight = 'normal';
             xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(chan_idx,1:2))); ylabel('Data points distribution')
