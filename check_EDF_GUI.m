@@ -56,15 +56,15 @@ for S = 1:length(filelist)
     Num_ch = numel(all_channels);
      
 %%  Visualise the data
-   cfg             = [];
-   cfg.dataset     = [subfolder filesep subID];
-   cfg.channel      = cellstr(all_channels);
-   Preproc_data    = ft_preprocessing(cfg);
-   cfg.blocksize   = 30; % in sec
-   cfg.channel     = 'EOG D'; 
-   cfg.viewmode    = 'vertical';
-   ft_databrowser(cfg, Preproc_data);
-    
+%    cfg             = [];
+%    cfg.dataset     = [subfolder filesep subID];
+%    cfg.channel      = cellstr(all_channels);
+%    Preproc_data    = ft_preprocessing(cfg);
+%    cfg.blocksize   = 0.1; % in sec
+%    cfg.channel     = 'C3-A2'; 
+%    cfg.viewmode    = 'vertical';
+%    ft_databrowser(cfg, Preproc_data);
+%     
     %% Check for signal clipping and bit depth issue
         
     fprintf(1,'>>> >>> >>> Plotting histograms for each of the %s channels...\n',string(Num_ch))
@@ -84,12 +84,13 @@ for S = 1:length(filelist)
             H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
         end
         xlim([-1.05 1.05]*max(abs(Data)))
-        ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
-        ylim([0 (H.Values(round(numel(H.Values)/2))*1.1)])
-        t = title('Amplitude distribution');
-        t.FontWeight = 'normal';
+        %ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
+        % ylim([0 (H.Values(round(numel(H.Values)/2)))*1.1])
+        %t = title('Amplitude distribution');
+        %t.FontWeight = 'normal';
         xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution')
-        ax.FontSize = 14;
+        ax.FontSize = 20;
+        box off
 
         % Check for bit depth issue 
         subplot(1,2,2); ax=gca;
@@ -103,9 +104,10 @@ for S = 1:length(filelist)
             H2 = histogram(delta_ampl,0:0.00005:0.5,'EdgeColor','#1167b1'); 
         end
         xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution') 
-        t = title({'Absolute difference in amplitude between';'neighboring data points'});
-        t.FontWeight = 'normal';
-        ax.FontSize = 14;
+        %t = title({'Absolute difference in amplitude between';'neighboring data points'});
+        %t.FontWeight = 'normal';
+        ax.FontSize = 20;
+        box off
         
         T = sgtitle({sprintf('Subject %s',Sub);sprintf('Channel %s',all_channels{i})},'Interpreter','none'); 
         T.FontWeight = 'bold';
@@ -133,7 +135,7 @@ for S = 1:length(filelist)
     ax.XAxis.TickLength = [0 0];
     ax.YAxis.TickLength = [0 0];
     xtickangle(ax,45)
-    t = title({sprintf('Subject %s',Sub);'Correlation between all channels'});
+    t = title({sprintf('Subject %s',Sub);'Correlation between all channels'},'Interpreter','none');
     t.FontWeight = 'normal';
     
     % Add text for negative correlation (r < -0.2)
