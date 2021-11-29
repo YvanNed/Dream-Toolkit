@@ -21,6 +21,17 @@ set(0,'DefaultUIControlFontSize',16);
 fprintf('>>> Select the folder containing the EDF files\n')
 subfolder = uigetdir('','Select the folder containing the EDF files');
 
+
+if exist('ft_read_data.m')==0
+    warning('You need to add fiedltrip to your path!')
+    fprintf('>>> Select the fieldtrip main folder\n')
+    ft_folder = uigetdir('','Select the fieldtrip main folder');
+    addpath(ft_folder)
+    ft_defaults;
+end
+
+
+
 %% Select EDFs to check
 
 % Return the subject IDs from the data folder
