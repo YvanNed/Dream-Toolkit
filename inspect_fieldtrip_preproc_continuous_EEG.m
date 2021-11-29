@@ -29,31 +29,15 @@ hdr = ft_read_header([filelist.folder filesep filelist.name]);
 pick_channels = listdlg('ListString',hdr.label,'PromptString','Select the channels to check');
 all_channels  = hdr.label(pick_channels);
 
-
-%% display data after preprocessing
+    
+%% display data without preprocessing
 cfg=[];
 cfg.dataset         = [filelist.folder filesep filelist.name];
 cfg.channel         = all_channels;
-
-cfg.hpfilter       = 'yes';        % enable high-pass filtering
-cfg.hpfilttype     = 'but';
-cfg.hpfiltord         = 4;
-cfg.hpfreq         = 0.5;
-
-cfg.lpfilter       = 'yes';        % enable high-pass filtering
-cfg.lpfilttype     = 'but';
-cfg.lpfiltord         = 4;
-cfg.lpfreq         = 40;
-
-cfg.dftfilter      = 'yes';        % enable notch filtering to eliminate power line noise
-cfg.dftfreq        = [50]; % set up the frequencies for notch filtering
-
-preprocdata        = ft_preprocessing(cfg); % read raw data
-
-cfg=[];
 cfg.continuous      = 'yes';
 cfg.allowoverlap    = 'true';
 cfg.viewmode        = 'vertical';
 cfg.blocksize       = 30;
 cfg.ylim            = 'maxmin';
-cfg                 = ft_databrowser(cfg,preprocdata);
+cfg                 = ft_databrowser(cfg);
+
