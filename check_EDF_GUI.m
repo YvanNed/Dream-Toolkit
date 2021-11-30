@@ -95,10 +95,10 @@ for S = 1:length(filelist)
             H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
         end
         xlim([-1.05 1.05]*max(abs(Data)))
-        %ylim([0 1]*max(H.Values(H.BinEdges(1:end-1)<=-0.05 | H.BinEdges(1:end-1)>=0.05)))
-        % ylim([0 (H.Values(round(numel(H.Values)/2)))*1.1])
-        %t = title('Amplitude distribution');
-        %t.FontWeight = 'normal';
+        Max2 = sort(H.Values(2:end-1), 'descend');
+        ylim([0 Max2(2)*1.3])  % Take a Bin Edge close to 0 as the ylimit
+        t = title('Amplitude distribution');
+        t.FontWeight = 'normal';
         xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution')
         ax.FontSize = 20;
         box off
