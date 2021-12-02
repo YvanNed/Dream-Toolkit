@@ -104,7 +104,7 @@ for nF=1:length(filelist)
     
     % Preprocessing
     dat                = ft_preprocessing(cfg); 
-
+    
     % Resampling
     cfgbs=[];
     cfgbs.resamplefs   = 256;

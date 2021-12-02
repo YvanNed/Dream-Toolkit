@@ -83,6 +83,11 @@ for S = 1:length(filelist)
         summary_table.Max(nc) = table_mat(2);
         summary_table.BinGap(nc) = table_mat(3);
         
+        HIST = histcounts(Data,'Normalization','count');
+        Min1 = HIST(1); Min2 = HIST(2);
+        MIN(nc,:) = [Min1 Min2];
+        
+        
     end
 end
 
@@ -98,7 +103,10 @@ uVchan = find(summary_table.Unit == 'uV');
 
 SC_files_idx = sort([uVchan(summary_table.Min(uVchan)>-500 | summary_table.Max(uVchan)<500); ...
                        mVchan(summary_table.Min(mVchan)>-0.50 | summary_table.Max(mVchan)<0.50)]); 
+
 SC_files = [summary_table(SC_files_idx,1) summary_table(SC_files_idx,2)];    
+
+
 
 if ~isempty(SC_files)
     fprintf('>>> %s channels (from %s EDF files) might have a signal clipping issue.\n\n',string(size(SC_files,1)),string(numel(unique(SC_files(:,1)))));

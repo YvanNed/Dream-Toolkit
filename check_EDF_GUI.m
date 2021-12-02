@@ -71,8 +71,8 @@ for S = 1:length(filelist)
 %    cfg.dataset     = [subfolder filesep subID];
 %    cfg.channel      = cellstr(all_channels);
 %    Preproc_data    = ft_preprocessing(cfg);
-%    cfg.blocksize   = 0.1; % in sec
-%    cfg.channel     = 'C3-A2'; 
+%    cfg.blocksize   = 30; % in sec
+%    % cfg.channel     = 'C3-A2'; 
 %    cfg.viewmode    = 'vertical';
 %    ft_databrowser(cfg, Preproc_data);
 %     
