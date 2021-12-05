@@ -25,7 +25,6 @@ set(0,'DefaultUIControlFontSize',16);
 fprintf('>>> Select the folder containing the EDF files\n')
 subfolder = uigetdir('','Select the folder containing the EDF files');
 
-
 if exist('ft_read_data.m')==0
     warning('You need to add fiedltrip to your path!')
     fprintf('>>> Select the fieldtrip main folder\n')
@@ -33,8 +32,6 @@ if exist('ft_read_data.m')==0
     addpath(ft_folder)
     ft_defaults;
 end
-
-
 
 %% Select EDFs to check
 
@@ -67,15 +64,15 @@ for S = 1:length(filelist)
     Num_ch = numel(all_channels);
      
 %%  Visualise the data
-%    cfg             = [];
-%    cfg.dataset     = [subfolder filesep subID];
-%    cfg.channel      = cellstr(all_channels);
-%    Preproc_data    = ft_preprocessing(cfg);
-%    cfg.blocksize   = 30; % in sec
-%    % cfg.channel     = 'C3-A2'; 
-%    cfg.viewmode    = 'vertical';
-%    ft_databrowser(cfg, Preproc_data);
-%     
+   cfg             = [];
+   cfg.dataset     = [subfolder filesep subID];
+   cfg.channel      = cellstr(all_channels);
+   Preproc_data    = ft_preprocessing(cfg);
+   cfg.blocksize   = 32; % in sec
+   %cfg.channel     = 'F8'; 
+   cfg.viewmode    = 'vertical';
+   ft_databrowser(cfg, Preproc_data);
+% %     
     %% Check for signal clipping and bit depth issue
         
     fprintf(1,'>>> >>> >>> Plotting histograms for each of the %s channels...\n',string(Num_ch))

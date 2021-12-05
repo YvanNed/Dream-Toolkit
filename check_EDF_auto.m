@@ -67,15 +67,14 @@ for S = 1:length(filelist)
         
     %% Check for signal clipping and bit depth issue
        
-    for i = 1:length(all_channels)
+    for i = 1:length(all_channels)  
         
         nc = nc+1;
-        Data = data((i),:);
         
-        delta_ampl = abs(diff(Data));    % calculates the difference in amplitude between neighoring data points
+        delta_ampl = abs(diff(data((i),:)));    % calculates the difference in amplitude between neighoring data points
         delta_ampl(delta_ampl==0) = [];  % ignore the 0 peak
         
-        table_mat=[min(Data) max(Data) min(delta_ampl)];
+        table_mat=[min(data((i),:)) max(data((i),:)) min(delta_ampl)];
         summary_table.File(nc) = subID;
         summary_table.Channel(nc) = all_channels{i};
         summary_table.Unit(nc) = hdr.orig.PhysDim(i,:);
@@ -83,10 +82,9 @@ for S = 1:length(filelist)
         summary_table.Max(nc) = table_mat(2);
         summary_table.BinGap(nc) = table_mat(3);
         
-        HIST = histcounts(Data,'Normalization','count');
+        HIST = histcounts(data((i),:),'Normalization','count');
         Min1 = HIST(1); Min2 = HIST(2);
-        MIN(nc,:) = [Min1 Min2];
-        
+        MIN(nc,:) = [Min1 Min2]; 
         
     end
 end
@@ -127,7 +125,14 @@ else
     fprintf('>>> No resolution issue was detected.\n');
 end
 
+% % Save summary table, SC and BD files
+path_summary = [subfolder filesep 'SummaryTable'];
+if exist(path_summary,'file')==0
+    mkdir(path_summary)
+end
+save([path_summary filesep 'SummaryTables'],'summary_table','SC_files','BD_files');
 
+% Plot histograms
 reply = input('Do you want to visually inspect these channels? Press ''y'' (YES) or ''n'' (NO) > ','s');
 if reply == 'y'
     fprintf('>>> Ok, plotting histograms for these %s channels...\n',string(size(SC_files,1)+size(BD_files,1)));
@@ -145,9 +150,9 @@ if reply == 'y'
         chan_idx = find(contains(all_channels, string(the_channel)));
         Data = dat(chan_idx,:);
         if hdr.orig.PhysDim(chan_idx,1:2) == 'uV'
-            H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
+            H = histogram(Data,-max(abs(Data)):0.005:max(abs(Data)),'EdgeColor','#1167b1'); 
         else
-            H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
+            H = histogram(Data,-max(abs(Data)):0.000005:max(abs(Data)),'EdgeColor','#1167b1'); 
         end
         xlim([-1.05 1.05]*max(abs(Data)))
         Max2 = sort(H.Values(2:end-1), 'descend');

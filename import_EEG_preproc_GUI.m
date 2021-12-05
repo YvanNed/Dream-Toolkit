@@ -111,16 +111,7 @@ for nF=1:length(filelist)
     cfgbs.detrend      = 'no';
     cfgbs.demean       = 'yes';
     data               = ft_resampledata(cfgbs,dat); 
-    
-    % Add scoring labels to each 30s epoch
-    % Path to EDF files: select folder containing the EDF files
-    fprintf('>>> Select the folder of the excel file containing the scoring labels\n')
-    filedir = uigetdir('','Select the folder of the text file containing the scoring labels');
-    
-    ScoringLabels = readcell([filedir filesep sprintf('%sS.TXT',SubID)]);
-    cfg.ScoringLabels = ScoringLabels;
-    %ft_databrowser(cfg, data)
-    
+       
     % Save the structure
     % save([path_data filesep 'f_ft_' file_name(1:end-4)],'data');
     
