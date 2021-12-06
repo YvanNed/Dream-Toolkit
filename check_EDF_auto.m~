@@ -11,9 +11,9 @@
 %                        range set before EDF conversion was too wide)
 % 3. Inverted polarity:  signal multiplied by -1
 
-% The present script is a fully automatic version of the semi-automatic 
-% code: loops across all datasets and generates a table that summarises the
-% issues (if any) detected in each dataset and channel. For problematic
+% The present script is a fully automatic version: loops across all datasets 
+% and stores a table that contains information about signal clipping and bit 
+% depth. Re detected in each dataset and channel. For problematic
 % files, visual inspection of data is available
 
 %% Initialise paths and toolboxes
@@ -71,8 +71,9 @@ for S = 1:length(filelist)
         nc = nc+1;
         
         % calculates the difference in amplitude between neighoring data points
-        delta_ampl = abs(diff(data((i),:)));    
-        delta_ampl(delta_ampl==0) = [];   % ignore the 0 peak
+        Data = data((i),:);
+        delta_ampl = abs(diff(Data));    
+        delta_ampl(delta_ampl==0) = [];   % ignore the peak at 0 uV
         
         % Prepare the summary table
         table_mat=[min(data((i),:)) max(data((i),:)) min(delta_ampl)];
@@ -83,7 +84,8 @@ for S = 1:length(filelist)
         summary_table.Max(nc) = table_mat(2);
         summary_table.BinGap(nc) = table_mat(3);
         
-        % Get the first 2 values of the normal distribution
+        % Get the first 2 values of the normal distribution (will be used
+        % to identify signal clipping peaks)
         HIST = histcounts(data((i),:),'Normalization','count');
         Min1 = HIST(1); Min2 = HIST(2);
         MIN(nc,:) = [Min1 Min2]; 
@@ -117,7 +119,7 @@ else
     fprintf('>>> No signal clipping issue was detected.\n');
 end
 
-% Bit Depth (BD): Bin difference is greater than 0.1 uV 
+% Bit Depth (BD): if the bin difference is greater than 0.1 uV 
 BD_files_idx = sort([uVchan(summary_table.BinGap(uVchan)>0.1);mVchan(summary_table.BinGap(mVchan)>0.001)]); 
 BD_files = [summary_table(BD_files_idx,1) summary_table(BD_files_idx,2)];
 

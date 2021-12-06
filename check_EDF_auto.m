@@ -11,10 +11,11 @@
 %                        range set before EDF conversion was too wide)
 % 3. Inverted polarity:  signal multiplied by -1
 
-% The present script is a fully automatic version of the semi-automatic 
-% code: loops across all datasets and generates a table that summarises the
-% issues (if any) detected in each dataset and channel. For problematic
-% files, visual inspection of data is available
+% The present script is a fully automatic version of the GUI: loops across 
+% all datasets and stores a table that contains information about signal 
+% clipping and bit depth. Returns the channels whose signal may be clipped 
+% or appear in low resolution, and offers the possibility to visually 
+% inspect them.
 
 %% Initialise paths and toolboxes
 
@@ -46,6 +47,7 @@ summary_table.Unit=categorical(summary_table.Unit);
 nc=0;
 
 for S = 1:length(filelist)
+    tic
 
     % Parameters subject
     subID = filelist(S).name;
@@ -63,11 +65,12 @@ for S = 1:length(filelist)
     
     % Store data; will be retrieved for visual inspection later 
     KeepData(S,:) = [{subID} {data}];
+    toc
         
     %% Check for signal clipping and bit depth issue
        
     for i = 1:length(all_channels)  
-        
+        tic
         nc = nc+1;
         
         % calculates the difference in amplitude between neighoring data points
@@ -91,7 +94,7 @@ for S = 1:length(filelist)
         MIN(nc,:) = [Min1 Min2]; 
         
         fprintf('Channel %s',string(all_channels(i)));
-        
+        toc
     end
 end
 
