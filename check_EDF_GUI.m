@@ -64,14 +64,14 @@ for S = 1:length(filelist)
     Num_ch = numel(all_channels);
      
 %%  Visualise the data
-   cfg             = [];
-   cfg.dataset     = [subfolder filesep subID];
-   cfg.channel      = cellstr(all_channels);
-   Preproc_data    = ft_preprocessing(cfg);
-   cfg.blocksize   = 32; % in sec
-   %cfg.channel     = 'F8'; 
-   cfg.viewmode    = 'vertical';
-   ft_databrowser(cfg, Preproc_data);
+%    cfg             = [];
+%    cfg.dataset     = [subfolder filesep subID];
+%    cfg.channel      = cellstr(all_channels);
+%    Preproc_data    = ft_preprocessing(cfg);
+%    cfg.blocksize   = 32; % in sec
+%    %cfg.channel     = 'F8'; 
+%    cfg.viewmode    = 'vertical';
+%    ft_databrowser(cfg, Preproc_data);
 % %     
     %% Check for signal clipping and bit depth issue
         
