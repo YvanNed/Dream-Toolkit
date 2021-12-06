@@ -11,10 +11,11 @@
 %                        range set before EDF conversion was too wide)
 % 3. Inverted polarity:  signal multiplied by -1
 
-% The present script is a fully automatic version: loops across all datasets 
-% and stores a table that contains information about signal clipping and bit 
-% depth. Re detected in each dataset and channel. For problematic
-% files, visual inspection of data is available
+% The present script is a fully automatic version of the GUI: loops across 
+% all datasets and stores a table that contains information about signal 
+% clipping and bit depth. Returns the channels whose signal may be clipped 
+% or appear in low resolution, and offers the possibility to visually 
+% inspect them.
 
 %% Initialise paths and toolboxes
 
@@ -46,6 +47,7 @@ summary_table.Unit=categorical(summary_table.Unit);
 nc=0;
 
 for S = 1:length(filelist)
+    tic
 
     % Parameters subject
     subID = filelist(S).name;
@@ -63,11 +65,12 @@ for S = 1:length(filelist)
     
     % Store data; will be retrieved for visual inspection later 
     KeepData(S,:) = [{subID} {data}];
+    toc
         
     %% Check for signal clipping and bit depth issue
        
     for i = 1:length(all_channels)  
-        
+        tic
         nc = nc+1;
         
         % calculates the difference in amplitude between neighoring data points
@@ -91,7 +94,7 @@ for S = 1:length(filelist)
         MIN(nc,:) = [Min1 Min2]; 
         
         fprintf('Channel %s',string(all_channels(i)));
-        
+        toc
     end
 end
 
@@ -163,7 +166,7 @@ if reply == 'y'
         end
         xlim([-1.05 1.05]*max(abs(Data)))
         Max2 = sort(H.Values(2:end-1), 'descend');
-        ylim([0 Max2(2)*1.3])  % Take a Bin Edge close to 0 as the ylimit
+        ylim([0 Max2(2)*1.3])  % Take a bin next to 0 as the ylimit
         t = title({sprintf('%s (%s)',char(SC_files.File(S)),the_channel);'Amplitude distribution'},'Interpreter','none');
         t.FontWeight = 'normal';
         xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(chan_idx,1:2))); ylabel('Data points distribution')

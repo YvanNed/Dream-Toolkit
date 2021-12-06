@@ -166,7 +166,7 @@ if reply == 'y'
         end
         xlim([-1.05 1.05]*max(abs(Data)))
         Max2 = sort(H.Values(2:end-1), 'descend');
-        ylim([0 Max2(2)*1.3])  % Take a Bin Edge close to 0 as the ylimit
+        ylim([0 Max2(2)*1.3])  % Take a bin next to 0 as the ylimit
         t = title({sprintf('%s (%s)',char(SC_files.File(S)),the_channel);'Amplitude distribution'},'Interpreter','none');
         t.FontWeight = 'normal';
         xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(chan_idx,1:2))); ylabel('Data points distribution')
