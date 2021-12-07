@@ -70,7 +70,7 @@ for S = 1:length(filelist)
     %% Check for signal clipping and bit depth issue
        
     for i = 1:length(all_channels)  
-        tic
+        
         nc = nc+1;
         
         % calculates the difference in amplitude between neighoring data points
@@ -92,9 +92,7 @@ for S = 1:length(filelist)
         HIST = histcounts(data((i),:),'Normalization','count');
         Min1 = HIST(1); Min2 = HIST(2);
         MIN(nc,:) = [Min1 Min2]; 
-        
-        fprintf('Channel %s',string(all_channels(i)));
-        toc
+                
     end
 end
 
@@ -135,11 +133,11 @@ end
 
 %% Save summary table, SC and BD files
 
-% path_summary = [subfolder filesep 'SummaryTable'];
-% if exist(path_summary,'file')==0
-%     mkdir(path_summary)
-% end
-% save([path_summary filesep 'SummaryTables'],'summary_table','SC_files','BD_files');
+path_summary = [subfolder filesep 'SummaryTable'];
+if exist(path_summary,'file')==0
+    mkdir(path_summary)
+end
+save([path_summary filesep 'SummaryTables'],'summary_table','SC_files','BD_files');
 
 %% Visual inspection of problematic files: plot histograms
 
