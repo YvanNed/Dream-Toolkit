@@ -35,19 +35,19 @@ fprintf('>>> Select the folder containing the EDF files\n')
 subfolder = uigetdir('','Select the folder containing the EDF files');
 
 % Return the subject IDs from the data folder
-filelist = dir([subfolder filesep '**' filesep '*.edf']);
+% filelist = dir([subfolder filesep '**' filesep '*.edf']);
+filelist = dir([subfolder filesep '*.edf']);
 fprintf('>>> %s EDF files found\n',string(numel(filelist)))
 
 %% Loop across subjects
 
-summary_table=array2table(zeros(1000,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});
+summary_table=array2table(zeros(2000,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});
 summary_table.File=categorical(summary_table.File);
 summary_table.Channel=categorical(summary_table.Channel);
 summary_table.Unit=categorical(summary_table.Unit);
 nc=0;
 
 for S = 1:length(filelist)
-    tic
 
     % Parameters subject
     subID = filelist(S).name;
@@ -65,7 +65,6 @@ for S = 1:length(filelist)
     
     % Store data; will be retrieved for visual inspection later 
     KeepData(S,:) = [{subID} {data}];
-    toc
         
     %% Check for signal clipping and bit depth issue
        
@@ -133,11 +132,11 @@ end
 
 %% Save summary table, SC and BD files
 
-path_summary = [subfolder filesep 'SummaryTable'];
-if exist(path_summary,'file')==0
-    mkdir(path_summary)
-end
-save([path_summary filesep 'SummaryTables'],'summary_table','SC_files','BD_files');
+% path_summary = [subfolder filesep 'SummaryTable'];
+% if exist(path_summary,'file')==0
+%     mkdir(path_summary)
+% end
+% save([path_summary filesep 'SummaryTables'],'summary_table','SC_files','BD_files');
 
 %% Visual inspection of problematic files: plot histograms
 
