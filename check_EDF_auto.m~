@@ -103,8 +103,7 @@ mVchan = find(summary_table.Unit == 'mV');
 uVchan = find(summary_table.Unit == 'uV');
 
 if isempty(mVchan) && isempty(uVchan)
-    warning('Channel unit was not saved in hdr.orig.PhysDim, therefore files could not be assessed. Please indicate, for each channel, what unit was used (''mV'' or ''uV'') in hdr.orig.PhysDim') 
-    return
+    warning('Unit (in mV or uV) was not reported in hdr.orig.PhysDim, therefore files could not be assessed. Please mention for each channel what unit was used ('', hdr.orig.PhysDim') 
 end
 
 %% Store and inspect problematic files: Signal clipping and Bit Depth files
