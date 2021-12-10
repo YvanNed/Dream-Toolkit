@@ -50,6 +50,7 @@ for nF=1:length(files)
         
     end
     
+%%%%% Plot single datasets    
 %     figure('Position',[1,83,1440,714]);
 % 
 %     for nCh=1:3
@@ -105,4 +106,74 @@ end
 
 fpath = [folder_name filesep 'Plots'];
 % saveas(gca,fullfile(fpath,'mean_sub'),'jpg')
+
+
+
+
+%% Plot Single epochs: check artefact issue in N3 (one dataset, one epoch at a time)
+%%%%%%%%%%%%%%%%%%%%%
+
+clear;
+close all;
+
+
+path = '/Users/nico/Documents/ICM/Iceberg/Data/healthy';
+path_data = [path filesep 'Pow_f_ft'];
+files=dir([path_data filesep '*.mat']);
+ft_defaults;
+
+nc1=0;
+
+for nF=1
+   
+    % Parameters
+    file_name = '98_Pow_f_ft.mat';
+    folder_name = files(nF).folder;
+    SubID=file_name(1:end-4);
+    separator = strfind(SubID,'_');
+    Sub = SubID(1:separator(1)-1);
+    fprintf('... working on Subject %s (%g/%g)\n',string(Sub),nF,length(files))        
+    
+    chan_labels={'Fp1','C3','Cz'};
+    nc1=nc1+1; 
+    
+    % Import data and extract power
+    load([path_data filesep SubID])
+    
+    % Plot 10 N3 epochs
+    for nT = 1:10
+    
+        for nCh=1:length(chan_labels)
+
+            N3_epochs = intersect(match_str(string(epoch_score),{'3','4'}),find(max_signal(:,match_str(data_labels,chan_labels{nCh}))<250));
+            temp_pow_N3=data_pow(N3_epochs(nT),match_str(data_labels,chan_labels{nCh}),:);
+            Pow_Spec_N3(nc1,nCh,:)=squeeze(nanmean(temp_pow_N3,1));
+
+        end
+
+         %%%%%%% Plot single epochs
+        figure('Position',[1,83,1440,714]);
+
+        for nCh=1:3
+
+            subplot(1,3,nCh);
+            plot(freqs,squeeze(nanmean(Pow_Spec_N3(nF,nCh,:),1))','LineWidth',2)
+
+            title([chan_labels{nCh}]);
+            xlabel('Freq (Hz)')
+            ylabel('Log Power')
+            set(gcf,'Color','w')
+            set(gca,'FontSize',18,'FontWeight','bold')
+            legend({'N3'});
+
+        end
+
+        S = sgtitle(sprintf('Subject %s, N3 epoch %s',Sub,string(nT)));
+        S.FontSize = 24;
+        S.FontWeight = 'bold';
+        
+    end
+
+end  
+    
 
