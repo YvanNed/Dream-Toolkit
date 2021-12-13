@@ -14,9 +14,9 @@ trl = [];
 event = [];
 
 % Add scoring labels to each 30s epoch
-fprintf('>>> Select the folder of the excel file containing the scoring labels\n')
-filedir = uigetdir('','Select the folder of the text file containing the scoring labels');
-ScoringLabels = readcell([filedir filesep sprintf('%sS.TXT',cfg.SubID)]);
+% fprintf('>>> Select the folder of the excel file containing the scoring labels\n')
+% filedir = uigetdir('','Select the folder of the text file containing the scoring labels');
+% ScoringLabels = readcell([filedir filesep sprintf('%sS.TXT',cfg.SubID)]);
 
 
 for i=1:numEpochs
@@ -25,7 +25,7 @@ for i=1:numEpochs
     endsample      = i*cfg.trialdef.lengthSegments*hdr.Fs;
     offset         = 0;
     trl(end+1,:)   = [round([begsample endsample offset])];
-    event{i} = ScoringLabels{i};
+    %event{i} = ScoringLabels{i};
 end
 
 begsample     = (i)*cfg.trialdef.lengthSegments*hdr.Fs+1;
