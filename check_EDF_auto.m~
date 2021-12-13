@@ -73,12 +73,12 @@ for S = 1:length(filelist)
         nc = nc+1;
         
         % calculates the difference in amplitude between neighoring data points
-        Data = data(i,:);
+        Data = data((i),:);
         delta_ampl = abs(diff(Data));    
         delta_ampl(delta_ampl==0) = [];   % ignore the peak at 0 uV
         
         % Prepare the summary table
-        table_mat=[min(Data) max(Data) min(delta_ampl)];
+        table_mat=[min(data((i),:)) max(data((i),:)) min(delta_ampl)];
         summary_table.File(nc) = subID;
         summary_table.Channel(nc) = all_channels{i};
         summary_table.Unit(nc) = hdr.orig.PhysDim(i,:);
@@ -159,7 +159,7 @@ if reply == 'y'
         the_channel = char(SC_files.Channel(S));
         % Plot figure
         f=figure;ax=gca;
-        chan_idx = find(ismember(all_channels, string(the_channel)));
+        chan_idx = find(strfind(all_channels, string(the_channel)));
         Data = dat(chan_idx,:);
         if hdr.orig.PhysDim(chan_idx,1:2) == 'uV'
             H = histogram(Data,-max(abs(Data)):0.005:max(abs(Data)),'EdgeColor','#1167b1'); 

@@ -42,7 +42,7 @@ for nF=1:length(filelist)
     cfg.trialdef.lengthSegments = 30; % in seconds;
     cfg = ft_definetrial(cfg);
 
-    % Selecting channels
+    % Select channels
     pick_channels = listdlg('ListString',hdr.label,'PromptString','Select the channels to check');
     all_channels  = hdr.label(pick_channels);
     Num_ch = numel(all_channels);
@@ -54,12 +54,9 @@ for nF=1:length(filelist)
     cfg.lpfilttype     = 'but';
     cfg.lpfiltord      = 4;
     cfg.lpfreq         = 40;
-    cfg.hpfilter       = 'yes';        % enable high-pass filtering
-    cfg.hpfilttype     = 'but';
-    cfg.hpfiltord      = 4;
-    cfg.hpfreq         = 0.1;
+    cfg.hpfilter       = 'no';        
     cfg.dftfilter      = 'yes';        % enable notch filtering to eliminate power line noise
-    cfg.dftfreq        = [50 100 150]; % set up the frequencies for notch filtering
+    cfg.dftfreq        = [50 100 150]; 
 
     % Re-referencing (over all electrodes, linked mastoids or bipolar)
     while true
@@ -99,35 +96,22 @@ for nF=1:length(filelist)
     end
 
     % Display parameters
-    Table_param = table(cellstr(strjoin(cfg.channel)),cfg.hpfreq,cfg.lpfreq,cfg.dftfreq,Refmethod,'VariableNames',{'Channels','high-pass frequency','low-pass frequency','Notch filtering','Referencing method'});
+    Table_param = table(cellstr(strjoin(cfg.channel)),cfg.lpfreq,cfg.dftfreq,Refmethod,'VariableNames',{'Channels','low-pass frequency','Notch filtering','Referencing method'});
     disp(Table_param);
     
     % Preprocessing
     dat                = ft_preprocessing(cfg); 
-
+    
     % Resampling
     cfgbs=[];
     cfgbs.resamplefs   = 256;
     cfgbs.detrend      = 'no';
     cfgbs.demean       = 'yes';
     data               = ft_resampledata(cfgbs,dat); 
-%     
-%     % Add scoring labels to each 30s epoch
-%     % Path to EDF files: select folder containing the EDF files
-%     fprintf('>>> Select the folder of the excel file containing the scoring labels\n')
-%     filedir = uigetdir('','Select the folder of the text file containing the scoring labels');
-%     
-%     ScoringLabels = readcell([filedir filesep sprintf('%sS.TXT',SubID)]);
-%     cfg.ScoringLabels = ScoringLabels;
-%     %ft_databrowser(cfg, data)
-%     
+       
     % Save the structure
-    % save([path_data filesep 'f_ft_' file_name(1:end-4)],'data');
+    save([folder_name filesep 'filt_reref_seg' filesep [file_name(1:end-4) '_filt_reref_seg']],'data');
     
-    if length(filelist)>1
-        fprintf(1,'Press SPACE to continue to next EDF file.\n')
-        pause;
-    end
     
 end
 
