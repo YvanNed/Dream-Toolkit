@@ -145,7 +145,7 @@ for S = 1:length(filelist)
     t = title({sprintf('Subject %s',Sub);'Correlation between all channels'},'Interpreter','none');
     t.FontWeight = 'normal';
     
-    % Add text for negative correlation (r < -0.2)
+    % Add text for negative correlation (r<-0.2)
     t = cell(Num_ch, Num_ch);
  
     for i=1:Num_ch

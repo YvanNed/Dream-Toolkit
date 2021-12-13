@@ -124,7 +124,7 @@ nc1=0;
 for nF=1
    
     % Parameters
-    file_name = '98_Pow_f_ft.mat';
+    file_name = '91_Pow_f_ft.mat';
     folder_name = files(nF).folder;
     SubID=file_name(1:end-4);
     separator = strfind(SubID,'_');
