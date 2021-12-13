@@ -24,10 +24,15 @@ filelist = filelist(pick);
 fprintf('>>> You have selected %g EDF files\n',length(filelist))
 
 %% Select channels to plot
-hdr = ft_read_header([filelist.folder filesep filelist.name]);
-pick_channels = listdlg('ListString',hdr.label,'PromptString','Select the channels to check');
-all_channels  = hdr.label(pick_channels);
+load([path_preproc_SR filesep ListNames{pick}])
+oridata=data;
 
+
+%% reject trials
+cfg          = [];
+cfg.method   = 'summary';
+cfg.alim     = 5e-5;
+data        = ft_rejectvisual(cfg,oridata);
 
 %% display data after preprocessing
 cfg=[];
