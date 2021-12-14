@@ -23,7 +23,7 @@ filelist = filelist(pick);
 fprintf('>>> You have selected %g EEG file\n',length(filelist))
 
 %% Select channels to plot
-load([path_preproc_SR filesep ListNames{pick}])
+load([filelist.folder filesep filelist.name])
 
 %% display data after preprocessing
 cfg=[];
