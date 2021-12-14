@@ -18,27 +18,31 @@ subfolder = uigetdir('','Select the folder containing the EDF files');
 
 %% Select EEG files to plot
 % Return the subject IDs from the data folder
-filelist = dir([subfolder filesep '**' filesep '*.set']);
-pick=listdlg('ListString',{filelist.name},'PromptString','Select the EDF file to check');
-filelist = filelist(pick);
+filelist    = dir([subfolder filesep '**' filesep '*.set']);
+pick        = listdlg('ListString',{filelist.name},'PromptString','Select the EDF file to check');
+filelist    = filelist(pick);
 fprintf('>>> You have selected %g files\n',length(filelist))
 
-%% Import FDT (EEGlab) data into fieldtrip structure
+%% Import .SET (EEGlab) data into fieldtrip structure
+
 cfg=[];
-cfg.dataset         = [filelist.folder filesep filelist.name];
-preprocdata        = ft_preprocessing(cfg); % read raw data
+cfg.trialfun                = 'eventlist_trialfun';
+cfg.trialdef.eventtype      = 'trigger';
+cfg.trialdef.eventvalue     = [201, 202];
+cfg.trialdef.prestim        = 0.5;
+cfg.trialdef.poststim       = 1;
+
+cfg.dataset                 = [filelist.folder filesep filelist.name];
+cfg                         = ft_definetrial(cfg);
+% Preprocessing
+cfg.dftfilter      = 'yes';        % enable notch filtering to eliminate power line noise
+cfg.dftfreq        = [50 100 150];
+cfg.demean                  = 'yes';
+data_preproc                = ft_preprocessing(cfg);
 
 %% reject trials
 cfg          = [];
 cfg.method   = 'summary';
 cfg.alim     = 5e-5;
-data        = ft_rejectvisual(cfg,oridata);
-
-%% display data
-cfg=[];
-cfg.continuous='no';
-cfg.allowoverlap='true';
-cfg.viewmode='vertical';
-cfg = ft_databrowser(cfg, oridata);
-
+data         = ft_rejectvisual(cfg,data_preproc);
 
