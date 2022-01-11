@@ -49,10 +49,10 @@ cfg.dftfreq        = [50]; % set up the frequencies for notch filtering
 
 preprocdata        = ft_preprocessing(cfg); % read raw data
 
-% cfg=[];
-% cfg.reref          = 'yes';
-% cfg.refchannel     = 'A2';
-% preprocdata2        = ft_preprocessing(cfg,preprocdata); % read raw data
+cfg=[];
+cfg.reref          = 'yes';
+cfg.refchannel     = 'A2';
+preprocdata2        = ft_preprocessing(cfg,preprocdata); % read raw data
 
 cfg=[];
 cfg.continuous      = 'yes';
