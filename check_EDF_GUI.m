@@ -18,7 +18,7 @@
 %% Initialise paths and toolboxes
 
 clear;
-close all;
+% close all;
 set(0,'DefaultUIControlFontSize',16);
 
 % Path to EDF files: select folder containing the EDF files
@@ -67,11 +67,11 @@ for S = 1:length(filelist)
 %    cfg             = [];
 %    cfg.dataset     = [subfolder filesep subID];
 %    Preproc_data    = ft_preprocessing(cfg);
-%    cfg.blocksize   = 32; % in sec
-%    cfg.channel     = 'F4'; 
+%    cfg.blocksize   = 30; % in sec
+%    % cfg.channel     = {'EEG F8-F7'}; 
 %    cfg.viewmode    = 'vertical';
 %    ft_databrowser(cfg, Preproc_data);
-% %     
+
     %% Check for signal clipping and bit depth issue
         
     fprintf(1,'>>> >>> >>> Plotting histograms for each of the %s channels...\n',string(Num_ch))
@@ -86,7 +86,7 @@ for S = 1:length(filelist)
         subplot(1,2,1); ax=gca;
 
         if hdr.orig.PhysDim(pick_channels(i),1:2) == 'uV'
-            H = histogram(Data,-max(abs(Data)):0.05:max(abs(Data)),'EdgeColor','#1167b1'); 
+            H = histogram(Data,-max(abs(Data)):0.01:max(abs(Data)),'EdgeColor','#1167b1'); 
         else
             H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
         end
@@ -106,9 +106,9 @@ for S = 1:length(filelist)
         delta_ampl = abs(diff(Data));
 
         if hdr.orig.PhysDim(pick_channels(i),1:2) == 'uV'
-            H2 = histogram(delta_ampl,0:0.05:50,'EdgeColor','#1167b1'); 
+            H2 = histogram(delta_ampl,0:0.001:50,'EdgeColor','#1167b1'); 
         else
-            H2 = histogram(delta_ampl,0:0.00005:0.5,'EdgeColor','#1167b1'); 
+            H2 = histogram(delta_ampl,0:0.00001:0.5,'EdgeColor','#1167b1'); 
         end
         xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution') 
         %t = title({'Absolute difference in amplitude between';'neighboring data points'});
@@ -129,7 +129,7 @@ for S = 1:length(filelist)
 
     % Plot the correlation matrix between the selected channels.
     [r, pV] = corr(data(pick_channels,:)');
-    
+
     g=figure; ax=gca;
     
     imagesc(r); 

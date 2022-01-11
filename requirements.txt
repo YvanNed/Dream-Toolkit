@@ -1,8 +1,0 @@
-ipywidgets
-tqdm
-numpy
-pandas
-seaborm
-matplotlib
-mne
-jupyterlab

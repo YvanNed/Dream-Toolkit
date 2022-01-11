@@ -110,7 +110,7 @@ for nF=1:length(filelist)
     data               = ft_resampledata(cfgbs,dat); 
        
     % Save the structure
-    save([folder_name filesep 'filt_reref_seg' filesep [file_name(1:end-4) '_filt_reref_seg']],'data');
+    % save([folder_name filesep 'filt_reref_seg' filesep [file_name(1:end-4) '_filt_reref_seg']],'data');
     
     
 end

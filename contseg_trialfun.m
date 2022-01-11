@@ -25,7 +25,7 @@ for i=1:numEpochs
     endsample      = i*cfg.trialdef.lengthSegments*hdr.Fs;
     offset         = 0;
     trl(end+1,:)   = [round([begsample endsample offset])];
-    %event{i} = ScoringLabels{i};
+    % event{i} = ScoringLabels{i};
 end
 
 begsample     = (i)*cfg.trialdef.lengthSegments*hdr.Fs+1;
