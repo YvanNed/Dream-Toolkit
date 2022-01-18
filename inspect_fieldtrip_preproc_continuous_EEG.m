@@ -28,7 +28,6 @@ fprintf('>>> You have selected %g EDF files\n',length(filelist))
 hdr = ft_read_header([filelist.folder filesep filelist.name]);
 pick_channels = listdlg('ListString',hdr.label,'PromptString','Select the channels to check');
 all_channels  = hdr.label(pick_channels);
-
     
 %% display data without preprocessing
 cfg=[];

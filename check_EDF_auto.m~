@@ -56,9 +56,9 @@ for S = 1:20
     Sub = subID(1:end-4);
     subfolder = filelist(S).folder;
 
-%     if ~strcmp(Sub,'105')
-%         continue
-%     end
+    if ~strcmp(Sub,'105')
+        continue
+    end
     
     % Import the data
     cfg = [];
@@ -192,7 +192,7 @@ path_summary = [subfolder filesep 'SummaryTable'];
 if exist(path_summary,'file')==0
     mkdir(path_summary)
 end
-save([path_summary filesep 'SummaryTables_1to20'],'summary_table','SC_files','BD_files');
+save([path_summary filesep 'SummaryTables_1to20'],'summary_table1','SC_files1','BD_files1');
 
 %% Visual inspection of problematic files: plot histograms
 
