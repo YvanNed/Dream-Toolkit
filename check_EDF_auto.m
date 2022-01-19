@@ -41,25 +41,19 @@ fprintf('>>> %s EDF files found\n',string(numel(filelist)))
 
 %% Loop across subjects
 
-summary_table=array2table(zeros(2000,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});
+summary_table=array2table(zeros(2000,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});   % 2000 is an arbitrary number for preallocation
 summary_table.File=categorical(summary_table.File);
 summary_table.Channel=categorical(summary_table.Channel);
 summary_table.Unit=categorical(summary_table.Unit);
 nc=0;
 
-% for S = 1:length(filelist)
-for S = 1:20
-
+for S = 1:length(filelist)
 
     % Parameters subject
     subID = filelist(S).name;
     Sub = subID(1:end-4);
     subfolder = filelist(S).folder;
 
-%     if ~strcmp(Sub,'105')
-%         continue
-%     end
-    
     % Import the data
     cfg = [];
     cfg.dataset = [subfolder filesep subID];
@@ -127,7 +121,7 @@ for S = 1:20
         table_mat=[min(Data) max(Data) min(delta_ampl)];
         summary_table.File(nc) = subID;
         summary_table.Channel(nc) = all_channels{i};
-        summary_table.Unit(nc) = hdr.orig.PhysDim(hdr.orig.chansel(i,:),:);
+        summary_table.Unit(nc) = hdr.orig.PhysDim(hdr.orig.chansel(i),:);
         summary_table.Min(nc) = table_mat(1);
         summary_table.Max(nc) = table_mat(2);
         summary_table.BinGap(nc) = table_mat(3);
@@ -166,7 +160,7 @@ SC_files_idx = sort([uVchan(summary_table.Min(uVchan)>-500 | summary_table.Max(u
                      mVchan(summary_table.Min(mVchan)>-0.50 | summary_table.Max(mVchan)<0.50)]); 
 nopeak = find(MIN(SC_files_idx,1)<(MIN(SC_files_idx,2)+1)*20);   % If the first value of the distribution is not 20 times bigger than the second value, don't consider this a peak --> no clipping.
 SC_files_idx(nopeak) = [];            
-SC_files = [summary_table(SC_files_idx,1:5)];  
+SC_files = summary_table(SC_files_idx,1:5);  
 
 if ~isempty(SC_files)
     fprintf('>>> %s channels (from %s EDF files) might have a signal clipping issue.\n\n',string(size(SC_files,1)),string(numel(unique(SC_files(:,1)))));
@@ -192,7 +186,7 @@ path_summary = [subfolder filesep 'SummaryTable'];
 if exist(path_summary,'file')==0
     mkdir(path_summary)
 end
-save([path_summary filesep 'SummaryTables_1to20'],'summary_table','SC_files','BD_files');
+save([path_summary filesep 'SummaryTables'],'summary_table','SC_files','BD_files');
 
 %% Visual inspection of problematic files: plot histograms
 
@@ -220,7 +214,9 @@ if ~isempty(~BD_files_idx) || ~isempty(SC_files_idx)
             end
             xlim([-1.05 1.05]*max(abs(Data)))
             Max2 = sort(H.Values(2:end-1), 'descend');
-            ylim([0 Max2(2)*1.3])  % Take a bin next to 0 as the ylimit
+            if Max2~=0
+                ylim([0 (Max2(2)*1.3)])  % Take a bin next to 0 as the ylimit, add 30% above
+            end
             t = title({sprintf('%s (%s)',char(SC_files.File(S)),the_channel);'Amplitude distribution'},'Interpreter','none');
             t.FontWeight = 'normal';
             xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(hdr.orig.chansel(chan_idx),1:2))); ylabel('Data points distribution')
