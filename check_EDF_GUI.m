@@ -85,7 +85,7 @@ for S = 1:length(filelist)
         % Check for signal clipping issue
         subplot(1,2,1); ax=gca;
 
-        if hdr.orig.PhysDim(pick_channels(i),1:2) == 'uV'
+        if strcmpi(hdr.orig.PhysDim(pick_channels(i),1:2),'uV')
             H = histogram(Data,-max(abs(Data)):0.01:max(abs(Data)),'EdgeColor','#1167b1'); 
         else
             H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
@@ -105,7 +105,7 @@ for S = 1:length(filelist)
         % Plot the absolute difference in amplitude between neihboring data points 
         delta_ampl = abs(diff(Data));
 
-        if hdr.orig.PhysDim(pick_channels(i),1:2) == 'uV'
+        if strcmpi(hdr.orig.PhysDim(pick_channels(i),1:2), 'uV')
             H2 = histogram(delta_ampl,0:0.001:50,'EdgeColor','#1167b1'); 
         else
             H2 = histogram(delta_ampl,0:0.00001:0.5,'EdgeColor','#1167b1'); 

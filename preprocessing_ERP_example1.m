@@ -105,7 +105,7 @@ for nF=1:length(filelist)
     cfg.hpfreq         = 1;
     data4              = ft_preprocessing(cfg,data);
     
-    %%% CASE 5: 1Hz high-pass
+    %%% CASE 5: 0.1Hz high-pass
     cfg.hpfilter       = 'yes';
     cfg.hpfilttype     = 'but';
     cfg.hpfiltord      = 4;
