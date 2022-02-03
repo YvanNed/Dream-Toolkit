@@ -41,7 +41,7 @@ fprintf('>>> %s EDF files found\n',string(numel(filelist)))
 
 %% Loop across subjects
 
-summary_table=array2table(zeros(2000,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});
+summary_table=array2table(zeros(2000,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});   % 2000 is an arbitrary number for preallocation
 summary_table.File=categorical(summary_table.File);
 summary_table.Channel=categorical(summary_table.Channel);
 summary_table.Unit=categorical(summary_table.Unit);
@@ -49,17 +49,16 @@ nc=0;
 
 for S = 1:length(filelist)
 
-
     % Parameters subject
     subID = filelist(S).name;
     Sub = subID(1:end-4);
     subfolder = filelist(S).folder;
-    
+
     % Import the data
     cfg = [];
     cfg.dataset = [subfolder filesep subID];
     
-    fprintf(1,'>>> >>> Importing data from Subject %s...\n',Sub)
+    fprintf(1,'>>> >>> Importing data from Subject %s... (%g/%g),\n',Sub,S,size(filelist,1))
     data = ft_read_data(cfg.dataset);
     hdr = ft_read_header(cfg.dataset);
     all_channels  = hdr.label;
@@ -122,7 +121,7 @@ for S = 1:length(filelist)
         table_mat=[min(Data) max(Data) min(delta_ampl)];
         summary_table.File(nc) = subID;
         summary_table.Channel(nc) = all_channels{i};
-        summary_table.Unit(nc) = hdr.orig.PhysDim(i,:);
+        summary_table.Unit(nc) = hdr.orig.PhysDim(hdr.orig.chansel(i),:);
         summary_table.Min(nc) = table_mat(1);
         summary_table.Max(nc) = table_mat(2);
         summary_table.BinGap(nc) = table_mat(3);
@@ -161,7 +160,7 @@ SC_files_idx = sort([uVchan(summary_table.Min(uVchan)>-500 | summary_table.Max(u
                      mVchan(summary_table.Min(mVchan)>-0.50 | summary_table.Max(mVchan)<0.50)]); 
 nopeak = find(MIN(SC_files_idx,1)<(MIN(SC_files_idx,2)+1)*20);   % If the first value of the distribution is not 20 times bigger than the second value, don't consider this a peak --> no clipping.
 SC_files_idx(nopeak) = [];            
-SC_files = [summary_table(SC_files_idx,1:5)];  
+SC_files = summary_table(SC_files_idx,1:5);  
 
 if ~isempty(SC_files)
     fprintf('>>> %s channels (from %s EDF files) might have a signal clipping issue.\n\n',string(size(SC_files,1)),string(numel(unique(SC_files(:,1)))));
@@ -208,17 +207,19 @@ if ~isempty(~BD_files_idx) || ~isempty(SC_files_idx)
             f=figure;ax=gca;
             chan_idx = find(ismember(all_channels, string(the_channel)));
             Data = dat(chan_idx,:);
-            if hdr.orig.PhysDim(chan_idx,1:2) == 'uV'
+            if hdr.orig.PhysDim(hdr.orig.chansel(chan_idx),1:2) == 'uV'
                 H = histogram(Data,-max(abs(Data)):0.005:max(abs(Data)),'EdgeColor','#1167b1'); 
             else
                 H = histogram(Data,-max(abs(Data)):0.000005:max(abs(Data)),'EdgeColor','#1167b1'); 
             end
             xlim([-1.05 1.05]*max(abs(Data)))
             Max2 = sort(H.Values(2:end-1), 'descend');
-            ylim([0 Max2(2)*1.3])  % Take a bin next to 0 as the ylimit
+            if Max2~=0
+                ylim([0 (Max2(2)*1.3)])  % Take a bin next to 0 as the ylimit, add 30% above
+            end
             t = title({sprintf('%s (%s)',char(SC_files.File(S)),the_channel);'Amplitude distribution'},'Interpreter','none');
             t.FontWeight = 'normal';
-            xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(chan_idx,1:2))); ylabel('Data points distribution')
+            xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(hdr.orig.chansel(chan_idx),1:2))); ylabel('Data points distribution')
             ax.FontSize = 14;
         end
 
@@ -236,7 +237,7 @@ if ~isempty(~BD_files_idx) || ~isempty(SC_files_idx)
             Data = data(chan_idx,:);
             delta_ampl = abs(diff(Data));
             H2=histogram(delta_ampl,0:0.01:50,'EdgeColor','#1167b1');
-            xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(chan_idx,1:2))); ylabel('Data points distribution') 
+            xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(hdr.orig.chansel(chan_idx),1:2))); ylabel('Data points distribution') 
             t = title({sprintf('%s (%s)',char(BD_files.File(S)),the_channel);'Absolute difference in amplitude between neighboring data points'},'Interpreter','none');
             t.FontWeight = 'bold';
             ax.FontSize = 14;
@@ -244,16 +245,6 @@ if ~isempty(~BD_files_idx) || ~isempty(SC_files_idx)
         end
     end
 end
-
-
-
-
-
-
-
-
-
-
 
 
 

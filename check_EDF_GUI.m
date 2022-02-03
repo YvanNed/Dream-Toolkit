@@ -63,7 +63,7 @@ for S = 1:length(filelist)
     all_channels  = hdr.label(pick_channels);
     Num_ch = numel(all_channels);
      
-%%  Visualise the data
+%  Visualise the data
 %    cfg             = [];
 %    cfg.dataset     = [subfolder filesep subID];
 %    Preproc_data    = ft_preprocessing(cfg);
@@ -84,8 +84,7 @@ for S = 1:length(filelist)
 
         % Check for signal clipping issue
         subplot(1,2,1); ax=gca;
-
-        if strcmpi(hdr.orig.PhysDim(pick_channels(i),1:2),'uV')
+        if hdr.orig.PhysDim(hdr.orig.chansel(pick_channels(i)),1:2) == 'uV'
             H = histogram(Data,-max(abs(Data)):0.01:max(abs(Data)),'EdgeColor','#1167b1'); 
         else
             H = histogram(Data,-max(abs(Data)):0.00005:max(abs(Data)),'EdgeColor','#1167b1'); 
@@ -95,7 +94,7 @@ for S = 1:length(filelist)
         ylim([0 Max2(2)*1.3])  % Take a Bin Edge close to 0 as the ylimit
         t = title('Amplitude distribution');
         t.FontWeight = 'normal';
-        xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution')
+        xlabel(sprintf('Amplitude (%s)',hdr.orig.PhysDim(hdr.orig.chansel(i),1:2))); ylabel('Data points distribution')
         ax.FontSize = 20;
         box off
 
@@ -105,14 +104,12 @@ for S = 1:length(filelist)
         % Plot the absolute difference in amplitude between neihboring data points 
         delta_ampl = abs(diff(Data));
 
-        if strcmpi(hdr.orig.PhysDim(pick_channels(i),1:2), 'uV')
+        if hdr.orig.PhysDim(hdr.orig.chansel(pick_channels(i)),1:2) == 'uV'
             H2 = histogram(delta_ampl,0:0.001:50,'EdgeColor','#1167b1'); 
         else
             H2 = histogram(delta_ampl,0:0.00001:0.5,'EdgeColor','#1167b1'); 
         end
-        xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(i,1:2))); ylabel('Data points distribution') 
-        %t = title({'Absolute difference in amplitude between';'neighboring data points'});
-        %t.FontWeight = 'normal';
+        xlabel(sprintf('Delta amplitude (%s)',hdr.orig.PhysDim(hdr.orig.chansel(i),1:2))); ylabel('Data points distribution') 
         ax.FontSize = 20;
         box off
         
