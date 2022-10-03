@@ -18,8 +18,8 @@ subfolder = uigetdir('','Select the folder containing the EDF files');
 
 %% Select EDFs to plot
 % Return the subject IDs from the data folder
-filelist = dir([subfolder filesep '**' filesep '*.edf']);
-pick=listdlg('ListString',{filelist.name},'PromptString','Select the EDF file to check');
+filelist = dir([subfolder filesep '**' filesep '*.eeg']);
+pick=listdlg('ListString',{filelist.name},'PromptString','Select the BDF file to check');
 filelist = filelist(pick);
 fprintf('>>> You have selected %g EDF files\n',length(filelist))
 
@@ -58,6 +58,6 @@ cfg=[];
 cfg.continuous      = 'yes';
 cfg.allowoverlap    = 'true';
 cfg.viewmode        = 'vertical';
-cfg.blocksize       = 30;
+cfg.blocksize       = 120;
 cfg.ylim            = 'maxmin';
 cfg                 = ft_databrowser(cfg,preprocdata);

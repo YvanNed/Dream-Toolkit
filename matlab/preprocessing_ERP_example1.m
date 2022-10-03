@@ -1,4 +1,4 @@
-%%% Test the influence of low-pass filtering on ERP
+%%% Test the influence of high-pass filtering on ERP
 
 %% Initialise paths and toolboxes
 clear;
@@ -15,7 +15,7 @@ end
 
 
 if ~isempty(findstr(pwd,'thandrillon'))
-    subjfolder = '/Volumes/GoogleDrive/My Drive/EEG Club - Materials/2021-2022/Session4: Artefact rejection/N170 Raw Data and Scripts Only/';
+    subjfolder = '/Volumes/GoogleDrive/My Drive/EEG Club - ICM/2021-2022/Session4: Artefact rejection/N170 Raw Data and Scripts Only/';
 else
     % Path to EEG files: select folder containing the EEG files
     fprintf('>>> Select the folder containing the EEG files\n')
@@ -51,15 +51,15 @@ for nF=1:length(filelist)
     cfg                         = ft_definetrial(cfg);
     cfg.trl(:,3) = -cfg.trl(:,3);
     cfg.trl = cfg.trl([1:80, 100:180],:); %(cfg.trl(:,2)>hdr.nSamples,:)=[];
-
+%     cfg(cfg.trl(:,1)<0,:)=[];
     
     % demean and filter the data
     cfg.demean         = 'yes';
 
-    cfg.hpfilter       = 'yes';        % enable low-pass filtering
-    cfg.hpfilttype     = 'but';
-    cfg.hpfiltord      = 4;
-    cfg.hpfreq         = 0.1;
+    cfg.lpfilter       = 'yes';        % enable low-pass filtering
+    cfg.lpfilttype     = 'but';
+    cfg.lpfiltord      = 4;
+    cfg.lpfreq         = 30;
 
     cfg.dftfilter      = 'no';        % enable notch filtering to eliminate power line noise
     cfg.dftfreq        = [50 100 150];
@@ -77,40 +77,40 @@ for nF=1:length(filelist)
     % Preprocessing
     data                = ft_preprocessing(cfg);
     
-    %%% CASE 1: no low-pass
-    cfg.lpfilter       = 'no';
-%     cfg.lpfilttype     = 'but';
-%     cfg.lpfiltord      = 4;
-%     cfg.lpfreq         = 0.1;
+    %%% CASE 1: no high-pass
+    cfg.hpfilter       = 'no';
+%     cfg.hpfilttype     = 'but';
+%     cfg.hpfiltord      = 4;
+%     cfg.hpfreq         = 0.1;
     data1              = ft_preprocessing(cfg,data);
 
-    %%% CASE 2: 30Hz low-pass
-    cfg.lpfilter       = 'yes';
-    cfg.lpfilttype     = 'but';
-    cfg.lpfiltord      = 4;
-    cfg.lpfreq         = 30;
+    %%% CASE 2: 0.1Hz high-pass
+    cfg.hpfilter       = 'yes';
+    cfg.hpfilttype     = 'but';
+    cfg.hpfiltord      = 4;
+    cfg.hpfreq         = 0.1;
     data2              = ft_preprocessing(cfg,data);
     
-    %%% CASE 3: 20Hz low-pass
-    cfg.lpfilter       = 'yes';
-    cfg.lpfilttype     = 'but';
-    cfg.lpfiltord      = 4;
-    cfg.lpfreq         = 20;
+    %%% CASE 3: 0.5Hz high-pass
+    cfg.hpfilter       = 'yes';
+    cfg.hpfilttype     = 'but';
+    cfg.hpfiltord      = 4;
+    cfg.hpfreq         = 0.5;
     data3              = ft_preprocessing(cfg,data);
     
-    %%% CASE 4: 8Hz low-pass
-    cfg.lpfilter       = 'yes';
-    cfg.lpfilttype     = 'but';
-    cfg.lpfiltord      = 4;
-    cfg.lpfreq         = 8;
+    %%% CASE 4: 1Hz high-pass
+    cfg.hpfilter       = 'yes';
+    cfg.hpfilttype     = 'but';
+    cfg.hpfiltord      = 4;
+    cfg.hpfreq         = 1;
     data4              = ft_preprocessing(cfg,data);
     
-    %%% CASE 5: different low-pass
-    cfg.lpfilter       = 'yes';
-    cfg.lpfilttype     = 'fir';
-    cfg.lpfiltord      = 4;
-    cfg.lpfreq         = 20;
-    cfg.lpfiltdir      = 'onepass';
+    %%% CASE 5: 0.1Hz high-pass
+    cfg.hpfilter       = 'yes';
+    cfg.hpfilttype     = 'but';
+    cfg.hpfiltord      = 4;
+    cfg.hpfreq         = 0.1;
+    cfg.hpfiltdir      = 'onepass';
     data5              = ft_preprocessing(cfg,data);
     
     % Average across trials
@@ -131,18 +131,21 @@ for nF=1:length(filelist)
     clean_erp5(nF,:,:) = squeeze(mean(av_data5.trial(mean((max(abs(av_data5.trial),[],3)>100)')<0.2,:,:),1));
 end
 
+
 %%
 figure;
 hp=[];
 hp(1)=plot(av_data1.time,squeeze(mean(clean_erp1(:,match_str(data.label,'PO8'),:),1)),'Color',[0 0 1],'LineWidth',2);
 hold on;
-hp(2)=plot(av_data1.time,squeeze(mean(clean_erp2(:,match_str(data.label,'PO8'),:),1)),'Color',[0 1 0],'LineWidth',2);
-hp(3)=plot(av_data1.time,squeeze(mean(clean_erp3(:,match_str(data.label,'PO8'),:),1)),'Color',[0 0.8 0],'LineWidth',2);
-hp(4)=plot(av_data1.time,squeeze(mean(clean_erp4(:,match_str(data.label,'PO8'),:),1)),'Color',[0 0.6 0],'LineWidth',2);
+hp(2)=plot(av_data1.time,squeeze(mean(clean_erp2(:,match_str(data.label,'PO8'),:),1)),'Color',[1 0 0],'LineWidth',2);
+hp(3)=plot(av_data1.time,squeeze(mean(clean_erp3(:,match_str(data.label,'PO8'),:),1)),'Color',[0.8 0 0],'LineWidth',2);
+hp(4)=plot(av_data1.time,squeeze(mean(clean_erp4(:,match_str(data.label,'PO8'),:),1)),'Color',[0.6 0 0],'LineWidth',2);
 
-hp(5)=plot(av_data1.time,squeeze(mean(clean_erp5(:,match_str(data.label,'PO8'),:),1)),'Color',[0 0.8 0],'LineWidth',2,'LineStyle','--');
+hp(5)=plot(av_data1.time,squeeze(mean(clean_erp5(:,match_str(data.label,'PO8'),:),1)),'Color',[0.8 0 0],'LineWidth',2,'LineStyle','--');
 
-format_fig;
+set(gcf,'Color','w')
+set(gca,'FontSize',18,'FontWeight','bold')
+
 xlim([-0.1 0.7])
 xlabel('Time from Stimulus Onset (s)')
 ylabel('Voltage (\muV)')
@@ -150,4 +153,4 @@ ylabel('Voltage (\muV)')
 line([0 0],ylim,'Color',[1 1 1]*0.5,'LineStyle',':')
 line(xlim,[0 0],'Color',[1 1 1]*0.5,'LineStyle',':')
 
-legend(hp,{'no LP','30Hz','20Hz','8Hz','20Hz*'},'Location','EastOutside')
+legend(hp,{'no HP','0.1Hz','0.5Hz','1Hz','0.1Hz*'},'Location','EastOutside')

@@ -35,7 +35,7 @@ fprintf('>>> Select the folder containing the EDF files\n')
 subfolder = uigetdir('','Select the folder containing the EDF files');
 
 % Return the subject IDs from the data folder
-filelist = dir([subfolder filesep '**' filesep '*.edf']);
+filelist = dir([subfolder filesep '**' filesep '*.EDF']);
 % filelist = dir([subfolder filesep '*.edf']);
 fprintf('>>> %s EDF files found\n',string(numel(filelist)))
 

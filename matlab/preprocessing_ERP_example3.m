@@ -15,7 +15,7 @@ end
 
 
 if ~isempty(findstr(pwd,'thandrillon'))
-    subjfolder = '/Volumes/GoogleDrive/My Drive/EEG Club - Materials/2021-2022/Session4: Artefact rejection/N170 Raw Data and Scripts Only/';
+    subjfolder = '/Volumes/GoogleDrive/My Drive/EEG Club - ICM/2021-2022/Session4: Artefact rejection/N170 Raw Data and Scripts Only/';
 else
     % Path to EEG files: select folder containing the EEG files
     fprintf('>>> Select the folder containing the EEG files\n')
@@ -75,60 +75,62 @@ for nF=1:length(filelist)
     cfg.refchannel     = 'all';
     
     % Preprocessing
-    data                = ft_preprocessing(cfg);
+    data1                = ft_preprocessing(cfg);
     
-    %%% CASE 1: no high-pass
-    cfg.hpfilter       = 'no';
+%     %%% CASE 1: no high-pass
+%     cfg.hpfilter       = 'no';
+% %     cfg.hpfilttype     = 'but';
+% %     cfg.hpfiltord      = 4;
+% %     cfg.hpfreq         = 0.1;
+%     data1              = ft_preprocessing(cfg,data);
+% 
+%     %%% CASE 2: 0.1Hz high-pass
+%     cfg.hpfilter       = 'yes';
 %     cfg.hpfilttype     = 'but';
 %     cfg.hpfiltord      = 4;
 %     cfg.hpfreq         = 0.1;
-    data1              = ft_preprocessing(cfg,data);
-
-    %%% CASE 2: 0.1Hz high-pass
-    cfg.hpfilter       = 'yes';
-    cfg.hpfilttype     = 'but';
-    cfg.hpfiltord      = 4;
-    cfg.hpfreq         = 0.1;
-    data2              = ft_preprocessing(cfg,data);
-    
-    %%% CASE 3: 0.5Hz high-pass
-    cfg.hpfilter       = 'yes';
-    cfg.hpfilttype     = 'but';
-    cfg.hpfiltord      = 4;
-    cfg.hpfreq         = 0.5;
-    data3              = ft_preprocessing(cfg,data);
-    
-    %%% CASE 4: 1Hz high-pass
-    cfg.hpfilter       = 'yes';
-    cfg.hpfilttype     = 'but';
-    cfg.hpfiltord      = 4;
-    cfg.hpfreq         = 1;
-    data4              = ft_preprocessing(cfg,data);
-    
-    %%% CASE 5: 0.1Hz high-pass
-    cfg.hpfilter       = 'yes';
-    cfg.hpfilttype     = 'but';
-    cfg.hpfiltord      = 4;
-    cfg.hpfreq         = 0.1;
-    cfg.hpfiltdir      = 'onepass';
-    data5              = ft_preprocessing(cfg,data);
+%     data2              = ft_preprocessing(cfg,data);
+%     
+%     %%% CASE 3: 0.5Hz high-pass
+%     cfg.hpfilter       = 'yes';
+%     cfg.hpfilttype     = 'but';
+%     cfg.hpfiltord      = 4;
+%     cfg.hpfreq         = 0.5;
+%     data3              = ft_preprocessing(cfg,data);
+%     
+%     %%% CASE 4: 1Hz high-pass
+%     cfg.hpfilter       = 'yes';
+%     cfg.hpfilttype     = 'but';
+%     cfg.hpfiltord      = 4;
+%     cfg.hpfreq         = 1;
+%     data4              = ft_preprocessing(cfg,data);
+%     
+%     %%% CASE 5: 0.1Hz high-pass
+%     cfg.hpfilter       = 'yes';
+%     cfg.hpfilttype     = 'but';
+%     cfg.hpfiltord      = 4;
+%     cfg.hpfreq         = 0.1;
+%     cfg.hpfiltdir      = 'onepass';
+%     data5              = ft_preprocessing(cfg,data);
     
     % Average across trials
     cfg2            = [];
     cfg2.keeptrials = 'yes';
     cfg2.latency    = [-0.15 0.75];
     av_data1         = ft_timelockanalysis(cfg2, data1);
-    av_data2         = ft_timelockanalysis(cfg2, data2);
-    av_data3         = ft_timelockanalysis(cfg2, data3);
-    av_data4         = ft_timelockanalysis(cfg2, data4);
-    av_data5         = ft_timelockanalysis(cfg2, data5);
+%     av_data2         = ft_timelockanalysis(cfg2, data2);
+%     av_data3         = ft_timelockanalysis(cfg2, data3);
+%     av_data4         = ft_timelockanalysis(cfg2, data4);
+%     av_data5         = ft_timelockanalysis(cfg2, data5);
     
     % Remove trials with 20% of channels with absolute amplitude over 100uV
     clean_erp1(nF,:,:) = squeeze(mean(av_data1.trial(mean((max(abs(av_data1.trial),[],3)>100)')<0.2,:,:),1));
-    clean_erp2(nF,:,:) = squeeze(mean(av_data2.trial(mean((max(abs(av_data2.trial),[],3)>100)')<0.2,:,:),1));
-    clean_erp3(nF,:,:) = squeeze(mean(av_data3.trial(mean((max(abs(av_data3.trial),[],3)>100)')<0.2,:,:),1));
-    clean_erp4(nF,:,:) = squeeze(mean(av_data4.trial(mean((max(abs(av_data4.trial),[],3)>100)')<0.2,:,:),1));
-    clean_erp5(nF,:,:) = squeeze(mean(av_data5.trial(mean((max(abs(av_data5.trial),[],3)>100)')<0.2,:,:),1));
+%     clean_erp2(nF,:,:) = squeeze(mean(av_data2.trial(mean((max(abs(av_data2.trial),[],3)>100)')<0.2,:,:),1));
+%     clean_erp3(nF,:,:) = squeeze(mean(av_data3.trial(mean((max(abs(av_data3.trial),[],3)>100)')<0.2,:,:),1));
+%     clean_erp4(nF,:,:) = squeeze(mean(av_data4.trial(mean((max(abs(av_data4.trial),[],3)>100)')<0.2,:,:),1));
+%     clean_erp5(nF,:,:) = squeeze(mean(av_data5.trial(mean((max(abs(av_data5.trial),[],3)>100)')<0.2,:,:),1));
+figure;
+plot(av_data1.time,squeeze(av_data1.trial(:,match_str(av_data1.label,'FP1'),:))');
 end
 
 

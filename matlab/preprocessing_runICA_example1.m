@@ -100,24 +100,24 @@ cfg = [];
 cfg.component = [1];
 data_clean1 = ft_rejectcomponent(cfg, comp_cont, data_cont);
  
-cfg.component = [1 6];
+cfg.component = [1 6 5 8];
 data_clean2 = ft_rejectcomponent(cfg, comp_cont, data_cont);
 
 %% Plot comparison
-figure('Position',[5         378        1391         419]);
+figure('Position',[5         378        1391         2*419]);
 subplot(2,1,1);
-plot(data_cont.time{1},data_cont.trial{1}(find(ismember(data_cont.label,{'FP1','FP2'})),:)','k');
+plot(data_cont.time{1},data_cont.trial{1}(find(ismember(data_cont.label,{'O1','O2'})),:)','k');
 hold on;
-plot(data_clean1.time{1},data_clean1.trial{1}(find(ismember(data_clean1.label,{'FP1','FP2'})),:)','r');
+plot(data_clean1.time{1},data_clean1.trial{1}(find(ismember(data_clean1.label,{'O1','O2'})),:)','r');
 xlim([217.7374  235.8553])
 ylim([-111.4003  246.7167])
 set(gcf,'Color','w')
 set(gca,'FontSize',18,'FontWeight','bold')
 
-subplot(2,1,1);
-plot(data_cont.time{1},data_cont.trial{1}(find(ismember(data_cont.label,{'FP1','FP2'})),:)','k');
+subplot(2,1,2);
+plot(data_cont.time{1},data_cont.trial{1}(find(ismember(data_cont.label,{'O1','O2'})),:)','k');
 hold on;
-plot(data_clean1.time{1},data_clean1.trial{1}(find(ismember(data_clean1.label,{'FP1','FP2'})),:)','r');
+plot(data_clean2.time{1},data_clean2.trial{1}(find(ismember(data_clean2.label,{'O1','O2'})),:)','r');
 xlim([217.7374  235.8553])
 ylim([-111.4003  246.7167])
 set(gcf,'Color','w')
