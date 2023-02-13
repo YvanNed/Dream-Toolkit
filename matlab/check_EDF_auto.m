@@ -41,7 +41,7 @@ fprintf('>>> %s EDF files found\n',string(numel(filelist)))
 
 %% Loop across subjects
 
-summary_table=array2table(zeros(2000,6),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap'});   % 2000 is an arbitrary number for preallocation
+summary_table=array2table(zeros(2000,7),'VariableNames',{'File','Channel','Unit','Min','Max','BinGap','SamplingRate'});   % 2000 is an arbitrary number for preallocation
 summary_table.File=categorical(summary_table.File);
 summary_table.Channel=categorical(summary_table.Channel);
 summary_table.Unit=categorical(summary_table.Unit);
@@ -125,6 +125,7 @@ for S = 1:length(filelist)
         summary_table.Min(nc) = table_mat(1);
         summary_table.Max(nc) = table_mat(2);
         summary_table.BinGap(nc) = table_mat(3);
+        summary_table.SamplingRate(nc) = hdr.orig.SampleRate(hdr.orig.chansel(i));
         
         % Get the first 2 values of the normal distribution (will be used
         % to identify signal clipping peaks)
