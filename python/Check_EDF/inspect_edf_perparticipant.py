@@ -201,6 +201,7 @@ with open(f"{summary_path}/EDF_report.html", "w", encoding="utf-8") as f:
         <body>""", file=f)
         
     print('<h1>List of parameters from EDF database per participant</h1>', file=f)
+    print(f"<h2>selected database: {Path(folder_path).stem} </h2>", file=f)
 
     for e, edf_path in enumerate(edf_files):
         # print(f'file {e+1}/{len(edf_files)}, currently opening file: {edf_path}\n')
