@@ -522,7 +522,7 @@ with open(f"{summary_path}/EDF_inspection_report.html", "w", encoding="utf-8") a
     
     # ###########################################################################
     # Extract EOG info
-    mask_eog = df_full['channel'].str.contains(r'EOG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
+    mask_eog = df_full['transducer_type'].str.contains(r'EOG', case = False, na=False) | df_full['channel'].str.contains(r'EOG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
     df_full_eog = df_full[mask_eog]
     
     # Check if the number of participants with only EOG is the same as df_full. 
@@ -668,7 +668,7 @@ with open(f"{summary_path}/EDF_inspection_report.html", "w", encoding="utf-8") a
     # ###########################################################################
     # # # Extract ECG info
     # # I am removing (commenting) ECG infromation exctraction for now because it makes the output too heavy
-    # mask_ecg = df_full['channel'].str.contains(r'ecg', case = False, na=False) # create a mask that returns true for lines containing either ecg in the channel column
+    # mask_ecg = df_full['transducer_type'].str.contains(r'ECG', case = False, na=False) | df_full['channel'].str.contains(r'ECG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
     # df_full_ecg = df_full[mask_ecg]
 
     # # Check if the number of participants with only ECG is the same as df_full. 
