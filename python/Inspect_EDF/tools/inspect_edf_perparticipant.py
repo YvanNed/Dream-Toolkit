@@ -317,7 +317,7 @@ with open(f"{summary_path}/EDF_perParticipant_report.html", "w", encoding="utf-8
             
             #######################################################################
             # Extract EOG info
-            mask_eog = df['channel'].str.contains(r'EOG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
+            mask_eog = df['transducer_type'].str.contains(r'EOG', case = False, na=False) | df['channel'].str.contains(r'EOG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
             df_eog = df[mask_eog]
             print('<h4 class="indent1">EOG:</h4>', file=f)
             if not df_eog.empty:
@@ -358,7 +358,7 @@ with open(f"{summary_path}/EDF_perParticipant_report.html", "w", encoding="utf-8
             
             #######################################################################
             # Extract ECG info
-            mask_ecg = df['channel'].str.contains(r'ecg', case = False, na=False) # create a mask that returns true for lines containing either ecg in the channel column
+            mask_ecg = df['transducer_type'].str.contains(r'ECG', case = False, na=False) | df['channel'].str.contains(r'ECG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
             df_ecg = df[mask_ecg]
 
             print('<h4 class="indent1">ECG:</h4>', file=f)

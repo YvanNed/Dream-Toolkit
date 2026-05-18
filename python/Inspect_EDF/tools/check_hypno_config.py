@@ -15,7 +15,7 @@ import pandas as pd
 from pathlib import Path
 
 # Définition du chemin des données
-path_data = '/Users/yvan.nedelec/OneDrive - ICM/Documents/RE_yvan/projects/noemie_rescue/data'
+path_data = '/Users/yvan.nedelec/OneDrive - ICM/Documents/RE_yvan/projects/noemie_apomorphe/data'
 
 #%% Check if you have a matching number of edf and hypnogram
 # Recherche des fichiers EDF
