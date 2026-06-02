@@ -152,9 +152,36 @@ if not edf_files:
 else:
     print(f"\nThere is {len(edf_files)} .edf files in your folder!")
     
-summary_path = f'{folder_path}/summary'
+summary_path = f'{folder_path}/summary_inspection'
 if not os.path.exists(summary_path):
     os.makedirs(summary_path)
+    readme_text = (
+        "# summary_inspection — Output files\n\n"
+        "This folder is created automatically by the EDF inspection tools (Dream-Toolkit).\n"
+        "It contains summary tables (.tsv) and HTML reports generated from the EDF files in the parent study folder.\n\n"
+        "## Output files\n\n"
+        "| File | Tool | Description |\n"
+        "|------|------|-------------|\n"
+        "| FULL_summary_table_edf.tsv | inspect_edf, perdataset | One row per EDF file — all header fields |\n"
+        "| EDF_inspection_report.html | perdataset | Human-readable HTML inspection report |\n"
+        "| EDF_perParticipant_report.html | perparticipant | Per-participant HTML report |\n"
+        "| EEG_summary_table.tsv | all | EEG channel overview |\n"
+        "| EEG_missing_edf.tsv | all | EDF files where EEG channels could not be detected |\n"
+        "| EEG_suspect_edf.tsv | all | EDF files with an unexpected number of EEG channels |\n"
+        "| EEG_inverted_polarity_edf.tsv | all | EEG channels with suspected inverted polarity |\n"
+        "| EEG_bad_dynamic_range_edf.tsv | all | EEG channels with a dynamic range below threshold |\n"
+        "| EEG_bad_resolution_edf.tsv | all | EEG channels with a resolution above threshold |\n"
+        "| EOG_*.tsv | all | Same checks for EOG channels |\n"
+        "| ECG_*.tsv | all | Same checks for ECG channels |\n"
+        "| failed_edf_read.tsv | all | EDF files that could not be read |\n\n"
+        "## Tools that generate this folder\n\n"
+        "- **inspect_edf_voila.ipynb** — Interactive UI (run with `voila tools/inspect_edf_voila.ipynb`). Recommended for non-programmers.\n"
+        "- **inspect_edf.ipynb** — Jupyter notebook version with visible code cells. Use for debugging.\n"
+        "- **inspect_edf_perdataset.py** — Script version; processes a full dataset folder in one shot.\n"
+        "- **inspect_edf_perparticipant.py** — Script version; generates one report per participant.\n"
+    )
+    with open(f'{summary_path}/FILES_DESCRIPTION.md', 'w', encoding='utf-8') as rf:
+        rf.write(readme_text)
     
 #%% check if there is groups and session in the database
 # check if there is a participants.tsv file to get different groups or sessions
