@@ -16,4 +16,11 @@ dependencies:
   - ipywidgets=8.1.*
   - ipykernel=6.29.*
   - tk=8.6.*
+  - scipy=1.16.*
+  - matplotlib=3.10.*
+  - statsmodels=0.14.*
+  - scikit-learn=1.7.*
+  - edfio=0.4.*
   - pip
+  - pip:
+    - specparam
