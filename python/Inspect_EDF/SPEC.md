@@ -142,7 +142,7 @@ Full PSG spectral pipeline: epoch rejection → PSD (Welch, 4 s windows) → ape
 A preprocessing module is being developed to follow the inspection and channel-harmonization steps. It is structured in three phases.
 
 **Phase 1 — Quality overview (per participant, per channel)**
-Implemented as `tools/quality_overview_voila.ipynb`. Produces one `mne.Report` HTML per participant. For each EEG channel: signal amplitude histogram with Savitzky-Golay smooth + peak detection, time series, metrics table, and a YASA hypnospectrogram (0.1–40 Hz bandpass applied per-channel just before plotting). Flags suspect channels for priority inspection and writes `suggested_exclusions.tsv` for user review before Phase 2.
+Implemented as `tools/quality_overview_voila.ipynb`. Produces one `mne.Report` HTML per participant. For each EEG channel: signal amplitude histogram with Savitzky-Golay smooth + peak detection, time series, metrics table, and a YASA hypnospectrogram (0.1–40 Hz bandpass applied per-channel just before plotting). Flags suspect channels for priority inspection. At the end of each run, generates `dataset_overview.html` — a single-page dataset-level summary with statistics and distribution plots per electrode, consumed by Phase 2 to identify channels to exclude.
 
 **EDF scan**: recursive (`rglob('*.edf')`), so datasets organized in subfolders (e.g. `group1/`, `group2/`) are fully covered without needing to run the tool per subfolder.
 
@@ -168,16 +168,22 @@ Implemented as `tools/quality_overview_voila.ipynb`. Produces one `mne.Report` H
 
 `flat_pct` = fraction of consecutive sample pairs with \|diff\| < `max(2×ADC_step, 0.06 µV)`. `bounds_pct` = fraction of samples within 0.5 µV of the EDF physical_min/max header limits. `hist_extreme_pct` = fraction of samples in the outermost histogram bins. **Kurtosis is intentionally NOT used as a flagging criterion** — normal PSG EEG has physiologically high kurtosis (spindles, K-complexes produce values of 100–500), making it unreliable without per-subject normalization. `p99_abs_uV` and `p999_abs_uV` (99th and 99.9th percentile of |amplitude|) are recorded as informational metrics in `quality_summary.tsv` but are not currently used for flagging; they are useful for cross-channel and cross-dataset amplitude comparison.
 
+**`dataset_overview.html` — dataset-level summary**: generated at the end of every run from the full cumulative `quality_summary.tsv` (reflects all participants processed to date, not just the current run). Contains two levels:
+- **Global section (all electrodes pooled)**: stats table (mean / median / p5 / p25 / p75 / p95 per metric), n_peaks frequency table by electrode (flags DC drift and quantization cases), grouped boxplots (one subplot per key metric, x-axis = electrode — compares electrodes side by side).
+- **Per-electrode sections**: stats table for that electrode only, boxplots of each metric's distribution across participants with individual data points overlaid (reveals outlier participants for that channel).
+
+Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `p99_abs_uV`, `p999_abs_uV`. All numeric metrics (`mean_uV`, `kurtosis`, `skewness` included) appear in the stats tables. HTML is standalone (figures embedded as base64 PNG, no external dependencies).
+
 **Outputs per run**:
 - `<data_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_overview.html` — HTML reports mirror the EDF subfolder structure under `reports_quality_overview/`
-- `<data_folder>/reports_quality_overview/quality_summary.tsv` — all numeric metrics for all channels (always at root, aggregated across subfolders)
-- `<data_folder>/reports_quality_overview/suggested_exclusions.tsv` — flagged channels, editable before Phase 2 (at root)
+- `<data_folder>/reports_quality_overview/quality_summary.tsv` — all numeric metrics for all channels, cumulative across runs (always at root); columns: `file_id`, `channel`, `mean_uV`, `std_uV`, `kurtosis`, `skewness`, `p99_abs_uV`, `p999_abs_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `n_peaks`, `suspect_reason`, `exclude` (last two columns)
+- `<data_folder>/reports_quality_overview/dataset_overview.html` — dataset-level statistics and plots (always at root, regenerated each run)
 - `<data_folder>/reports_quality_overview/failed_files.tsv` — files that could not be read (at root)
 
-**End-of-run summary** (printed in the notebook output): participants processed, participants with ≥1 flagged channel, total flagged channels, files failed to load.
+**End-of-run summary** (printed in the notebook output): participants processed, participants with ≥1 flagged channel, total flagged channels, files failed to load, path to `dataset_overview.html`.
 
 **Phase 2 — Preprocessing + epoch rejection**
-Reads the exclusion TSV (editable widget at notebook start), applies filtering (default proposal: FIR `l_freq=0.1, h_freq=40, phase=zero-double, fir_window=hamming`), resampling (with anti-aliasing), and re-referencing (driven by `config_param/remap_reref_persubject.json`). Epochs are 30 s, aligned to the hypnogram. Rejection criteria: peak-to-peak amplitude, point-to-point (gradient) for high-frequency artifacts, flat-signal detection, manually-scored events (limb movement, apnea, micro-arousal — format TBD: EDF annotations vs. XML vs. CSV), and aperiodic 1/f fit quality. Output: one `mne.Report` per participant including a channel × epoch heatmap colored by the rejection method that flagged each epoch, plus a `rejection_log.tsv` and cleaned epochs saved as `.fif`.
+Reads the `quality_summary.tsv` produced by Phase 1 (filtering on the `exclude` column) to determine which channels to exclude. Applies filtering (default proposal: FIR `l_freq=0.1, h_freq=40, phase=zero-double, fir_window=hamming`), resampling (with anti-aliasing), and re-referencing (driven by `config_param/remap_reref_persubject.json`). Epochs are 30 s, aligned to the hypnogram. Rejection criteria: peak-to-peak amplitude, point-to-point (gradient) for high-frequency artifacts, flat-signal detection, manually-scored events (limb movement, apnea, micro-arousal — format TBD: EDF annotations vs. XML vs. CSV), and aperiodic 1/f fit quality. Output: one `mne.Report` per participant including a channel × epoch heatmap colored by the rejection method that flagged each epoch, plus a `rejection_log.tsv` and cleaned epochs saved as `.fif`.
 
 **Phase 3 — Interactive review**
 Click on the rejection heatmap to inspect any flagged epoch (time series, PSD, etc.). Target user has no programming experience — framework choice will favor the simplest deployable option (Voila / Plotly).
