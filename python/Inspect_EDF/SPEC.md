@@ -27,6 +27,7 @@ Inspect_EDF/
 │   ├── remap_hypno.ipynb                      # Hypnogram label remapping (Jupyter)
 │   ├── remap_hypno_voila.ipynb                # Hypnogram label remapping (Voila GUI)
 │   ├── quality_overview_voila.ipynb           # Phase 1 quality overview (Voila GUI)
+│   ├── preprocessing_voila.ipynb             # Phase 2 preprocessing + epoch rejection (Voila GUI)
 │   ├── SpectralPower_&_AperiodicFit_PSG.py    # Spectral analysis pipeline
 │   ├── generate_test_data.py                  # Inject controlled defects into a clean EDF (test fixtures)
 │   ├── test_data/                             # Real EDF fixtures + generated defective files + manifest
@@ -58,6 +59,7 @@ voila tools/inspect_edf_voila.ipynb
 voila "tools/select&remap_channels_edf_voila.ipynb"
 voila tools/remap_hypno_voila.ipynb
 voila tools/quality_overview_voila.ipynb
+voila tools/preprocessing_voila.ipynb
 ```
 
 ### Standard Jupyter notebooks
@@ -148,7 +150,11 @@ Implemented as `tools/quality_overview_voila.ipynb`. Produces one `mne.Report` H
 
 **Hypnogram suffix auto-detection**: when the data folder is selected, the tool scans `.txt` files next to each EDF, counts candidate suffixes (all files per EDF are matched — no early break), and auto-fills the `Hypno suffix:` widget with the most common suffix. In case of equal counts, the longest suffix is preferred (more specific = remapped/processed version). All detected suffixes and their counts are shown in a colour-coded info label below the widget (green = all EDFs matched, orange = partial match or no files found).
 
-**Live output warnings**: if a hypnogram is not found, fails to load, or has a length mismatch with the EDF, a plain-text `⚠` warning is printed in the notebook output area immediately after the per-participant result line (in addition to the yellow banner already shown in the HTML report's Overview section).
+**Live output warnings**: if a hypnogram is not found, fails to load, has a length mismatch with the EDF, or contains unrecognised stage labels, a plain-text `⚠` warning is printed in the notebook output area immediately after the per-participant result line (in addition to the yellow banner already shown in the HTML report's Overview section).
+
+**Hypnogram label validation**: after mapping labels to YASA integers (`W→0`, `N1→1`, `N2→2`, `N3→3`, `R→4`), the tool checks for unrecognised labels. `MT` (movement time) is silently tolerated — YASA treats it as an artifact epoch (NaN). Any other unrecognised label triggers a warning. Two severity levels: if > 10% of epochs are unrecognised, `hypno_vec` is set to `None` (spectrogram skipped, error-level warning pointing to `remap_hypno_voila`); if ≤ 10%, `hypno_vec` is kept but a warning lists the unrecognised labels and their count. This catches hypnograms that were not yet remapped to AASM convention (e.g. `S1/S2/S3/S4` or raw numeric labels).
+
+**Spectrogram fault tolerance**: the `yasa.hypno_upsample_to_data()` + `yasa.plot_spectrogram()` calls are wrapped in a `try/except`. If YASA raises an exception, the channel's spectrogram section in the HTML report shows the error message and processing continues to the next channel and participant without interruption.
 
 **Report structure**: the MNE Report has one section per channel (e.g. "C3", "Fp1") plus an "Overview" section with the flag summary. Each channel section contains: histogram → time series → metrics table → spectrogram. The selector widget shows how many participants already have an existing report before the "Skip participants with an existing report" checkbox.
 
@@ -182,11 +188,51 @@ Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pc
 
 **End-of-run summary** (printed in the notebook output): participants processed, participants with ≥1 flagged channel, total flagged channels, files failed to load, path to `dataset_overview.html`.
 
-**Phase 2 — Preprocessing + epoch rejection**
-Reads the `quality_summary.tsv` produced by Phase 1 (filtering on the `exclude` column) to determine which channels to exclude. Applies filtering (default proposal: FIR `l_freq=0.1, h_freq=40, phase=zero-double, fir_window=hamming`), resampling (with anti-aliasing), and re-referencing (driven by `config_param/remap_reref_persubject.json`). Epochs are 30 s, aligned to the hypnogram. Rejection criteria: peak-to-peak amplitude, point-to-point (gradient) for high-frequency artifacts, flat-signal detection, manually-scored events (limb movement, apnea, micro-arousal — format TBD: EDF annotations vs. XML vs. CSV), and aperiodic 1/f fit quality. Output: one `mne.Report` per participant including a channel × epoch heatmap colored by the rejection method that flagged each epoch, plus a `rejection_log.tsv` and cleaned epochs saved as `.fif`.
+**Phase 2 — Preprocessing + epoch rejection** (`tools/preprocessing_voila.ipynb`)
 
-**Phase 3 — Interactive review**
-Click on the rejection heatmap to inspect any flagged epoch (time series, PSD, etc.). Target user has no programming experience — framework choice will favor the simplest deployable option (Voila / Plotly).
+Implemented as a Voila notebook with four sections: (1) path configuration, (2) preprocessing and rejection parameters, (3) participant selection, (4) processing loop.
+
+**Inputs**:
+- `quality_summary.tsv` from Phase 1 — `exclude` column identifies channels to drop before preprocessing
+- `remap_reref_persubject.json` from `select&remap_channels_edf` — drives channel remapping and re-referencing per participant
+- Raw EDF files and remapped hypnograms (default suffix `_Hypnogram_remapped.txt`)
+
+**Preprocessing steps** (applied in this order, each optional via widget):
+1. **Resampling** — `raw.resample(target_freq, npad='auto')`. Target frequency chosen by user; applied before filtering to avoid aliasing. Step is skipped if checkbox is unchecked.
+2. **Re-referencing** — applied as specified in JSON config per participant: `'average'` → common average reference; `[list]` → subtract listed channel(s) then drop them; empty → no re-referencing.
+3. **Bandpass filter** — FIR zero-double-pass Hamming window, defaults `l_freq=0.1 Hz, h_freq=40 Hz`. Applied via `raw.filter(..., method='fir', phase='zero-double', fir_window='hamming', fir_design='firwin')`.
+
+**Epoching**: 30-second fixed-length epochs created with `mne.make_fixed_length_epochs(raw, duration=30)`. Sleep stage assigned to each epoch from the hypnogram; epochs at the tail beyond the hypnogram length are discarded.
+
+**Epoch rejection — five methods**:
+
+All methods operate on the raw epoch data in µV (`epochs.get_data() * 1e6`, shape `n_epochs × n_channels × n_times`). Rejection masks are boolean arrays of shape `(n_epochs, n_channels)` — a `True` entry means that (epoch, channel) pair was flagged. An epoch is considered **rejected** if *any* channel is flagged by *any* method.
+
+| Method | Signal feature | Default threshold | Notes |
+|--------|---------------|-------------------|-------|
+| **Amplitude** | Peak-to-peak = `max(epoch) − min(epoch)` | W: 300, N1: 250, N2/N3: 200, REM: 250 µV | Per-stage threshold; W/REM more lenient because muscle and eye-movement artefacts are physiologically common in those stages. Equivalent to MNE's `drop_bad(reject=...)` criterion. |
+| **Flat signal** | Peak-to-peak < threshold | 1 µV | Detects disconnected electrodes or amplifier saturation within a single epoch. Logically identical to MNE's `drop_bad(flat=...)` criterion: both compare `ptp` against a low-amplitude threshold. |
+| **Gradient** | `max(|diff(epoch)|)` across time | 100 µV/sample | Maximum sample-to-sample absolute difference; sensitive to sudden jumps, electrode pops, and movement artefacts not captured by peak-to-peak. `diff` and `max` both operate on `axis=-1` (time axis) to handle the 3D `(n_epochs, n_channels, n_times)` array correctly. |
+| **Manual events** *(placeholder)* | Manually scored events (limb movement, apnea, micro-arousal) | — | Section reserved in code with `# TODO` comment. Format TBD: EDF annotations vs. XML vs. CSV. Not yet implemented. |
+| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, 2–30 Hz, `aperiodic_mode='fixed'`, `max_n_peaks=0`) | MAE > 0.15 OR R² < 0.95 | Fit restricted to ≥2 Hz to limit influence of slow-wave non-stationarity. `max_n_peaks=0` skips peak detection for speed (we only need the aperiodic metrics). A failed fit is treated as a double flag (both error and R²). |
+
+**Heatmap — `_rejection_heatmap.png`**: channels (Y-axis) × epochs (X-axis); each cell coloured by the flagging method with priority encoding when multiple methods fire. A hypnogram strip is drawn above the main heatmap. Colour scheme: dark purple = none, red = amplitude, blue = flat, orange = gradient, yellow = 1/f error, green = 1/f R², dark red = multiple. Title includes overall rejection percentage.
+
+**Two-step QC approach** — Phase 2 does **not** drop epochs. It saves ALL epochs (including flagged ones) with an MNE `metadata` DataFrame attached, so downstream Phase 2b can inspect rejected epochs before finalising the rejection.
+
+**Outputs per participant** (in `<derivatives_root>/sub-{file_id}/`):
+- `{file_id}_all-epo.fif` — all epochs with `epochs.metadata` DataFrame (columns: `epoch_idx`, `stage`, `reject_flag`, `reject_method`, `flag_amplitude`, `flag_flat`, `flag_gradient`, `flag_1f_error`, `flag_1f_r2`)
+- `{file_id}_rejection_mask.tsv` — per-(epoch, channel) rejection table; human-readable and manually editable before Phase 2b (columns: `epoch_idx`, `stage`, `channel`, `reject_flag`, plus one bool column per method)
+- `{file_id}_rejection_log.tsv` — rejection counts per stage per method (columns: `file_id`, `stage`, `method`, `n_total`, `n_rejected`, `pct_rejected`)
+- `{file_id}_rejection_heatmap.png` — channels × epochs colour-coded heatmap
+- `{file_id}_preprocessing_report.html` — MNE HTML report with heatmap and rejection summary table
+
+**Global output** (at `<derivatives_root>/`):
+- `preprocessing_phase2_global_rejection.tsv` — concatenation of all `_rejection_log.tsv` files across participants
+- `preprocessing_phase2_failed.tsv` — participants that could not be processed (EDF not found, config missing, hypno mismatch, etc.)
+
+**Phase 2b — Interactive QC** *(future)*
+Load `_all-epo.fif` + `_rejection_mask.tsv`, display the heatmap for navigation, show the raw signal of flagged epochs for visual inspection, allow manual override of individual entries in the mask, then save a final `{file_id}_clean-epo.fif` with only the validated-clean epochs.
 
 ### Test data infrastructure
 
