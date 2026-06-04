@@ -124,6 +124,8 @@ Interactive tool to harmonize sleep stage labels across a heterogeneous database
 4. **Save** — Writes remapped hypnograms next to originals using the output suffix defined in Section 1; end message confirms completion and recalls the suffix used
 5. **Verify** — Before/after configuration summary; verdict fails only if non-AASM labels remain (multiple configurations with valid AASM labels are acceptable — e.g. insomnia patients legitimately missing N3)
 
+**Hypnogram suffix auto-detection**: when the data folder is selected, the tool scans `.txt` files next to each EDF, counts candidate suffixes (all files per EDF are matched — no early break), and auto-fills the `Hypnogram suffix:` widget with the most common suffix. In case of equal counts, the **shortest** suffix is preferred — the goal is to select the raw (unremapped) hypnogram, not an already-processed version. This is the reverse of the tiebreak used in `quality_overview_voila` and `preprocessing_voila`, which prefer the longest suffix. All detected suffixes and their counts are shown in a colour-coded info label below the widget (green = all EDFs matched, orange = partial match or no files found).
+
 **Key constants:**
 - `DEFAULT_MAPPING`: `0→W`, `1→N1`, `2→N2`, `3→N3`, `4→N3`, `5→R`, `?→W`, `S1→N1`…
 - `STANDARD_LABELS`: `{W, N1, N2, N3, R}`
