@@ -16,6 +16,7 @@ For full project description, tool details, and planned modules, see [SPEC.md](S
 
 - **Developer background**: The primary developer is a sleep research engineer with domain expertise in PSG/EEG but limited software engineering experience. Prioritize readability and correctness over abstraction or cleverness.
 - **No unnecessary abstraction**: Keep functions explicit and readable. Three clear lines beat a clever one-liner. Do not introduce helper functions or classes unless the complexity clearly justifies it.
+- **Error handling in notebooks and new features**: When implementing a new feature or creating a notebook, add `try/except` blocks proactively. Distinguish fatal vs non-fatal failures: a fatal step (e.g. file I/O, epoching) should add the item to a `failed` list and `continue` to the next iteration; a non-fatal step (e.g. re-referencing, report generation) should print a `⚠` warning and continue processing. In Voila notebooks specifically, every button callback and every per-item processing loop must be wrapped so that a single failure never silently crashes the whole run or freezes the UI. Always surface error messages to the user via a widget (e.g. `HTML`, `Output`) or `print()` inside a `widgets.Output` context.
 - **Comments**: Add them only where the EEG/PSG domain logic would not be obvious to a reader unfamiliar with sleep research (e.g. why a 500 µV threshold flags clipping, or why stage 4 is remapped to N3).
 - **No formal test suite**: Validate tools against real EDF files from the dataset. Do not add pytest or unittest infrastructure unless explicitly requested.
 - **OS**: Windows 10 with Conda. PowerShell is the default shell. Use forward slashes in Python path strings (MNE and pathlib handle them correctly on Windows).
@@ -29,4 +30,5 @@ For full project description, tool details, and planned modules, see [SPEC.md](S
 - **Updating CLAUDE.md**: If a design decision or development rule changes, update this file directly as part of the task.
 - **Read SPEC.md at the start of each new task**: Before implementing anything, read `SPEC.md` once to get an up-to-date picture of the project structure, tool inventory, and planned modules. This avoids re-deriving context that is already documented there.
 - **Ask clarifying questions before starting**: Before implementing any non-trivial task, ask the user clarifying questions to resolve ambiguities (format, scope, backward compatibility, etc.), then present a plan for validation before touching any file.
+- **Language in tools and documentation**: All user-facing strings in notebooks (widget labels, print statements, HTML banners, section descriptions) must be in English. SPEC.md must also be written in English.
 
