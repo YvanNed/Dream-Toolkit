@@ -30,4 +30,5 @@ For full project description, tool details, and planned modules, see [SPEC.md](S
 - **Updating CLAUDE.md**: If a design decision or development rule changes, update this file directly as part of the task.
 - **Read SPEC.md at the start of each new task**: Before implementing anything, read `SPEC.md` once to get an up-to-date picture of the project structure, tool inventory, and planned modules. This avoids re-deriving context that is already documented there.
 - **Ask clarifying questions before starting**: Before implementing any non-trivial task, ask the user clarifying questions to resolve ambiguities (format, scope, backward compatibility, etc.), then present a plan for validation before touching any file.
+- **Language in tools and documentation**: All user-facing strings in notebooks (widget labels, print statements, HTML banners, section descriptions) must be in English. SPEC.md must also be written in English.
 
