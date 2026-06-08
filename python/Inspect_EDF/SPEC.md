@@ -201,6 +201,26 @@ Implemented as a Voila notebook with four sections: (1) path configuration, (2) 
 - `remap_reref_persubject.json` from `select&remap_channels_edf` — drives channel remapping and re-referencing per participant
 - Raw EDF files and remapped hypnograms (default suffix `_Hypnogram_remapped.txt`)
 
+**Channel-name handling when loading EDF data from notebook outputs** (critical):
+
+The EDF files on disk carry their **original** acquisition channel names (e.g. `Fp1, C3, O1, A2`). The two config/report files consumed here refer to channels by their **harmonized (remapped)** names instead:
+- `remap_reref_persubject.json` stores the mapping original → remapped, e.g. `{"Fp1":"F","C3":"C","O1":"O","A2":"M"}`.
+- `quality_summary.tsv` lists each channel under its **remapped** name. This is because `quality_overview_voila` renames the channels (`raw.rename_channels`) *before* computing per-channel metrics, so the `exclude` flags and the channel checkboxes derived from this file are all expressed in remapped names.
+
+Because `mne.io.read_raw_edf(include=...)` filters on the EDF's **original** names, the two tools resolve the `include` list differently:
+- `quality_overview_voila` builds `selected_channels = list(sub_config['remap'].keys())` — i.e. the **original** names directly — so its `include=` matches the EDF, then renames afterwards.
+- `preprocessing_voila` takes its channel selection from the UI (populated from `quality_summary.tsv`), so `selected_channels` is in **remapped** names. It must translate them **back to original names** before `include=`, otherwise `raw` loads zero channels (no match) and every downstream step — re-referencing and filtering — fails with misleading "no EEG channels" / "picks yielded no channels" errors. The translation uses the inverse of the remap:
+  ```python
+  inv_remap = {remapped: original for original, remapped in sub_config.get('remap', {}).items()}
+  include_channels = [inv_remap.get(ch, ch) for ch in selected_channels]
+  raw = mne.io.read_raw_edf(..., include=include_channels, ...)
+  ```
+  `inv_remap.get(ch, ch)` leaves any non-remapped name unchanged (robust if a channel is listed under its original name). After loading, the forward remap is re-applied (step [B] below) so the rest of the pipeline works with the harmonized names.
+
+**Shared utility functions** (defined identically in `quality_overview_voila` and `preprocessing_voila`, used right after `read_raw_edf`):
+- `drop_suffix_duplicates(raw)` — MNE ≥ 1.8 appends `-0`/`-1` to duplicate channel names; this keeps only the `-0` variant and drops the rest. Returns `(raw, dropped_list)`.
+- `adapt_remap_dict_to_suffixes(raw, remap_dict)` — rewrites the remap dict so a base name (`Fp1`) matches MNE's suffixed name (`Fp1-0`) when duplicates were present, so `rename_channels` still applies.
+
 **Preprocessing steps** (applied in this order, each optional via widget):
 1. **Resampling** — `raw.resample(target_freq, npad='auto')`. Target frequency chosen by user; applied before filtering to avoid aliasing. Step is skipped if checkbox is unchecked.
 2. **Re-referencing** — applied as specified in JSON config per participant: `'average'` → common average reference; `[list]` → subtract listed channel(s) then drop them; empty → no re-referencing.
