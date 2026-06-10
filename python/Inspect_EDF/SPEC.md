@@ -124,7 +124,7 @@ Interactive tool to harmonize sleep stage labels across a heterogeneous database
 4. **Save** — Writes remapped hypnograms next to originals using the output suffix defined in Section 1; end message confirms completion and recalls the suffix used
 5. **Verify** — Before/after configuration summary; verdict fails only if non-AASM labels remain (multiple configurations with valid AASM labels are acceptable — e.g. insomnia patients legitimately missing N3)
 
-**Hypnogram suffix auto-detection**: when the data folder is selected, the tool scans `.txt` files next to each EDF, counts candidate suffixes (all files per EDF are matched — no early break), and auto-fills the `Hypnogram suffix:` widget with the most common suffix. In case of equal counts, the **shortest** suffix is preferred — the goal is to select the raw (unremapped) hypnogram, not an already-processed version. This is the reverse of the tiebreak used in `quality_overview_voila` and `preprocessing_voila`, which prefer the longest suffix. All detected suffixes and their counts are shown in a colour-coded info label below the widget (green = all EDFs matched, orange = partial match or no files found).
+**Hypnogram suffix auto-detection**: when the data folder is selected, the tool scans `.txt` files next to each EDF, counts candidate suffixes (all files per EDF are matched — no early break), and auto-fills the `Hypnogram suffix:` widget with the most common suffix. In case of equal counts, the **shortest** suffix is preferred — the goal is to select the raw (unremapped) hypnogram, not an already-processed version. This is the reverse of the strategy used in `quality_overview_voila` and `preprocessing_voila`, which prefer the longest suffix among candidates appearing for ≥50% of the maximum count. All detected suffixes and their counts are shown in a colour-coded info label below the widget (green = all EDFs matched, orange = partial match or no files found).
 
 **Key constants:**
 - `DEFAULT_MAPPING`: `0→W`, `1→N1`, `2→N2`, `3→N3`, `4→N3`, `5→R`, `?→W`, `S1→N1`…
@@ -152,7 +152,7 @@ Implemented as `tools/quality_overview_voila.ipynb`. Produces one `mne.Report` H
 
 **EDF scan**: recursive (`rglob('*.edf')`), so datasets organized in subfolders (e.g. `group1/`, `group2/`) are fully covered without needing to run the tool per subfolder.
 
-**Hypnogram suffix auto-detection**: when the data folder is selected, the tool scans `.txt` files next to each EDF, counts candidate suffixes (all files per EDF are matched — no early break), and auto-fills the `Hypno suffix:` widget with the most common suffix. In case of equal counts, the longest suffix is preferred (more specific = remapped/processed version). All detected suffixes and their counts are shown in a colour-coded info label below the widget (green = all EDFs matched, orange = partial match or no files found).
+**Hypnogram suffix auto-detection**: when the data folder is selected, the tool scans `.txt` files next to each EDF, counts candidate suffixes (all files per EDF are matched — no early break), and auto-fills the `Hypno suffix:` widget. Selection rule: among suffixes whose count is ≥ 50% of the maximum count, the **longest** is preferred (more specific = remapped/processed version); count is the tiebreaker when lengths are equal. The 50% threshold prevents rare or accidental long suffixes from winning when remapping is far from complete. All detected suffixes and their counts are shown in a colour-coded info label below the widget (green = all EDFs matched, orange = partial match or no files found). The same rule applies in `preprocessing_voila`.
 
 **Live output warnings**: if a hypnogram is not found, fails to load, has a length mismatch with the EDF, or contains unrecognised stage labels, a plain-text `⚠` warning is printed in the notebook output area immediately after the per-participant result line (in addition to the yellow banner already shown in the HTML report's Overview section).
 
@@ -200,6 +200,38 @@ Implemented as a Voila notebook with four sections: (1) path configuration, (2) 
 - `quality_summary.tsv` from Phase 1 — `exclude` column identifies channels to drop before preprocessing
 - `remap_reref_persubject.json` from `select&remap_channels_edf` — drives channel remapping and re-referencing per participant
 - Raw EDF files and remapped hypnograms (default suffix `_Hypnogram_remapped.txt`)
+
+**Channel-name handling when loading EDF data from notebook outputs** (critical):
+
+The EDF files on disk carry their **original** acquisition channel names (e.g. `Fp1, C3, O1, A2`), usually alongside non-montage channels (ECG, respiration, SpO2, position) that may be sampled at a **higher rate** than the EEG (e.g. ECG at 512 Hz while EEG is at 256 Hz). The config/report files refer to channels by their **harmonized (remapped)** names:
+- `remap_reref_persubject.json` stores the mapping original → remapped, e.g. `{"Fp1":"F","C3":"C","O1":"O","A2":"M"}`. Its **keys are the original EDF names**, its values the harmonized names.
+- `quality_summary.tsv` lists each channel under its **remapped** name, because `quality_overview_voila` renames the channels (`raw.rename_channels`) *before* computing per-channel metrics. So the `exclude` flags and the channel checkboxes derived from it are expressed in remapped names.
+
+Both tools load the EDF with the same robust pattern — `include=` evaluated **at read time** using the **original** names taken straight from the remap keys, with `preload=False` so no signal is read yet:
+```python
+raw = mne.io.read_raw_edf(str(edf_path), preload=False, encoding='latin-1',
+                          include=list(sub_config['remap'].keys()), verbose=False)
+raw, _ = drop_suffix_duplicates(raw)
+raw.rename_channels(adapt_remap_dict_to_suffixes(raw, sub_config['remap']))
+```
+Why `include=` at read time (and **not** a lazy `raw.pick(...)` after loading):
+- **Avoids an MNE EDF-reader bug**: reading a channel *subset* lazily (`read_raw_edf(preload=False)` with no `include`, then `pick`, then `load_data`) raises a bare `AssertionError` (`max(n_smp_read) == smp_exp` in `mne/io/edf/edf.py`) whenever the subset **excludes the file's highest-sampling-rate channel** — exactly the case for a PSG where the ECG (512 Hz) is dropped and only EEG (256 Hz) is kept. Passing `include=` at read time rebuilds the record structure for the included set, so the assertion never fires. (This is why a bare, message-less error surfaced during development.)
+- **Preserves the native sampling rate**: with only EEG channels included, MNE's common sampling rate stays at the EEG rate (256 Hz). Loading *all* channels first (`preload=True` on the full montage) would upsample the EEG to the file max (512 Hz) — a silent change of semantics.
+- **No inverse-remap dictionary**: the include list is `list(remap.keys())` directly, identical to `quality_overview_voila` — the two tools stay consistent.
+
+The two tools then differ only in what follows:
+- `quality_overview_voila` analyses **every** remap channel, so it keeps them all (uses `preload=True`, no further selection).
+- `preprocessing_voila` lets the user deselect channels in the UI (selection in **remapped** names). After the rename it drops the de-selected channels, then calls `raw.load_data()` — so the signal is read from disk **only for the channels actually kept**:
+  ```python
+  present = [ch for ch in selected_channels if ch in raw.ch_names]   # remapped namespace, post-rename
+  raw.drop_channels([ch for ch in raw.ch_names if ch not in present])
+  raw.load_data()
+  ```
+  A `present`-empty guard (e.g. if the rename failed) marks the participant as failed and skips it, so a single bad file never crashes the run.
+
+**Shared utility functions** (defined identically in `quality_overview_voila` and `preprocessing_voila`, used right after `read_raw_edf`):
+- `drop_suffix_duplicates(raw)` — MNE ≥ 1.8 appends `-0`/`-1` to duplicate channel names; this keeps only the `-0` variant and drops the rest. Returns `(raw, dropped_list)`.
+- `adapt_remap_dict_to_suffixes(raw, remap_dict)` — rewrites the remap dict so a base name (`Fp1`) matches MNE's suffixed name (`Fp1-0`) when duplicates were present, so `rename_channels` still applies.
 
 **Preprocessing steps** (applied in this order, each optional via widget):
 1. **Resampling** — `raw.resample(target_freq, npad='auto')`. Target frequency chosen by user; applied before filtering to avoid aliasing. Step is skipped if checkbox is unchecked.
