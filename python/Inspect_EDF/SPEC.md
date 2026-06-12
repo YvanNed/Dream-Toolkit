@@ -81,6 +81,8 @@ python tools/inspect_edf_perparticipant.py
 
 Inspects EDF file parameters across an entire dataset **without loading signal data**. Reads EDF headers using a custom binary parser to handle encoding edge cases robustly (see design decisions in CLAUDE.md).
 
+**Sampling frequency derivation**: the per-channel 8-byte header field is the *number of samples per data record*, **not** the sampling frequency. The parser stores it as `samples_per_record` and computes `sampling_frequency = samples_per_record / duration_data_record`. In classic EDF the data-record duration is 1 s, so the two values coincide; but EDF+ files frequently use a different record duration (e.g. `0.1 s` → `40 / 0.1 = 400 Hz`, or `2 s` → `512 / 2 = 256 Hz`), so dividing by `duration_data_record` is required to match the rate reported by MNE. The computed value is kept as a string (e.g. `'256'`, `'400'`) to preserve the existing `sorted(set(...))` grouping and avoid TSV round-trip type changes. This applies to every tool sharing the custom header parser: `inspect_edf_voila.ipynb`, `inspect_edf.ipynb`, `inspect_edf_perdataset.py`, `inspect_edf_perparticipant.py`, and `select&remap_channels_edf(_voila).ipynb`.
+
 **Checks performed for EEG, EOG, and ECG channels:**
 - Channel configuration and montage consistency across participants
 - Sampling frequency consistency

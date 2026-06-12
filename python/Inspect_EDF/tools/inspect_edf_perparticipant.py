@@ -80,7 +80,7 @@ def read_edf_header_custom(file_path):
             'digital_min': [],
             'digital_max': [],
             'prefiltering': [],
-            'sampling_frequency': [],
+            'samples_per_record': [],
             'reserved': [],
         }
 
@@ -94,13 +94,27 @@ def read_edf_header_custom(file_path):
                 'digital_min': 8,
                 'digital_max': 8,
                 'prefiltering': 80,
-                'sampling_frequency': 8,
+                'samples_per_record': 8,
                 'reserved': 32,
             }[key]
             channel_fields[key] = [f.read(length).decode(encoding).strip() for _ in range(n)]
 
         header.update(channel_fields)
-    
+
+        # The per-channel EDF header field is the NUMBER OF SAMPLES PER DATA RECORD,
+        # not the sampling frequency. In classic EDF the data-record duration is 1 s, so the
+        # two coincide; but in EDF+ the record duration often differs (e.g. 0.1 s or 2 s), so the
+        # true sampling frequency must be obtained by dividing (e.g. 40 / 0.1 = 400 Hz).
+        dur = header['duration_data_record']
+        sf_list = []
+        for s in header['samples_per_record']:
+            try:
+                sf = float(s) / dur
+                sf_list.append(str(int(sf)) if sf == int(sf) else str(sf))
+            except (ValueError, ZeroDivisionError):
+                sf_list.append(s)  # fall back to the raw field if non-numeric or zero duration
+        header['sampling_frequency'] = sf_list
+
     return header
 
 # custum function to get the path of a folder by selecting it from a browsing window 
