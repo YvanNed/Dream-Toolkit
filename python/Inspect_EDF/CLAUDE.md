@@ -21,6 +21,7 @@ For full project description, tool details, and planned modules, see [SPEC.md](S
 - **Comments**: Add them only where the EEG/PSG domain logic would not be obvious to a reader unfamiliar with sleep research (e.g. why a 500 µV threshold flags clipping, or why stage 4 is remapped to N3).
 - **No formal test suite**: Validate tools against real EDF files from the dataset. Do not add pytest or unittest infrastructure unless explicitly requested.
 - **OS**: Windows 10 with Conda. PowerShell is the default shell. Use forward slashes in Python path strings (MNE and pathlib handle them correctly on Windows).
+- **Normalize path comparisons**: whenever two filesystem paths are compared as strings (equality, `in`, `.isin()`, set membership, dict-key lookup), wrap both sides in `os.path.normcase(...)` first. On Windows this removes drive-letter case (`C:` vs `c:`) and `/` vs `\` mismatches (a no-op on POSIX, so it stays cross-platform). Keep the stored/displayed path in its original form; normalize only at the comparison. This prevents "already-processed / skip" checks from silently failing when one path comes from disk and the other from a fresh folder scan. (See `tools/TODO_path_normalization.md` for the cross-codebase audit status.)
 - **Running Python scripts from the terminal**: `conda` is NOT in the PATH. miniforge3 is installed at `$env:LOCALAPPDATA\miniforge3` (not `$env:USERPROFILE\miniforge3`). To run a script, always use the explicit executable path:
   ```powershell
   & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" tools/my_script.py
