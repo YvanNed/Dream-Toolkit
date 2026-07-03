@@ -32,9 +32,12 @@ Inspect_EDF/
 │   ├── 4_remap_events_edf_voila.ipynb           # Event label harmonization (Voila GUI)
 │   ├── 5_quality_overview_voila.ipynb           # Quality overview (Voila GUI)
 │   ├── 6_preprocessing_voila.ipynb             # Preprocessing + epoch rejection (Voila GUI)
-│   ├── 7_live_explore_1file.ipynb               # Interactive single-file explorer (Jupyter)
-│   ├── 7_live_explore_1file_voila.ipynb         # Interactive single-file explorer (Voila GUI)
-│   ├── 8_SpectralPower_&_AperiodicFit_PSG.py    # Spectral analysis pipeline
+│   ├── 7_inspect_rejected_epochs_voila.ipynb    # QC of rejected epochs — Phase 2b (Voila GUI)
+│   ├── 7_inspect_rejected_epochs_batch.py       # QC of rejected epochs — database-level batch report
+│   ├── qc_rejected_epochs_lib.py                # Shared analysis/plotting for tool 7 (notebook + batch)
+│   ├── 8_live_explore_1file.ipynb               # Interactive single-file explorer (Jupyter)
+│   ├── 8_live_explore_1file_voila.ipynb         # Interactive single-file explorer (Voila GUI)
+│   ├── 9_SpectralPower_&_AperiodicFit_PSG.py    # Spectral analysis pipeline
 │   ├── generate_test_data.py                  # Inject controlled defects into a clean EDF (test fixtures)
 │   ├── test_data/                             # Real EDF fixtures + generated defective files + manifest
 │   ├── images/                                # Reference images for quality checks
@@ -70,7 +73,8 @@ voila tools/3_remap_hypno_voila.ipynb
 voila tools/4_remap_events_edf_voila.ipynb
 voila tools/5_quality_overview_voila.ipynb
 voila tools/6_preprocessing_voila.ipynb
-voila tools/7_live_explore_1file_voila.ipynb
+voila tools/7_inspect_rejected_epochs_voila.ipynb
+voila tools/8_live_explore_1file_voila.ipynb
 ```
 
 ### Standard Jupyter notebooks
@@ -99,13 +103,13 @@ instead of restating them; only tool-specific deltas are kept inline.
   `sampling_frequency = samples_per_record / duration_data_record` (the per-channel 8-byte field is the
   *number of samples per data record*, not the rate; the two coincide only when `duration_data_record == 1 s`).
   Kept as a string to preserve `sorted(set(...))` grouping. Shared by `1_inspect_edf*`,
-  `2_select&remap_channels_edf*`, and `7_live_explore_1file*`. (Tool 1 carries the worked EDF+ examples.)
+  `2_select&remap_channels_edf*`, and `8_live_explore_1file*`. (Tool 1 carries the worked EDF+ examples.)
 - **MNE EDF signal loading pattern**: when actual signal is needed, load with
   `mne.io.read_raw_edf(..., preload=False, include=list(remap.keys()))` — `include=` evaluated **at read
   time** (not a lazy `pick` afterwards) to avoid MNE's partial-read `AssertionError` when the highest-rate
   channel is excluded and to preserve the native EEG rate — then `drop_suffix_duplicates(raw)` and
   `raw.rename_channels(adapt_remap_dict_to_suffixes(raw, remap))`. The two helpers handle MNE ≥ 1.8's
-  `-0`/`-1` suffixes on duplicate channel names. Shared by tools 5, 6, 7 (tool 6 documents the full
+  `-0`/`-1` suffixes on duplicate channel names. Shared by tools 5, 6, 8 (tool 6 documents the full
   rationale and its channel-deselection delta).
 - **Path comparison normalization (`os.path.normcase`)**: whenever two filesystem paths, stems, or
   filenames are compared as strings (equality, `in`, `.isin()`, set/dict membership) **and the two sides
@@ -131,10 +135,10 @@ instead of restating them; only tool-specific deltas are kept inline.
   (target = the more specific remapped/processed version).
 - **Event sourcing (CSV-first / XML-fallback)**: scored events are read via a shared `load_events()` —
   the Compumedics event CSV (`Name, Start, Duration`, default suffix `_event_xml.csv`) first, then the
-  `<ScoredEvents>` of the `*.edf.XML` (`CMPStudyConfig`). Shared by tool 4 (harmonization) and tool 7
+  `<ScoredEvents>` of the `*.edf.XML` (`CMPStudyConfig`). Shared by tool 4 (harmonization) and tool 8
   (overlay). Tool 4 exposes the CSV suffix as an editable, auto-detected field (its `load_events()`
   takes a `csv_suffix=` argument). Tool 4 returns
-  `(list-of-(name, start, duration), source)`; tool 7's `load_events()` returns the same events as a
+  `(list-of-(name, start, duration), source)`; tool 8's `load_events()` returns the same events as a
   `Name/Start/Duration` **DataFrame** plus the `source` tag, because its overlay/navigator code consumes
   a DataFrame.
 - **Proactive error handling**: per-item `try/except` with a **fatal** (add to a `failed` list and
@@ -144,7 +148,7 @@ instead of restating them; only tool-specific deltas are kept inline.
 - **Custom (non-AASM) sleep stages**: a project may intentionally keep stage labels outside the AASM set
   (`W/N1/N2/N3/R`), e.g. `N4` or a movement stage. They are declared **once** in a shared flat JSON
   `<data_folder>/config_param/custom_stages.json` (`{"custom_stages": ["N4", …]}`, order = display order),
-  **written only by `3_remap_hypno`** and **read** by tools 5/6/7. Tools 5/6/7 each expose an editable
+  **written only by `3_remap_hypno`** and **read** by tools 5/6/7/8. Tools 5/6/7/8 each expose an editable
   `Custom stages` field **auto-filled from the JSON on folder/file selection** — a **volatile per-run
   override** that never rewrites the JSON (management stays in tool 3). Three helpers are **duplicated**
   across the tools (like `get_phys_bounds_uV`): `load_custom_stages(folder)`, `parse_custom_field(text)`,
@@ -152,7 +156,7 @@ instead of restating them; only tool-specific deltas are kept inline.
   stages stack **below N3** on every hypnogram axis (`N3=0 → -1, -2, …` in declaration order); the
   step-line stays gray with **REM in red** (YASA convention) and each custom stage in a fixed non-red
   palette (`#8dd3c7, #ffffb3, #bebada, #80b1d3, #fdb462, #b3de69, #fccde5, #d9d9d9`). Because
-  `yasa.plot_spectrogram` / `yasa.Hypnogram` **hard-reject** any non-AASM label, tools 5 & 7 plot the
+  `yasa.plot_spectrogram` / `yasa.Hypnogram` **hard-reject** any non-AASM label, tools 5 & 8 plot the
   hypnospectrogram with a custom **`plot_hypnospectrogram()`** that keeps YASA's stage-agnostic
   spectrogram core (`from yasa.plotting import spectrogram_lspopt`) and draws the hypnogram band itself —
   no new dependency (`spectrogram_lspopt` ships with the already-required `yasa`). Reading the JSON is
@@ -177,14 +181,14 @@ instead of restating them; only tool-specific deltas are kept inline.
   declared in mV (typical for Compumedics EOG/EMG/ECG, `physical_max = 1.0 mV`) is compared against a
   1.0 µV bound — 1000× too small — so `bounds_pct` flags ~98–100 % of a perfectly healthy signal; EEG
   (declared in µV) stays unaffected, which kept the bug latent until non-EEG channels were added.
-  Defined in `5_quality_overview_voila`, **duplicated** in `7_live_explore_1file*` — keep in sync.
+  Defined in `5_quality_overview_voila`, **duplicated** in `8_live_explore_1file*` — keep in sync.
   (Verified on ICEBERG 117: EOG/EMG/ECG `bounds_pct` 97–98 % → <0.4 %, EEG unchanged.)
 - **EOG/EMG/ECG channel-type detection (`detect_channel_types`)**: non-EEG channels are classified by
   **transducer type OR channel name** — EOG = transducer `EOG` / name `eog`; ECG = transducer
   `ECG`/`EKG` / name `ecg`/`ekg`; EMG = transducer `EMG` / name `emg`/`chin`/`menton` (the `chin|menton`
   aliases cover Compumedics chin-EMG labels). EEG uses `KNOWN_EEG_CHANNEL_RE` (full 10-10 + mastoids +
   literal `EEG`) or transducer `EEG`/`AGAGCL ELECTRODE`, excluding anything already matched as
-  EOG/ECG/EMG. Defined in `7_live_explore_1file`; reuse it when a tool needs the scoring montage,
+  EOG/ECG/EMG. Defined in `8_live_explore_1file`; reuse it when a tool needs the scoring montage,
   pre-filled as an editable selection so the user can correct misses.
 - **ipywidgets `Box` stray per-row scrollbars**: jupyter-widgets ships
   `.widget-box { box-sizing: border-box; overflow: auto; }`, so any bordered + padded `HBox`/`VBox` row
@@ -297,9 +301,9 @@ Interactive tool to harmonize sleep stage labels across a heterogeneous database
 4. **Save** — Writes remapped hypnograms next to originals using the output suffix defined in Section 1; end message confirms completion and recalls the suffix used
 5. **Verify** — Before/after configuration summary; verdict fails only if non-AASM labels remain (multiple configurations with valid AASM labels are acceptable — e.g. insomnia patients legitimately missing N3)
 
-**Custom (non-AASM) stages** (see *Cross-cutting procedures*): tool 3 is the **only** writer of `config_param/custom_stages.json`. A `Custom stages` field (Section 1, comma-separated, auto-filled from any existing JSON) lists labels deliberately kept outside the AASM set; `current_acceptable()` = `STANDARD_LABELS | {MT} | <field>`, so those labels no longer trip the Section 5 verdict. Section 3's **Save remapping** detects non-AASM *target* labels and offers a **➕ Register** button that appends them to the field; Section 4's **Save files** then **merges** the declared stages that actually survive in the remapped output into `custom_stages.json`. Downstream, tools 5/6/7 auto-load this file so the kept labels are recognised (hypnospectrogram, per-stage tables, rejection) instead of being flagged as unrecognised.
+**Custom (non-AASM) stages** (see *Cross-cutting procedures*): tool 3 is the **only** writer of `config_param/custom_stages.json`. A `Custom stages` field (Section 1, comma-separated, auto-filled from any existing JSON) lists labels deliberately kept outside the AASM set; `current_acceptable()` = `STANDARD_LABELS | {MT} | <field>`, so those labels no longer trip the Section 5 verdict. Section 3's **Save remapping** detects non-AASM *target* labels and offers a **➕ Register** button that appends them to the field; Section 4's **Save files** then **merges** the declared stages that actually survive in the remapped output into `custom_stages.json`. Downstream, tools 5/6/7/8 auto-load this file so the kept labels are recognised (hypnospectrogram, per-stage tables, rejection) instead of being flagged as unrecognised.
 
-**Declared custom stages are first-class, not errors** (UX): a label listed in the Section 1 `Custom stages` field is no longer treated as suspect/unexpected. **Section 1** reports it on its own info line (`'M' : N file(s), K epoch(s) — ids…`) and excludes it from the **Section 2** review widget and the `mid_uncertain_epochs_to_verify.tsv`. **Section 3** suggests the *raw* custom label as its own target (identity, "keep" — the user may still rename it), shown in blue with a "rename if needed" note rather than suspect-red, and offers it in the combobox options. **All post-remap reporting keys off the labels actually present in the OUTPUT, not the raw field**, so renaming e.g. `M→SD` reports and saves only `SD` (never the now-unused `M`): Section 3's save splits output non-AASM targets into *registered* (already in the field → green "kept" line) vs *unregistered* (→ the ➕ Register warning); **Section 4** shows declared custom stages as a green **info box** and only **genuine** non-AASM, non-custom labels block saving / require the confirm-checkbox (MT is treated as acceptable); the **conclusion** notes that tools 5/6/7 will recognise the kept stages; **Section 5**'s success line lists the custom stages actually present in the reloaded files. The Section 1 field is never auto-pruned of renamed-away labels (they may still be in use by another configuration), and `save_custom_stages` filters to output-present stages, so `custom_stages.json` stays correct regardless.
+**Declared custom stages are first-class, not errors** (UX): a label listed in the Section 1 `Custom stages` field is no longer treated as suspect/unexpected. **Section 1** reports it on its own info line (`'M' : N file(s), K epoch(s) — ids…`) and excludes it from the **Section 2** review widget and the `mid_uncertain_epochs_to_verify.tsv`. **Section 3** suggests the *raw* custom label as its own target (identity, "keep" — the user may still rename it), shown in blue with a "rename if needed" note rather than suspect-red, and offers it in the combobox options. **All post-remap reporting keys off the labels actually present in the OUTPUT, not the raw field**, so renaming e.g. `M→SD` reports and saves only `SD` (never the now-unused `M`): Section 3's save splits output non-AASM targets into *registered* (already in the field → green "kept" line) vs *unregistered* (→ the ➕ Register warning); **Section 4** shows declared custom stages as a green **info box** and only **genuine** non-AASM, non-custom labels block saving / require the confirm-checkbox (MT is treated as acceptable); the **conclusion** notes that tools 5/6/7/8 will recognise the kept stages; **Section 5**'s success line lists the custom stages actually present in the reloaded files. The Section 1 field is never auto-pruned of renamed-away labels (they may still be in use by another configuration), and `save_custom_stages` filters to output-present stages, so `custom_stages.json` stays correct regardless.
 
 **Hypnogram suffix auto-detection** (see *Cross-cutting procedures*): tool 3 auto-fills the `Hypnogram suffix:` widget with the **shortest** candidate suffix on ties — the goal is the raw (unremapped) hypnogram, not an already-processed one (the reverse of tools 5/6, which prefer the longest).
 
@@ -312,7 +316,7 @@ Interactive tool to harmonize sleep stage labels across a heterogeneous database
 - One `.txt` file per participant with the output suffix (e.g. `_Hypnogram_remapped.txt`), one label per line
 - `mid_uncertain_epochs_to_verify.tsv` — written to `<data_folder>/` at scan time when mid-recording `?` epochs or unexpected labels are found; columns: `participant_id`, `epoch_index`, `epoch_time_sec`, `total_epochs`, `original_label` (`?` for mid-recording unscored epochs, or the raw unexpected label e.g. `U`, `M`), `context` (±5 epochs), `corrected_label`; updated with all corrections after "Corrections done" is clicked. If the file already exists at scan time it is loaded and applied in memory instead of being overwritten; the pre-loaded corrections are shown in a summary panel (as `ep.N: old→new`) and also appear **pre-filled** in the Section 2 review widget (flags are computed on the original labels, so they are not hidden). Corrections whose `original_label` no longer matches the current hypnogram value (re-scored since the TSV was written) are flagged as conflicts and shown in a warning panel in Section 2.
 
-- `config_param/custom_stages.json` — written/merged when the user keeps non-AASM labels as custom stages (see *Custom (non-AASM) stages* above); a flat `{"custom_stages": [...]}` list consumed by tools 5/6/7.
+- `config_param/custom_stages.json` — written/merged when the user keeps non-AASM labels as custom stages (see *Custom (non-AASM) stages* above); a flat `{"custom_stages": [...]}` list consumed by tools 5/6/7/8.
 
 `check_hypno_config.py` is the legacy script that preceded this notebook; kept for reference.
 
@@ -449,27 +453,44 @@ All methods operate on the raw epoch data in µV (`epochs.get_data() * 1e6`, sha
 | **Amplitude** | Peak-to-peak = `max(epoch) − min(epoch)` | W: 300, N1: 250, N2/N3: 200, REM: 250 µV | Per-stage threshold; W/REM more lenient because muscle and eye-movement artefacts are physiologically common in those stages. Equivalent to MNE's `drop_bad(reject=...)` criterion. |
 | **Flat signal** | Peak-to-peak < threshold | 1 µV | Detects disconnected electrodes or amplifier saturation within a single epoch. Logically identical to MNE's `drop_bad(flat=...)` criterion: both compare `ptp` against a low-amplitude threshold. |
 | **Gradient** | `max(|diff(epoch)|)` across time | 100 µV/sample | Maximum sample-to-sample absolute difference; sensitive to sudden jumps, electrode pops, and movement artefacts not captured by peak-to-peak. `diff` and `max` both operate on `axis=-1` (time axis) to handle the 3D `(n_epochs, n_channels, n_times)` array correctly. |
-| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, 2–30 Hz, `aperiodic_mode='fixed'`, `max_n_peaks=0`) | MAE > 0.15 OR R² < 0.95 | Fit restricted to ≥2 Hz to limit influence of slow-wave non-stationarity. `max_n_peaks=0` skips peak detection for speed (we only need the aperiodic metrics). A failed fit is treated as a double flag (both error and R²). |
+| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, 2–30 Hz, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`) | MAE > 0.15 OR R² < 0.95 | Fit restricted to ≥2 Hz to limit slow-wave influence. A **full peak model is used deliberately** — periodic components (spindles, alpha…) are modelled and removed *before* assessing the aperiodic fit quality. Forcing `max_n_peaks=0` would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). |
 | **Event containment** *(optional, off by default)* | 30 s epoch **containing the onset** of any **selected** canonical scored-event type (arousal, apnea, hypopnea, limb movement, SpO2 desaturation…) | **onset-only** — the epoch holding the event `Start`; the annotated `Duration` is **intentionally ignored** (clinicians often score only the onset without a reliable duration), so each event flags exactly one epoch | **Epoch-level** flag, replicated across all channels → single `flag_event` column. Events read with the shared CSV-first / XML-fallback `load_events(edf, csv_suffix)`; raw labels mapped to canonical via `event_remap.json` (tool 4). UI: a checkbox to activate, **a wrapping row of checkboxes for the canonical types** (all shown at once, populated from the chosen `event_remap.json`), and an inline note explaining the onset-only rule so the choice is informed. A **"Count affected epochs"** button reports, over the participants currently checked in Section 3, how many epochs each selected type would flag (overall + per stage) using only the hypnogram length/stages and events — no signal is read. Missing/unreadable event companions are non-fatal (the file keeps the other 5 methods, never added to `failed`). |
 
 **Custom (non-AASM) stages** (see *Cross-cutting procedures*): an editable `Custom stages` field (Section 1, auto-filled from `config_param/custom_stages.json`) extends the per-stage logic. Each custom stage gets its **own amplitude-threshold widget** (default 250 µV, generated dynamically when the field changes) feeding `ptp_thresholds`; the per-participant summary, `global_rejection_by_stage.tsv`, the heatmap hypnogram strip and the **"Count affected epochs"** estimate all iterate `['W','N1','N2','N3','R'] + custom_stages`. Custom-stage epochs are still rejected by the other (stage-independent) methods regardless.
 
-**Heatmap — `_rejection_heatmap.png`**: channels (Y-axis) × epochs (X-axis); each cell coloured by the flagging method with priority encoding when multiple methods fire. A hypnogram strip is drawn above the main heatmap. Colour scheme: dark purple = none, red = amplitude, blue = flat, orange = gradient, yellow = 1/f error, green = 1/f R², **magenta = event**, dark red = multiple. Title includes overall rejection percentage.
+**Heatmap** (rendered into `{file_id}_preprocessing_report.html`, **not** saved as a standalone PNG): channels (Y-axis) × epochs (X-axis); each cell coloured by the flagging method with priority encoding when multiple methods fire. A hypnogram strip is drawn above the main heatmap. Colour scheme: dark purple = none, red = amplitude, blue = flat, orange = gradient, yellow = 1/f error, green = 1/f R², **magenta = event**, dark red = multiple. Title includes overall rejection percentage.
 
 **Two-step QC approach** — Phase 2 does **not** drop epochs. It saves ALL epochs (including flagged ones) with an MNE `metadata` DataFrame attached, so downstream Phase 2b can inspect rejected epochs before finalising the rejection.
 
-**Outputs per participant** (in `<derivatives_root>/sub-{file_id}/`):
-- `{file_id}_all-epo.fif` — all epochs with `epochs.metadata` DataFrame (columns: `epoch_idx`, `stage`, `reject_flag`, `reject_method`, `flag_amplitude`, `flag_flat`, `flag_gradient`, `flag_1f_error`, `flag_1f_r2`, plus `flag_event` **when event rejection ran**). The per-epoch and per-stage TSVs (`_epoch_rejection.tsv`, `_rejection_summary.tsv`) and `global_rejection_by_stage.tsv` gain the matching `flag_event` column / `event` rows / `*_event` columns the same way — additively, so event-free runs are byte-compatible with earlier outputs.
-- `{file_id}_rejection_mask.tsv` — per-(epoch, channel) rejection table; human-readable and manually editable before Phase 2b (columns: `epoch_idx`, `stage`, `channel`, `reject_flag`, plus one bool column per method)
-- `{file_id}_rejection_log.tsv` — rejection counts per stage per method (columns: `file_id`, `stage`, `method`, `n_total`, `n_rejected`, `pct_rejected`)
-- `{file_id}_rejection_heatmap.png` — channels × epochs colour-coded heatmap
+**Outputs per participant** — the `.fif` + its params sidecar under `<output_folder>/derivatives/<edf_subtree>/`; the TSV/HTML reports under `<output_folder>/reports_preprocessing/`:
+- `{file_id}_all-epo.fif` — all epochs with `epochs.metadata` DataFrame (columns: `epoch_idx`, `stage`, `reject_flag`, `reject_method`, `flag_amplitude`, `flag_flat`, `flag_gradient`, `flag_1f_error`, `flag_1f_r2`, plus `flag_event` **when event rejection ran**). The `flag_<method>` columns are **per-epoch "any channel" booleans** — the per-(epoch, channel) mask is **not** persisted. The per-epoch/per-stage TSVs and `global_rejection_by_stage.tsv` gain the matching `flag_event` / `event` entries the same way — additively, so event-free runs stay byte-compatible with earlier outputs.
+- `{file_id}_preprocessing_params.json` — the resampling/filter settings + the per-stage rejection thresholds actually used (amplitude p-p per stage, flat, gradient, 1/f MAE/R²) + `methods_run`. Read back by **tool 7** (QC of rejected epochs) to draw threshold reference lines and recompute per-channel margins. Written non-fatally.
+- `{file_id}_epoch_rejection.tsv` — per-epoch rejection table (columns: `file_id`, `epoch_idx`, `stage`, `reject_flag`, one `flag_<method>` bool per method, incl. `flag_event` when event rejection ran).
+- `{file_id}_rejection_summary.tsv` — rejection counts per stage per method (columns: `file_id`, `stage`, `method`, `n_total`, `n_rejected`, `pct_rejected`).
 - `{file_id}_preprocessing_report.html` — MNE HTML report with the heatmap and two rejection tables. The **per-stage rejection table** has one row per stage (W/N1/N2/N3/R + custom) and one column per method (Amplitude, Flat, Gradient, 1/f error, 1/f R², and Event when event rejection ran), each cell showing the **% in front and the raw count `(n)` in parentheses**; % is relative to the stage total (same denominator as `global_rejection_by_stage.tsv`). When event rejection is enabled, a second **"Event-based rejection by type"** table lists one row per selected canonical event type (+ a bold `(any selected)` union row) with the flagged epoch count, % of all epochs, then `%(n)` per stage — so event types that reject too many epochs can be spotted and de-selected. Both tables are report-only (HTML); no TSV schema changes. Built by `build_stage_method_html()` / `build_event_type_html()`, with per-type epoch masks computed in the run loop via `compute_event_epoch_mask(..., [t], ...)`.
 
-**Global output** (at `<derivatives_root>/`):
-- `preprocessing_phase2_global_rejection.tsv` — concatenation of all `_rejection_log.tsv` files across participants
-- `preprocessing_phase2_failed.tsv` — participants that could not be processed (EDF not found, config missing, hypno mismatch, etc.)
+**Global output** (in `<output_folder>/reports_preprocessing/`):
+- `global_epoch_rejection.tsv` — concatenation of all `{file_id}_epoch_rejection.tsv` across participants
+- `global_rejection_by_stage.tsv` — concatenation of all `{file_id}_rejection_summary.tsv` across participants
+- `preprocessing_failed.tsv` — participants that could not be processed (EDF not found, config missing, hypno mismatch, etc.)
 
-### 7. Live single-file explorer (`7_live_explore_1file.ipynb`, `7_live_explore_1file_voila.ipynb`)
+### 7. Interactive QC of rejected epochs — Phase 2b (`7_inspect_rejected_epochs_voila.ipynb`, `7_inspect_rejected_epochs_batch.py`, `qc_rejected_epochs_lib.py`)
+
+Manual quality control of the epochs that `6_preprocessing_voila` flagged: inspect each rejected epoch, override the keep/reject decision, and export a validated `{file_id}_clean-epo.fif`. Reads one participant's tool-6 outputs (`{file_id}_all-epo.fif` + optional `{file_id}_preprocessing_params.json`) — **the raw EDF is never reloaded**; the analysis channel set is exactly what the `.fif` holds (EEG-only in practice). Tool-6 outputs are never modified. The Voila app is the primary delivery (a code-visible Jupyter twin is planned); the `.py` batch twin produces the Section-2 report over a whole database.
+
+**Shared library (`qc_rejected_epochs_lib.py`)**: the analysis + plotting used by both the notebook and the batch live in one module (imported by both) to avoid drift — `METHOD_ORDER`, the heatmap/method colour palette, the custom-stage helpers, the Welch-PSD config and the specparam 1/f fit are copied from tool 6 and kept in sync. Because tool 6 does not persist a per-(epoch, channel) mask, the **per-epoch reject decision is authoritative from `epochs.metadata`**, while the **per-channel attribution** shown here (which channel drove a flag, margins to threshold) is **recomputed** from the signal with the same formulas + the persisted thresholds (fallback: tool-6 defaults when no params JSON is present).
+
+**Section 1 — Load**: a `FileChooser` for the derivatives root lists every `*_all-epo.fif` found recursively; a participant dropdown loads one file (`mne.read_epochs`), reads the params JSON (thresholds) and auto-fills the editable `Custom stages` field. A summary reports epoch/rejection counts, channels, sfreq, and whether thresholds came from the params JSON or defaults.
+
+**Section 2 — Global per-stage report** (Run): per sleep stage (`W/N1/N2/N3/R` + custom) — a **PSD overlay** (per-epoch mean-across-channel PSD: clean epochs grey + median/IQR band, rejected epochs coloured by their reject method), **metric distributions** (p-p, gradient, 1/f MAE, 1/f R² — clean vs rejected, with threshold lines), a **p-p vs gradient scatter** (method-coloured), and a **stage × method rejection table** (from the metadata flags). 1/f is fitted per epoch (~1 min for a full night); the editable thresholds drive only the reference lines. Assembled into an `mne.Report`; **Save** writes `{file_id}_qc2b_report.html`.
+
+**Section 3 — Per-epoch navigator** (Run): walks the rejected epochs (filterable by method or stage). For the current epoch: a **stacked montage** (± context) with the current-epoch trace of each channel coloured by its recomputed flagging method, the gradient-max sample marked, and method-coloured channel labels; plus a **detail panel** — PSD + aperiodic fit (worst-R² channel), mean band power (δ/θ/α/σ/β) + 50 Hz ratio, an epoch spectrogram, and a per-channel metric table (value vs threshold). A **keep / reject** toggle overrides the decision in both directions — confirm a rejection or *rescue* a clean-looking flagged epoch.
+
+**Section 4 — Manual override & save**: a review strip (hypnogram + final keep/reject per epoch, overridden epochs marked) and counts (kept / rejected / rescued / newly-rejected). **Save** writes, next to the `.fif`: `{file_id}_clean-epo.fif` (kept epochs only; metadata carries `manual_override` + `final_reject`), `{file_id}_epoch_rejection_reviewed.tsv` (per-epoch metadata + the two override columns), and `{file_id}_qc2b_review_log.tsv` (one row per overridden epoch: `epoch_idx`, `stage`, `orig_reject`, `final_reject`, `action` ∈ rescued/added). Override granularity is **whole-epoch** (only 3–4 EEG channels, and `clean-epo.fif` drops whole epochs anyway).
+
+**Batch twin (`7_inspect_rejected_epochs_batch.py`)**: `python 7_inspect_rejected_epochs_batch.py <derivatives_root> [--no-1f] [--limit N] [--out DIR]`. Runs Section 2 for every participant (writing each `{file_id}_qc2b_report.html`) plus a **database-level aggregate** — rejection rate per participant, rejection rate by stage across participants, pooled metric distributions + scatter — in `qc2b_database_report.html`, alongside `qc2b_database_rejection_summary.tsv` (one row per `file_id × stage`: `n_total`, `n_rejected`, per-method counts, `pct_rejected`). `--no-1f` skips the slow 1/f fitting. The batch is report-only (no `.fif`/override written). Outputs default to `<derivatives_root>/qc2b_reports/`.
+
+### 8. Live single-file explorer (`8_live_explore_1file.ipynb`, `8_live_explore_1file_voila.ipynb`)
 
 Interactive inspection of **one EDF file at a time** — load it once, then explore it live (inspired by ScoringHero). Unlike the batch tools it preloads the signal and stays interactive. It is a **QC + scoring-review companion**: it never modifies the EDF and writes outputs only on explicit button presses. Reuses the quality plots of `quality_overview` and the rejection logic of `6_preprocessing_voila`, applied to a single recording. Both delivery forms are kept in sync; the Voila version hides code (Voila strips sources by default).
 
@@ -489,7 +510,7 @@ Interactive inspection of **one EDF file at a time** — load it once, then expl
 
 **Outputs** (written only on explicit Save): `<hypno_stem>_rescored.txt` + `<hypno_stem>_rescore_log.tsv` (next to the input hypnogram), `<edf_stem>_live_rejection_mask.tsv` (next to the EDF).
 
-### 8. Spectral Analysis (`8_SpectralPower_&_AperiodicFit_PSG.py`)
+### 9. Spectral Analysis (`9_SpectralPower_&_AperiodicFit_PSG.py`)
 
 Full PSG spectral pipeline: epoch rejection → PSD (Welch, 4 s windows) → aperiodic fit (SpecParam) → frequency band power extraction (Delta, Theta, Alpha, Sigma, Beta) → group-level statistics. Reads the channel remapping JSON produced by tool #2.
 
@@ -497,20 +518,21 @@ Full PSG spectral pipeline: epoch rejection → PSD (Welch, 4 s windows) → ape
 
 ## Planned modules (in development)
 
-Modules still in development. The quality-overview (5) and preprocessing (6) tools above are stable and were promoted out of this section.
+Modules still in development. The quality-overview (5), preprocessing (6) and QC-of-rejected-epochs (7) tools above are stable and were promoted out of this section.
 
 ### Event-based epoch rejection (Phase A) — **implemented in tool 6**
 
-Promoted out of this section: the **"Event overlap"** rejection method is now part of `6_preprocessing_voila.ipynb` (Section 2 → *Epoch rejection*). See the tool-6 description above for the UI, the `event_remap.json` chooser + auto-detected `Event CSV suffix`, the "Count affected epochs" button, and the additive `flag_event` outputs. (The mirror in `7_live_explore_1file`'s quick rejection remains a possible follow-up.)
+Promoted out of this section: the **"Event overlap"** rejection method is now part of `6_preprocessing_voila.ipynb` (Section 2 → *Epoch rejection*). See the tool-6 description above for the UI, the `event_remap.json` chooser + auto-detected `Event CSV suffix`, the "Count affected epochs" button, and the additive `flag_event` outputs. (The mirror in `8_live_explore_1file`'s quick rejection remains a possible follow-up.)
 
 ### Event-epoch visualizer (Phase B)
 
-Helps decide whether a given event *type* is worth feeding into Phase A. Extends `7_live_explore_1file`'s Section 3 (which already overlays scored-event spans via the shared CSV-first / XML-fallback `load_events()`):
+Helps decide whether a given event *type* is worth feeding into Phase A. Extends `8_live_explore_1file`'s Section 3 (which already overlays scored-event spans via the shared CSV-first / XML-fallback `load_events()`):
 - an **event-type filter** on the navigator: "jump to next/previous epoch overlapping event type X", with a per-type count;
 - a per-type **accept/reject decision** widget that writes a small `event_type_decisions.tsv` feeding Phase A's default selection.
 
-### Interactive QC of rejected epochs (Phase 2b)
-Load `_all-epo.fif` + `_rejection_mask.tsv`, display the heatmap for navigation, show the raw signal of flagged epochs for visual inspection, allow manual override of individual entries in the mask, then save a final `{file_id}_clean-epo.fif` with only the validated-clean epochs.
+### Interactive QC of rejected epochs (Phase 2b) — **implemented as tool 7**
+
+Promoted out of this section: implemented as `7_inspect_rejected_epochs_voila.ipynb` (+ `7_inspect_rejected_epochs_batch.py`, `qc_rejected_epochs_lib.py`) — see the **tool-7 section above**. It loads `{file_id}_all-epo.fif` (+ optional `{file_id}_preprocessing_params.json`), lets the user navigate flagged epochs and override the whole-epoch keep/reject decision, and saves a validated `{file_id}_clean-epo.fif`. **Possible follow-ups**: the code-visible Jupyter twin; optional EOG/EMG context in the per-epoch view (needs the context-channel declaration in tool 2 — see `tools/plan_tool2_eog_emg_context_channels.md`); per-(epoch, channel) override if a future tool-6 run persists the channel-level mask.
 
 ### Test data infrastructure
 

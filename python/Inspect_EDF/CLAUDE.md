@@ -13,7 +13,7 @@ specifics live in SPEC.md.
   (robust to encoding/header edge cases), **never** for signal data. Derive
   `sampling_frequency = samples_per_record / duration_data_record` (the 8-byte per-channel field is samples
   *per record*, not the rate; they coincide only at 1 s records). Keep in sync across `1_inspect_edf*`,
-  `2_select&remap_channels_edf*`, `7_live_explore_1file*`.
+  `2_select&remap_channels_edf*`, `8_live_explore_1file*`.
 - **Signal loading = MNE; export = edfio**: load signal with `mne.io.read_raw_edf()` (never pyedflib for
   signal). Write EDF with `edfio.EdfSignal()`/`edfio.Edf()` directly (not `mne.export.export_raw()`) for
   per-channel physical-range control.
@@ -22,9 +22,9 @@ specifics live in SPEC.md.
   involved.
 - **Physical bounds (`get_phys_bounds_uV`)**: reconstruct EDF physical bounds from MNE internals **scaled by
   the channel's native unit** (`units[ch]*1e6`) — otherwise mV channels (Compumedics EOG/EMG/ECG) falsely
-  flag ~100 % `bounds_pct`. Duplicated in `5_quality_overview_voila` + `7_live_explore_1file*`; keep in sync.
+  flag ~100 % `bounds_pct`. Duplicated in `5_quality_overview_voila` + `8_live_explore_1file*`; keep in sync.
 - **EOG/EMG/ECG detection (`detect_channel_types`)**: classify non-EEG channels by transducer type OR name
-  (incl. `chin|menton` for EMG). Reuse the helper from `7_live_explore_1file`, pre-filled as an editable
+  (incl. `chin|menton` for EMG). Reuse the helper from `8_live_explore_1file`, pre-filled as an editable
   selection so the user can correct misses.
 - **In-place header anonymization (`1bis_anonymize_edf*`)**: copy the file, then overwrite **only**
   `patient_id` (→ `X X 30-DEC-1899 X_X`) and `recording_id` (keep the real `Startdate` token, blank
@@ -45,10 +45,28 @@ specifics live in SPEC.md.
   non-fatal.
 - **Flat/dead-epoch colour scaling (`plot_hypnospectrogram()`)**: exclude near-zero (dead-epoch) columns from
   the `vmin/vmax` percentiles and render them grey, else the spectrogram washes out once >2.5 % of epochs are
-  fully flat. Kept in sync across tools 5, 7, 7-voila; clean channels stay byte-identical.
+  fully flat. Kept in sync across tools 5, 8, 8-voila; clean channels stay byte-identical.
 - **Dual delivery + outputs**: every user-facing tool ships a code-visible Jupyter notebook **and** a
   code-hidden Voila app (kept in sync); some add a batch `.py`. Outputs are TSV (machine-readable) + HTML
   (human-readable).
+- **Tool numbering**: `7` = QC of rejected epochs (Phase 2b); `8` = live single-file explorer
+  (`8_live_explore_1file*`, was tool 7); `9` = spectral analysis (`9_SpectralPower*`, was tool 8).
+- **QC of rejected epochs (tool 7, `7_inspect_rejected_epochs*`)**: reads tool-6 `{file_id}_all-epo.fif`
+  (+ optional `{file_id}_preprocessing_params.json`) and **never reloads the raw EDF** (EEG-only, the `.fif`
+  channels as-is) and **never modifies tool-6 outputs**. The per-epoch reject decision is authoritative from
+  `epochs.metadata`; the per-**channel** attribution shown (which channel drove a flag, margins) is
+  **recomputed** from the signal with tool-6's formulas + the persisted thresholds (fallback: tool-6
+  defaults). Analysis + plotting live in a **shared module `qc_rejected_epochs_lib.py`** imported by both the
+  Voila notebook and the batch `.py` — a deliberate exception to the "duplicate helpers" rule, justified by
+  the heavy report code shared across the notebook/batch pair; the copied bits (`METHOD_ORDER`, heatmap
+  palette, custom-stage helpers, Welch-PSD config, specparam 1/f fit) must stay in sync with `6_preprocessing`.
+  Override is **whole-epoch** keep/reject (only 3–4 EEG channels). Voila-only for now (Jupyter twin planned).
+- **Tool-6 threshold sidecar**: `6_preprocessing_voila` writes `{file_id}_preprocessing_params.json` next to
+  the `.fif` (resample/filter + per-stage rejection thresholds actually used + `methods_run`); additive and
+  non-fatal, read back by tool 7. The real 1/f fit uses a **full peak model** (`peak_width_limits=[0.5,20]`,
+  `min_peak_height=0.3`), **not** `max_n_peaks=0` (which over-rejects N2/REM) — SPEC's table reflects this.
+  Tool 6 does **not** persist a per-(epoch, channel) mask; per-participant files are `_all-epo.fif`,
+  `_epoch_rejection.tsv`, `_rejection_summary.tsv`, `_preprocessing_report.html` (heatmap embedded, no PNG).
 
 ## Working agreements
 
