@@ -43,6 +43,11 @@ Inspect_EDF/
 │   ├── images/                                # Reference images for quality checks
 │   ├── preprocessing_phase1_example_scripts/  # Draft/example scripts used during Phase 1 development
 │   └── old/                                   # Versioned development notebooks (archive)
+└── tools_curry/                             # Experimental Curry 9 (.cdt) port — see "Curry 9 support" below
+    ├── curry_header.py                        # Header-only .cdt.dpo parser (Curry analogue of the EDF header parser)
+    ├── curry_io.py                            # Curry signal / hypnogram / events (text export) loaders
+    ├── {1,2,3,4,5,6}_*_curry_voila.ipynb      # Curry twins of tools 1–6 (Voila)
+    └── _make_tool{2,3,4,5,6}_curry.py         # Re-runnable generators (regenerate a twin from its EDF source)
 ```
 
 **Sibling directory** `../Check_EDF/` contains exploratory notebooks used during development (not production tools).
@@ -53,7 +58,7 @@ Inspect_EDF/
 
 Defined in `environment.yml`. Key packages:
 - **Python 3.12.10**
-- **MNE 1.9** — EDF reading, epoching, signal processing
+- **MNE 1.12** — EDF reading, epoching, signal processing (bumped from 1.9 for Curry `.cdt` support; the EDF tools run unchanged on it)
 - **YASA 0.6** — sleep staging, hypnogram handling, spectral helpers
 - **pandas 2.2, numpy 2.2** — data manipulation
 - **voila 0.5, ipywidgets 8.1, ipyfilechooser 0.6** — interactive GUI layer
@@ -173,8 +178,9 @@ instead of restating them; only tool-specific deltas are kept inline.
     (byte-identical scale and image). The tool-7 *navigator* spectrogram is a separate plot (floored
     at −120 dB, p5–p99) and is left as-is. Diagnostic scripts:
     `tools/simple_hypnospectro_yasa_vs_fix.py` and `tools/compare_flat_spectrogram_fix.{py,ipynb}`.
-- **Physical bounds in µV (`get_phys_bounds_uV`)**: MNE 1.9 stores an EDF channel's physical range as
-  `physical_max + offset` in `raw._raw_extras` (not explicit `physical_min`/`physical_max`).
+- **Physical bounds in µV (`get_phys_bounds_uV`)**: MNE stores an EDF channel's physical range as
+  `physical_max + offset` in `raw._raw_extras` (not explicit `physical_min`/`physical_max`); the
+  `units`/`physical_max`/`offsets` keys are present and identical on MNE 1.9 and 1.12.
   `get_phys_bounds_uV()` reconstructs the µV bounds and **must scale both `physical_max` and `offsets`
   by `extras['units'][ch_idx] * 1e6`** — MNE keeps them in the channel's *native* EDF unit (`1e-6` µV,
   `1e-3` mV, `1.0` V), while `raw.get_data() * 1e6` is always µV. Without the scaling, any channel
@@ -515,6 +521,114 @@ Interactive inspection of **one EDF file at a time** — load it once, then expl
 Full PSG spectral pipeline: epoch rejection → PSD (Welch, 4 s windows) → aperiodic fit (SpecParam) → frequency band power extraction (Delta, Theta, Alpha, Sigma, Beta) → group-level statistics. Reads the channel remapping JSON produced by tool #2.
 
 **Planned**: adapt this batch script into a Voila/Jupyter notebook (keeping a `.py` batch twin) so it integrates with the rest of the toolbox like the other tools.
+
+## Curry 9 (`.cdt`) support — experimental
+
+**Status**: an exploratory port of a subset of the EDF tools to Neuroscan **Curry 9** recordings,
+living in a **separate `tools_curry/` folder**. It shares the same `config_param/*.json` conventions
+and output layout as the EDF tools (a project is assumed to be *either* EDF *or* Curry, never mixed).
+The main line of the toolkit remains EDF-first; this section exists so the adaptation can be **reused
+and extended later** without re-deriving the Curry-specific deltas. The EDF tools are untouched.
+
+### What a Curry 9 recording looks like
+
+Each recording is a small directory of sibling files sharing one stem (e.g. `y_S005`):
+
+| File | Role |
+|---|---|
+| `{stem}.cdt` | binary signal (float32, multi-GB — a full night of 44 ch @ 1024 Hz ≈ 5 GB) |
+| `{stem}.cdt.dpo` | **plain-text** parameter sidecar (~7 kB): channel labels, sampling rate, start datetime, per-channel impedances, 3-D sensor positions |
+| `{stem}.cdt.ceo` | native events (binary; **not** used — see events below) |
+| `{stem}_Hypnogram_Export.txt` | one stage label per 30 s epoch (same format as the EDF hypnograms) |
+| `{stem}_ScoredEvents_Export.txt` | scored events, **UTF-16 text export** (often French labels) |
+
+Unlike Compumedics EDF, Curry uses a **single global sampling rate** for all channels, stores signal as
+**float** (no digital→physical scaling, so no EDF physical bounds), never appends MNE `-0`/`-1` duplicate
+suffixes, and carries **real electrode positions**.
+
+### Shared Curry modules (`tools_curry/`, the analogue of the EDF header parser)
+
+- **`curry_header.py` — header-only `.cdt.dpo` parser** (the Curry counterpart of the custom EDF header
+  parser; **never** reads the `.cdt` signal). `read_curry_header(cdt_path)` returns a dict with `sfreq`,
+  `n_samples`, `n_epochs_30s`, `start_datetime`, `data_unit`, EEG vs "other" channel groups
+  (`eeg_group_size` / `ch_labels` from the `LABELS` block vs `LABELS_OTHERS`), `sensor_xyz` (3-D positions,
+  mm), and raw impedances. `get_impedance_summary(hdr)` returns per-channel kΩ values — **the file stores
+  impedances in Ohms, divide by 1000**; sentinels `-1` = not measured, `-2` = disabled. Motivation:
+  `mne.io.read_raw_curry(preload=False)` is **not** header-only (it takes ~15 s because `curryreader` loads
+  the whole signal) and exposes **no impedances**, so a dedicated parser is required for tools that only
+  need metadata (tool 1).
+- **`curry_io.py` — signal / hypnogram / events loading**:
+  - `read_curry_signal(cdt_path, include=None, preload=False)` — thin wrapper over `mne.io.read_raw_curry`;
+    channel selection is a plain `raw.pick(include)` (no include-at-read trick needed — single global rate).
+  - `load_hypnogram_curry(txt_path)` — identical format to the EDF hypnograms.
+  - `load_events_curry(txt_path, rec_start_dt)` — parses the UTF-16 export into a `Name/Start/Duration`
+    (seconds) DataFrame. The export gives **clock times** (`HH:MM:SS`), converted to seconds-from-start via
+    the header start datetime, with **midnight rollover** (an event > 1 h *before* the recording start is on
+    the next calendar day). Two parsing gotchas handled: single-digit hours after midnight
+    (`0:05:11` — `datetime.time.fromisoformat` rejects these, so split manually) and `M:SS[.s]` durations.
+  - `rec_start_from_header(hdr)` — builds the recording-start `datetime` used by `load_events_curry`.
+
+### Recipe: adapting an EDF tool to Curry
+
+Each Curry tool is generated from its EDF twin by a small, re-runnable `tools_curry/_make_toolN_curry.py`
+script (parsed-JSON edits: join the cell source, string-replace, re-split; validated by `json.load` +
+`ast.parse` of every code cell). The recurring deltas:
+
+1. **Discovery**: `rglob('*.edf')` → `rglob('*.cdt')` (match bare `f.suffix == '.cdt'`, exclude `._*`).
+2. **Header reads** → `read_curry_header()`; classify channels by the `.dpo` **EEG group** (authoritative)
+   instead of EDF transducer type / name regex.
+3. **Signal loading**: replace the EDF `read_raw_edf(preload=False, include=list(remap.keys()))` +
+   `drop_suffix_duplicates` + `adapt_remap_dict_to_suffixes` pattern with
+   `read_raw_curry(preload=False)` → `raw.pick(montage)` → `raw.rename_channels(remap)` →
+   drop deselected → `load_data()`. The two MNE suffix helpers are **removed** (no `-0`/`-1` in Curry).
+4. **Drop EDF-only concepts**: no physical bounds → remove `get_phys_bounds_uV`, the `bounds_pct` metric,
+   its threshold widget, and its report/summary columns (tool 5). No `patient_id`/`recording_id` header
+   fields → **no anonymizer** (tool 1bis has no Curry twin for now).
+5. **Events**: swap the CSV-first/XML-fallback `load_events()` for a wrapper over `load_events_curry`
+   (source is the single `*_ScoredEvents_Export.txt`), keeping the **same call signature** so downstream
+   scan/rejection code is untouched. Because there is only one event source, the CSV-vs-XML consistency
+   check (tool 4 §1bis) is **removed**. Suffix auto-detection scans `.txt` files whose name contains
+   `event` so hypnogram `.txt` files are not mistaken for events (and vice-versa).
+6. **User-facing strings** (English per project rule) and re-runnable generators only; all format-agnostic
+   logic — skip/cumulative-merge, custom stages, `plot_hypnospectrogram`, rejection methods + heatmap +
+   `METHOD_ORDER`, the tool-6 `_preprocessing_params.json` sidecar read by tool 7 — is copied **unchanged**.
+
+### Tools ported (per-tool deltas beyond the recipe)
+
+- **1 — Inspect** (`1_inspect_curry_voila.ipynb`, purpose-built, not generated): per-channel summary from
+  `read_curry_header` (no signal read); adds an **impedance check** with an editable **kΩ threshold**
+  (default 20 kΩ). Outputs to `summary_inspection_curry/`: `FULL_summary_table_curry.tsv`,
+  `impedance_flags_curry.tsv`, `failed_cdt_read.tsv`.
+- **2 — Channel selection & remap**: channel mask is `channel_group == 'EEG'` from the `.dpo`; Section 6
+  loads via `read_raw_curry`. Same `remap_reref_persubject.json` output.
+- **3 — Hypnogram remap**: discovery only (`.edf`→`.cdt`); the `_Hypnogram_Export.txt` companion and remap
+  logic are unchanged.
+- **4 — Event harmonization**: events from `*_ScoredEvents_Export.txt`; §1bis removed; same
+  `config_param/event_remap.json` output (consumed by tool 6). **Caveat**: `DEFAULT_EVENT_MAPPING`
+  suggestions are English, so French raw labels (e.g. `Microéveil 1 ARO SPONT`, `Hypopnée obstructive`)
+  currently get no auto-suggestion and are mapped by hand — a French suggestion layer is a natural follow-up.
+- **5 — Quality overview**: drops `bounds_pct` and `get_phys_bounds_uV`; keeps flat/std/n_peaks/percentiles/
+  histograms/PSD/time-series/hypnospectrogram. Same `reports_quality_overview/` outputs (minus the bounds
+  column). Memory note: EEG channels are picked before `load_data()` to avoid holding the full multi-GB file.
+- **6 — Preprocessing + epoch rejection**: Curry load block (recipe step 3); event-based rejection reads the
+  text export via the `load_events` wrapper. All rejection methods, per-stage summaries, `_all-epo.fif`,
+  `_epoch_rejection.tsv`, `_rejection_summary.tsv`, and the `_preprocessing_params.json` sidecar are
+  identical to tool 6, so **tool 7 (QC of rejected epochs) works on Curry outputs unchanged**.
+
+### Environment
+
+Curry support requires **MNE ≥ 1.12** (`environment.yml` pins `mne=1.12.*`) plus **`curryreader`** (pip-only,
+under the `pip:` block). These were bumped for Curry; the EDF tools continue to run on the same environment.
+
+### Not ported / known limitations
+
+- **Tool 1bis (anonymizer)** — no equivalent: the `.cdt.dpo` has no patient-name field to scrub (revisit if
+  a PII field is found in other exports).
+- **Tools 7, 8, 9** — not ported. Tool 7 already consumes Curry tool-6 outputs as-is (no `.cdt` reload).
+- **Electrode positions unused** — `curry_header` parses `sensor_xyz` and `read_raw_curry` loads a montage,
+  but no tool uses them yet; a genuine Curry advantage over position-less Compumedics EDF (enables topomaps,
+  geometry-based bad-channel interpolation, spatial re-referencing) — future enhancement.
+- **French event vocabulary** — see tool 4 caveat above.
 
 ## Planned modules (in development)
 
