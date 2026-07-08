@@ -405,7 +405,7 @@ Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pc
 
 *(Stable tool — formerly “Phase 2” of the preprocessing pipeline.)*
 
-Implemented as a Voila notebook with four sections: (1) path configuration, (2) preprocessing and rejection parameters, (3) participant selection, (4) processing loop. **Section 2 is organised into two headed sub-sections**: **Preprocessing** (resampling + bandpass filter) and **Epoch rejection** (peak-to-peak amplitude per stage, flat signal & gradient, 1/f fit quality, and the optional event-based rejection — see below).
+Implemented as a Voila notebook with four sections: (1) path configuration, (2) preprocessing and rejection parameters, (3) participant selection, (4) processing loop. **Section 2 is organised into two headed sub-sections**: **Preprocessing** (resampling + notch + bandpass filter) and **Epoch rejection** (peak-to-peak amplitude per stage, flat signal & gradient, 1/f fit quality, and the optional event-based rejection — see below).
 
 **Inputs**:
 - `quality_summary.tsv` from Phase 1 — `exclude` column identifies channels to drop before preprocessing
@@ -446,7 +446,8 @@ The two tools then differ only in what follows:
 **Preprocessing steps** (applied in this order, each optional via widget):
 1. **Resampling** — `raw.resample(target_freq, npad='auto')`. Target frequency chosen by user; applied before filtering to avoid aliasing. Step is skipped if checkbox is unchecked.
 2. **Re-referencing** — applied as specified in JSON config per participant: `'average'` → common average reference; `[list]` → subtract listed channel(s) then drop them; empty → no re-referencing.
-3. **Bandpass filter** — FIR zero-double-pass Hamming window, defaults `l_freq=0.1 Hz, h_freq=40 Hz`. Applied via `raw.filter(..., method='fir', phase='zero-double', fir_window='hamming', fir_design='firwin')`.
+3. **Notch filter** *(optional, off by default)* — removes power-line noise via `raw.notch_filter(freqs=notch_freq_val)` using **MNE's default method** (FIR; `method=` is left unset). Single editable frequency (`cb_notch` / `txt_notch_freq`, default **50 Hz**). Applied **after re-referencing, before the bandpass** ("notch then band-pass" convention). **Fatal** on failure (like the bandpass step). Off by default keeps outputs byte-identical.
+4. **Bandpass filter** — FIR zero-double-pass Hamming window, defaults `l_freq=0.1 Hz, h_freq=50 Hz`. Applied via `raw.filter(..., method='fir', phase='zero-double', fir_window='hamming', fir_design='firwin')`.
 
 **Epoching**: 30-second fixed-length epochs created with `mne.make_fixed_length_epochs(raw, duration=30)`. Sleep stage assigned to each epoch from the hypnogram; epochs at the tail beyond the hypnogram length are discarded.
 
@@ -470,7 +471,7 @@ All methods operate on the raw epoch data in µV (`epochs.get_data() * 1e6`, sha
 
 **Outputs per participant** — the `.fif` + its params sidecar under `<output_folder>/derivatives/<edf_subtree>/`; the TSV/HTML reports under `<output_folder>/reports_preprocessing/`:
 - `{file_id}_all-epo.fif` — all epochs with `epochs.metadata` DataFrame (columns: `epoch_idx`, `stage`, `reject_flag`, `reject_method`, `flag_amplitude`, `flag_flat`, `flag_gradient`, `flag_1f_error`, `flag_1f_r2`, plus `flag_event` **when event rejection ran**). The `flag_<method>` columns are **per-epoch "any channel" booleans** — the per-(epoch, channel) mask is **not** persisted. The per-epoch/per-stage TSVs and `global_rejection_by_stage.tsv` gain the matching `flag_event` / `event` entries the same way — additively, so event-free runs stay byte-compatible with earlier outputs.
-- `{file_id}_preprocessing_params.json` — the resampling/filter settings + the per-stage rejection thresholds actually used (amplitude p-p per stage, flat, gradient, 1/f MAE/R²) + `methods_run`. Read back by **tool 7** (QC of rejected epochs) to draw threshold reference lines and recompute per-channel margins. Written non-fatally.
+- `{file_id}_preprocessing_params.json` — the resampling / notch / bandpass filter settings (the notch as an additive `notch: {applied, freq_hz}` key, provenance only) + the per-stage rejection thresholds actually used (amplitude p-p per stage, flat, gradient, 1/f MAE/R²) + `methods_run`. Read back by **tool 7** (QC of rejected epochs) to draw threshold reference lines and recompute per-channel margins. Written non-fatally.
 - `{file_id}_epoch_rejection.tsv` — per-epoch rejection table (columns: `file_id`, `epoch_idx`, `stage`, `reject_flag`, one `flag_<method>` bool per method, incl. `flag_event` when event rejection ran).
 - `{file_id}_rejection_summary.tsv` — rejection counts per stage per method (columns: `file_id`, `stage`, `method`, `n_total`, `n_rejected`, `pct_rejected`).
 - `{file_id}_preprocessing_report.html` — MNE HTML report with the heatmap and two rejection tables. The **per-stage rejection table** has one row per stage (W/N1/N2/N3/R + custom) and one column per method (Amplitude, Flat, Gradient, 1/f error, 1/f R², and Event when event rejection ran), each cell showing the **% in front and the raw count `(n)` in parentheses**; % is relative to the stage total (same denominator as `global_rejection_by_stage.tsv`). When event rejection is enabled, a second **"Event-based rejection by type"** table lists one row per selected canonical event type (+ a bold `(any selected)` union row) with the flagged epoch count, % of all epochs, then `%(n)` per stage — so event types that reject too many epochs can be spotted and de-selected. Both tables are report-only (HTML); no TSV schema changes. Built by `build_stage_method_html()` / `build_event_type_html()`, with per-type epoch masks computed in the run loop via `compute_event_epoch_mask(..., [t], ...)`.
@@ -614,6 +615,21 @@ script (parsed-JSON edits: join the cell source, string-replace, re-split; valid
   text export via the `load_events` wrapper. All rejection methods, per-stage summaries, `_all-epo.fif`,
   `_epoch_rejection.tsv`, `_rejection_summary.tsv`, and the `_preprocessing_params.json` sidecar are
   identical to tool 6, so **tool 7 (QC of rejected epochs) works on Curry outputs unchanged**.
+  - **Per-channel rejection (Curry-only, memory)**: the EDF tool materialises the whole
+    `epochs_data_uV = epochs.get_data() * 1e6` array (a 3rd full copy after `raw._data` and `epochs._data`),
+    which overflows RAM for a high-density montage (32 ch @ 1024 Hz ≈ 3× ~9.5 GiB). The generator rewrites
+    `compute_rejection_masks` to receive the `epochs` object and read **one channel at a time**
+    (`epochs.get_data(picks=[ci])`), and adds `del raw` right after epoching — dropping the sustained peak
+    from ~3× to ~1× (~9.8 GiB). **Formulas are unchanged**, so the per-(epoch, channel) masks are
+    byte-identical to the EDF tool (verified by an equivalence test) and all outputs / tool-7 compatibility
+    are preserved. The transient epoching peak stays ~2× (`raw._data` + `epochs._data` coexist during the
+    copy); for extreme density without enough RAM the built-in **resample** is the lever (÷4). This change is
+    **Curry-only** (EDF tool 6 untouched); applying it to EDF is a deferred TODO
+    (`tools/plan_tool6_memory_feedback.md`).
+  - **Progress feedback**: a second per-channel/per-epoch `IntProgress` bar (fed by a `progress(done, total,
+    msg)` callback threaded into `compute_rejection_masks`) plus step labels in `progress_lbl`
+    (loading / epoching / PSD / rejection / report), so a slow high-density participant is not mistaken for a
+    crash. Mirrors the channel-level feedback added to tool 5.
 
 ### Environment
 

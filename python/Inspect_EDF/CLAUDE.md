@@ -62,9 +62,37 @@ specifics live in SPEC.md.
   palette, custom-stage helpers, Welch-PSD config, specparam 1/f fit) must stay in sync with `6_preprocessing`.
   Override is **whole-epoch** keep/reject (only 3–4 EEG channels). Voila-only for now (Jupyter twin planned).
 - **Tool-6 threshold sidecar**: `6_preprocessing_voila` writes `{file_id}_preprocessing_params.json` next to
-  the `.fif` (resample/filter + per-stage rejection thresholds actually used + `methods_run`); additive and
-  non-fatal, read back by tool 7. The real 1/f fit uses a **full peak model** (`peak_width_limits=[0.5,20]`,
-  `min_peak_height=0.3`), **not** `max_n_peaks=0` (which over-rejects N2/REM) — SPEC's table reflects this.
+  the `.fif` (resample/filter + per-stage rejection thresholds actually used + `1f_fit_range_hz` +
+  `methods_run`); additive and non-fatal, read back by tool 7. The real 1/f fit uses a **full peak model**
+  (`peak_width_limits=[0.5,20]`, `min_peak_height=0.3`), **not** `max_n_peaks=0` (which over-rejects N2/REM)
+  — SPEC's table reflects this.
+- **Configurable 1/f fit range (`6_preprocessing`)**: the aperiodic fit window is user-editable via two
+  widgets, **default 2–45 Hz** (`txt_1f_fmin`/`txt_1f_fmax`); `freq_mask = (psd_freqs >= fit_fmin) &
+  (psd_freqs <= fit_fmax)`. The Welch PSD ceiling **follows the fit max** (`fmax_psd = min(fit_fmax_val,
+  sf/2-0.5)`, was hardcoded 30 Hz), and the default **bandpass is 0.1–50 Hz** (was 0.1–40) so the fit band is
+  preserved. The range is persisted as `rejection_thresholds.1f_fit_range_hz` and **read back by tool 7**
+  (`qc_rejected_epochs_lib.load_params` → `info['fit_range']`, threaded into `compute_psds(fmax=)` /
+  `fit_1f(fmin=)`; fallback `(2.0, 45.0)`) so its recomputed per-channel attribution matches. Keep the fit
+  range wired across tool 6 (EDF + Curry), `qc_rejected_epochs_lib.py`, tool-7 batch + voila.
+- **Optional notch filter (`6_preprocessing`, `cb_notch`/`txt_notch_freq`, default OFF, 50 Hz)**: removes
+  power-line noise via `raw.notch_filter(freqs=notch_freq_val)` with **MNE's default method** (FIR — do not
+  pass `method=`). Applied as pipeline block `[D2]` **after re-referencing, before the bandpass** (matching
+  the "notch then band-pass" convention); **fatal** on failure like the bandpass block. Single editable
+  frequency (no harmonics/list). Off by default keeps `.fif`/TSV outputs byte-identical. Persisted additively
+  to the sidecar as `notch: {applied, freq_hz}` for **provenance only** — **tool 7 needs no change** (the
+  `.fif` is already notched and the 1/f fit band 2–45 Hz excludes 50 Hz). Wired to the Curry twin: it passes
+  through the generator untouched (no `_make_tool6_curry.py` edit), so **re-run the generator** after editing.
+- **Optional resampling in `5_quality_overview` (`cb_resample`/`txt_target_freq`, default OFF, 256 Hz)**:
+  mirrors tool 6 — `raw.resample(target_freq, npad='auto')` applied right after load/rename (guarded to never
+  upsample, non-fatal). All quality metrics/spectrograms are then computed on the resampled signal. Off by
+  default keeps results byte-identical. Placed **outside** the block the Curry generator replaces, so it
+  carries through to the Curry twin unchanged.
+- **Curry twins are generated, not hand-edited**: `tools_curry/_make_tool{5,6}_curry.py` regenerate the
+  Curry notebooks from the EDF originals by string replacement. Edit the EDF notebook, then **re-run the
+  generator**. New code passes through automatically **unless** it sits inside a block the generator
+  string-matches or wholesale-replaces — e.g. tool 6's generator replaces `compute_rejection_masks` (with the
+  memory-efficient **per-channel** read) and the rejection call site, so any signature change there must be
+  mirrored in `_make_tool6_curry.py` (`NEW_REJECT` + the `cell8 rejection call` OLD/NEW strings).
   Tool 6 does **not** persist a per-(epoch, channel) mask; per-participant files are `_all-epo.fif`,
   `_epoch_rejection.tsv`, `_rejection_summary.tsv`, `_preprocessing_report.html` (heatmap embedded, no PNG).
 

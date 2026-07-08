@@ -173,14 +173,15 @@ def main():
             print(f'[{i}/{len(parts)}] {fid} …', flush=True)
             P = L.load_participant(p['fif'])
             thr, info = L.load_params(p['folder'], fid, custom_stages_fallback=custom)
-            freqs, psds = L.compute_psds(P['epochs'])
+            fit_fmin, fit_fmax = info['fit_range']
+            freqs, psds = L.compute_psds(P['epochs'], fmax=fit_fmax)
             if args.no_1f:
                 ptp = np.ptp(P['data_uV'], axis=-1).max(axis=1)
                 grad = np.max(np.abs(np.diff(P['data_uV'], axis=-1)), axis=-1).max(axis=1)
                 metrics = {'ptp': ptp, 'gradient': grad,
                            'mae': np.full(len(ptp), np.nan), 'r2': np.full(len(ptp), np.nan)}
             else:
-                metrics = L.compute_epoch_metrics(P['data_uV'], freqs, psds)
+                metrics = L.compute_epoch_metrics(P['data_uV'], freqs, psds, fmin=fit_fmin)
             figs, html = L.build_participant_report_figs(P, metrics, freqs, psds, thr,
                                                          info['custom_stages'])
             L.save_report_html(out_dir / f'{fid}_qc2b_report.html',
