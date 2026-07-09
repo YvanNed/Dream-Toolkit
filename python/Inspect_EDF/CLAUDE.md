@@ -26,6 +26,22 @@ specifics live in SPEC.md.
 - **EOG/EMG/ECG detection (`detect_channel_types`)**: classify non-EEG channels by transducer type OR name
   (incl. `chin|menton` for EMG). Reuse the helper from `8_live_explore_1file`, pre-filled as an editable
   selection so the user can correct misses.
+- **Tool-1 channel-type selection + robust masks (`1_inspect_edf*`)**: tool 1 inspects EEG/EOG/ECG/**EMG**,
+  with per-type detection harmonized to the same *transducer-type OR curated channel-name list* convention
+  as `detect_channel_types`: EEG = transducer `EEG`/`AGAGCL ELECTRODE` OR `KNOWN_EEG_CHANNEL_RE`, then
+  **subtract** any `emg|ecg|eog|ekg|chin|menton` name (drops non-EEG picked up via the generic AGAGCL
+  transducer); EOG += `LOC|ROC|\bE1\b|\bE2\b`; ECG += `EKG`; EMG = transducer `EMG` OR `emg|chin|menton`.
+  **Default selection = EEG + EOG** (ECG/EMG opt-in) across all four files. The **Voila** exposes four
+  checkboxes right after the folder chooser (`cb_eeg/cb_eog/cb_ecg/cb_emg`, EEG+EOG on) and gates each
+  `run_inspection` section on them; the **Jupyter** twin does *not* gate — the EMG section is just extra
+  cells the user chooses to run (each section already has its own `## N. Inspect X` header). The **batch**
+  scripts select via a top-of-file `INCLUDE_TYPES` dict: `perparticipant` supports all four (EMG block
+  mirrors ECG); `perdataset` intentionally aggregates **EEG + EOG only** (ECG was deliberately commented
+  out there as "too heavy" — keep it that way; use `perparticipant`/notebooks for ECG/EMG). EMG outputs
+  mirror the ECG set (`EMG_summary_table.tsv`, `EMG_missing_edf.tsv`, `EMG_inverted_polarity_edf.tsv`,
+  `EMG_bad_dynamic_range_edf.tsv`, `EMG_bad_resolution_edf.tsv`). Event-free/EMG-off runs stay
+  byte-compatible with pre-change outputs. The legacy `inspect_edf_voila_EMG.ipynb` (pre-skip/merge fork)
+  is superseded by this and can be archived.
 - **In-place header anonymization (`1bis_anonymize_edf*`)**: copy the file, then overwrite **only**
   `patient_id` (→ `X X 30-DEC-1899 X_X`) and `recording_id` (keep the real `Startdate` token, blank
   admin/tech/equipment) in the 256-byte header. Everything from byte 256 on stays byte-identical (verified

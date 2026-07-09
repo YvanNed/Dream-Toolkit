@@ -16,6 +16,10 @@ Created on Mon Sep 22 17:33:14 2025
 dr_thres = 500 # in µV because data are converted to µV (even for EOG and MEG)
 r_thres = 0.1 # in µV
 
+# Channel types to inspect (True = inspected). Default: EEG + EOG (edit to add ECG / EMG).
+# Detection is robust: a channel matches by transducer type OR by a curated channel-name list.
+INCLUDE_TYPES = {'EEG': True, 'EOG': True, 'ECG': False, 'EMG': False}
+
 #%% Import package and define custom functions
 try:
     import os
@@ -363,129 +367,173 @@ with open(f"{summary_path}/EDF_perParticipant_report.html", "w", encoding="utf-8
             #######################################################################
             # extract EEG info
             # define common EEG label from the 10-10 (MCN) convention plus older 10-20 labels (T3/T4/T5/T6 = modern T7/T8/P7/P8)
-            COMMON_EEG_label = r'\bFp1\b|\bFpz\b|\bFp2\b|\bAF7\b|\bAF3\b|\bAFz\b|\bAF4\b|\bAF8\b|\bF7\b|\bF5\b|\bF3\b|\bF1\b|\bFz\b|\bF2\b|\bF4\b|\bF6\b|\bF8\b|\bFT7\b|\bFC5\b|\bFC3\b|\bFC1\b|\bFCz\b|\bFC2\b|\bFC4\b|\bFC6\b|\bFT8\b|\bT7\b|\bC5\b|\bC3\b|\bC1\b|\bCz\b|\bC2\b|\bC4\b|\bC6\b|\bT8\b|\bTP7\b|\bCP5\b|\bCP3\b|\bCP1\b|\bCPz\b|\bCP2\b|\bCP4\b|\bCP6\b|\bTP8\b|\bP7\b|\bP5\b|\bP3\b|\bP1\b|\bPz\b|\bP2\b|\bP4\b|\bP6\b|\bP8\b|\bPO7\b|\bPO5\b|\bPO3\b|\bPOz\b|\bPO4\b|\bPO6\b|\bPO8\b|\bO1\b|\bOz\b|\bO2\b|\bM1\b|\bM2\b|\bT3\b|\bT4\b|\bT5\b|\bT6\b|\bEEG\b|\bA2\b|\bA1\b'
-            # select only EEG channels and return a warning if the number of participant is smaller/higher
-            mask_ch = df['transducer_type'].str.contains(r'EEG|AGAGCL ELECTRODE', case = False, na=False) | df['channel'].str.contains(COMMON_EEG_label, case = False, na=False) # create a mask that returns true for lines containing either EEG/AGAGCL ELECTRODE in the transducer_type column or containing a common EEG label in the channel column
-            df_ch = df[mask_ch]
-            # remove the emg channels that were captured with the AGAGCL ELECTRODE transducer type 
-            df_ch = df_ch[~df_ch['channel'].str.contains(r'emg|ecg|eog', case=False, na=False)] # the ~ allows to not select the selection (like ! in matlab)
-            print('<h4 class="indent1">EEG:</h4>', file=f)
-            if not df_ch.empty:
-                print('<div class="indent2">', file=f)
-                print(f'<p>EEG channels list: {join_values(df_ch["channel"])}</p>', file=f)
-                print(f'<p>EEG sampling frequency: {join_uniq(df_ch["sampling_frequency"])}</p>', file=f)
-                print(f'<p>EEG Filters (Hz): hp = {join_uniq(df_ch["highpass"])}; lp = {join_uniq(df_ch["lowpass"])}; notch = {join_uniq(df_ch["notch"])}</p>', file=f)
-                print(f'<p>EEG unit: {join_uniq(df_ch["dimension"])}</p>', file=f)
-                # inversion
-                df_inv = df_ch[df_ch['physical_min'] > df_ch['physical_max']]
-                if not df_inv.empty:
-                    print('<p>EEG polarity: ⚠️ channels with inverted polarity detected!</p>', file=f)
-                    print(f'<p class="indent3">channels: {join_uniq(df_inv["channel"])}</p>', file=f)
+            if INCLUDE_TYPES['EEG']:
+                COMMON_EEG_label = r'\bFp1\b|\bFpz\b|\bFp2\b|\bAF7\b|\bAF3\b|\bAFz\b|\bAF4\b|\bAF8\b|\bF7\b|\bF5\b|\bF3\b|\bF1\b|\bFz\b|\bF2\b|\bF4\b|\bF6\b|\bF8\b|\bFT7\b|\bFC5\b|\bFC3\b|\bFC1\b|\bFCz\b|\bFC2\b|\bFC4\b|\bFC6\b|\bFT8\b|\bT7\b|\bC5\b|\bC3\b|\bC1\b|\bCz\b|\bC2\b|\bC4\b|\bC6\b|\bT8\b|\bTP7\b|\bCP5\b|\bCP3\b|\bCP1\b|\bCPz\b|\bCP2\b|\bCP4\b|\bCP6\b|\bTP8\b|\bP7\b|\bP5\b|\bP3\b|\bP1\b|\bPz\b|\bP2\b|\bP4\b|\bP6\b|\bP8\b|\bPO7\b|\bPO5\b|\bPO3\b|\bPOz\b|\bPO4\b|\bPO6\b|\bPO8\b|\bO1\b|\bOz\b|\bO2\b|\bM1\b|\bM2\b|\bT3\b|\bT4\b|\bT5\b|\bT6\b|\bEEG\b|\bA2\b|\bA1\b'
+                # select only EEG channels and return a warning if the number of participant is smaller/higher
+                mask_ch = df['transducer_type'].str.contains(r'EEG|AGAGCL ELECTRODE', case = False, na=False) | df['channel'].str.contains(COMMON_EEG_label, case = False, na=False) # create a mask that returns true for lines containing either EEG/AGAGCL ELECTRODE in the transducer_type column or containing a common EEG label in the channel column
+                df_ch = df[mask_ch]
+                # remove the emg channels that were captured with the AGAGCL ELECTRODE transducer type 
+                df_ch = df_ch[~df_ch['channel'].str.contains(r'emg|ecg|eog|ekg|chin|menton', case=False, na=False)] # the ~ allows to not select the selection (like ! in matlab)
+                print('<h4 class="indent1">EEG:</h4>', file=f)
+                if not df_ch.empty:
+                    print('<div class="indent2">', file=f)
+                    print(f'<p>EEG channels list: {join_values(df_ch["channel"])}</p>', file=f)
+                    print(f'<p>EEG sampling frequency: {join_uniq(df_ch["sampling_frequency"])}</p>', file=f)
+                    print(f'<p>EEG Filters (Hz): hp = {join_uniq(df_ch["highpass"])}; lp = {join_uniq(df_ch["lowpass"])}; notch = {join_uniq(df_ch["notch"])}</p>', file=f)
+                    print(f'<p>EEG unit: {join_uniq(df_ch["dimension"])}</p>', file=f)
+                    # inversion
+                    df_inv = df_ch[df_ch['physical_min'] > df_ch['physical_max']]
+                    if not df_inv.empty:
+                        print('<p>EEG polarity: ⚠️ channels with inverted polarity detected!</p>', file=f)
+                        print(f'<p class="indent3">channels: {join_uniq(df_inv["channel"])}</p>', file=f)
+                    else:
+                        print('<p>EEG polarity: ✅ no inverted polarity detected in EEG channels!</p>', file=f)
+                    # clipping
+                    dr_mask = df_ch['res_theoretical']*pow(2,16) <= dr_thres
+                    bad_dr = df_ch[dr_mask]
+                    if not bad_dr.empty:
+                        print(f'<p>EEG clipping: ⚠️ channels with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
+                        print(f'<p class="indent3">channels: {join_uniq(bad_dr["channel"])}</p>', file=f)
+                    else:
+                        print(f'<p>EEG clipping: ✅ no clipping detected in EEG channels (dynamic range <= {dr_thres} µV)!</p>', file=f)
+                    # resolution
+                    r_mask = df_ch['res_theoretical'] >= r_thres
+                    bad_res = df_ch[r_mask]
+                    if not bad_res.empty:
+                        print(f'<p>EEG resolution: ⚠️ channels with low resolution (>= {r_thres} µV) detected!</p>', file=f)
+                        print(f'<p class="indent3">channels: {join_uniq(bad_res["channel"])}</p>', file=f)
+                    else:
+                        print(f'<p>EEG resolution: ✅ no low resolution detected in EEG channels (>= {r_thres} µV)!</p>', file=f)
+                    print('</div>', file=f)
+                    # print('<p class="indent1">✅ Extraction of EEG parameters completed!</p>', file=f)
                 else:
-                    print('<p>EEG polarity: ✅ no inverted polarity detected in EEG channels!</p>', file=f)
-                # clipping
-                dr_mask = df_ch['res_theoretical']*pow(2,16) <= dr_thres
-                bad_dr = df_ch[dr_mask]
-                if not bad_dr.empty:
-                    print(f'<p>EEG clipping: ⚠️ channels with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
-                    print(f'<p class="indent3">channels: {join_uniq(bad_dr["channel"])}</p>', file=f)
-                else:
-                    print(f'<p>EEG clipping: ✅ no clipping detected in EEG channels (dynamic range <= {dr_thres} µV)!</p>', file=f)
-                # resolution
-                r_mask = df_ch['res_theoretical'] >= r_thres
-                bad_res = df_ch[r_mask]
-                if not bad_res.empty:
-                    print(f'<p>EEG resolution: ⚠️ channels with low resolution (>= {r_thres} µV) detected!</p>', file=f)
-                    print(f'<p class="indent3">channels: {join_uniq(bad_res["channel"])}</p>', file=f)
-                else:
-                    print(f'<p>EEG resolution: ✅ no low resolution detected in EEG channels (>= {r_thres} µV)!</p>', file=f)
-                print('</div>', file=f)
-                # print('<p class="indent1">✅ Extraction of EEG parameters completed!</p>', file=f)
-            else:
-                print('<p class="indent2">❌ No EEG found </p>', file=f)
+                    print('<p class="indent2">❌ No EEG found </p>', file=f)
             
             #######################################################################
             
             #######################################################################
             # Extract EOG info
-            mask_eog = df['transducer_type'].str.contains(r'EOG', case = False, na=False) | df['channel'].str.contains(r'EOG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
-            df_eog = df[mask_eog]
-            print('<h4 class="indent1">EOG:</h4>', file=f)
-            if not df_eog.empty:
-                 print('<div class="indent2">', file=f)
-                 print(f'<p>EOG channels list: {join_values(df_eog["channel"])}</p>', file=f)
-                 print(f'<p>EOG sampling frequency: {join_uniq(df_eog["sampling_frequency"])}</p>', file=f)
-                 print(f'<p>EOG Filters (Hz): hp = {join_uniq(df_eog["highpass"])}; lp = {join_uniq(df_eog["lowpass"])}; notch = {join_uniq(df_eog["notch"])}</p>', file=f)
-                 print(f'<p>EOG unit: {join_uniq(df_eog["dimension"])}</p>', file=f)
-                 # inversion
-                 df_inv_eog = df_eog[df_eog['physical_min'] > df_eog['physical_max']]
-                 if not df_inv_eog.empty:
-                     print('<p>EOG polarity: ⚠️ channels with inverted polarity detected!</p>', file=f)
-                     print(f'<p class="indent3">channels: {join_uniq(df_inv_eog["channel"])}</p>', file=f)
-                 else:
-                     print('<p>EOG polarity: ✅ no inverted polarity detected in EOG channels!</p>', file=f)
-                 # clipping
-                 dr_mask_eog = df_eog['res_theoretical']*pow(2,16) <= dr_thres
-                 bad_dr_eog = df_eog[dr_mask_eog]
-                 if not bad_dr_eog.empty:
-                     print(f'<p>EOG clipping: ⚠️ channels with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
-                     print(f'<p class="indent3">channels: {join_uniq(bad_dr_eog["channel"])}</p>', file=f)
-                 else:
-                     print(f'<p>EOG clipping: ✅ no clipping detected in EOG channels (dynamic range <= {dr_thres} µV)!</p>', file=f)
-                 # resolution
-                 r_mask_eog = df_eog['res_theoretical'] >= r_thres
-                 bad_res_eog = df_eog[r_mask_eog]
-                 if not bad_res_eog.empty:
-                     print(f'<p>EOG resolution: ⚠️ channels with low resolution (>= {r_thres} µV) detected!</p>', file=f)
-                     print(f'<p class="indent3">channels: {join_uniq(bad_res_eog["channel"])}</p>', file=f)
-                 else:
-                     print(f'<p>EOG resolution: ✅ no low resolution detected in EOG channels (>= {r_thres} µV)!</p>', file=f)
-                 print('</div>', file=f) 
-                 # print(f'<p class="indent1">✅ Extraction of EOG parameters from participant {df_eog["subject"].unique()} completed!</p>', file=f)
-            else:
-                 print('<p class="indent2">❌ No EOG found <p>', file=f)   
+            if INCLUDE_TYPES['EOG']:
+                mask_eog = df['transducer_type'].str.contains(r'EOG', case = False, na=False) | df['channel'].str.contains(r'EOG|LOC|ROC|\bE1\b|\bE2\b', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
+                df_eog = df[mask_eog]
+                print('<h4 class="indent1">EOG:</h4>', file=f)
+                if not df_eog.empty:
+                     print('<div class="indent2">', file=f)
+                     print(f'<p>EOG channels list: {join_values(df_eog["channel"])}</p>', file=f)
+                     print(f'<p>EOG sampling frequency: {join_uniq(df_eog["sampling_frequency"])}</p>', file=f)
+                     print(f'<p>EOG Filters (Hz): hp = {join_uniq(df_eog["highpass"])}; lp = {join_uniq(df_eog["lowpass"])}; notch = {join_uniq(df_eog["notch"])}</p>', file=f)
+                     print(f'<p>EOG unit: {join_uniq(df_eog["dimension"])}</p>', file=f)
+                     # inversion
+                     df_inv_eog = df_eog[df_eog['physical_min'] > df_eog['physical_max']]
+                     if not df_inv_eog.empty:
+                         print('<p>EOG polarity: ⚠️ channels with inverted polarity detected!</p>', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(df_inv_eog["channel"])}</p>', file=f)
+                     else:
+                         print('<p>EOG polarity: ✅ no inverted polarity detected in EOG channels!</p>', file=f)
+                     # clipping
+                     dr_mask_eog = df_eog['res_theoretical']*pow(2,16) <= dr_thres
+                     bad_dr_eog = df_eog[dr_mask_eog]
+                     if not bad_dr_eog.empty:
+                         print(f'<p>EOG clipping: ⚠️ channels with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(bad_dr_eog["channel"])}</p>', file=f)
+                     else:
+                         print(f'<p>EOG clipping: ✅ no clipping detected in EOG channels (dynamic range <= {dr_thres} µV)!</p>', file=f)
+                     # resolution
+                     r_mask_eog = df_eog['res_theoretical'] >= r_thres
+                     bad_res_eog = df_eog[r_mask_eog]
+                     if not bad_res_eog.empty:
+                         print(f'<p>EOG resolution: ⚠️ channels with low resolution (>= {r_thres} µV) detected!</p>', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(bad_res_eog["channel"])}</p>', file=f)
+                     else:
+                         print(f'<p>EOG resolution: ✅ no low resolution detected in EOG channels (>= {r_thres} µV)!</p>', file=f)
+                     print('</div>', file=f) 
+                     # print(f'<p class="indent1">✅ Extraction of EOG parameters from participant {df_eog["subject"].unique()} completed!</p>', file=f)
+                else:
+                     print('<p class="indent2">❌ No EOG found <p>', file=f)   
             
             #######################################################################
             
             #######################################################################
             # Extract ECG info
-            mask_ecg = df['transducer_type'].str.contains(r'ECG', case = False, na=False) | df['channel'].str.contains(r'ECG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
-            df_ecg = df[mask_ecg]
+            if INCLUDE_TYPES['ECG']:
+                mask_ecg = df['transducer_type'].str.contains(r'ECG|EKG', case = False, na=False) | df['channel'].str.contains(r'ecg|ekg', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
+                df_ecg = df[mask_ecg]
 
-            print('<h4 class="indent1">ECG:</h4>', file=f)
-            if not df_ecg.empty:
-                 print('<div class="indent2">', file=f)
-                 print(f'<p>ECG channels list: {join_values(df_ecg["channel"])}</p>', file=f)
-                 print(f'<p>ECG sampling frequency: {join_uniq(df_ecg["sampling_frequency"])}</p>', file=f)
-                 print(f'<p>ECG Filters (Hz): hp = {join_uniq(df_ecg["highpass"])}; lp = {join_uniq(df_ecg["lowpass"])}; notch = {join_uniq(df_ecg["notch"])}</p>', file=f)
-                 print(f'<p>ECG unit: {join_uniq(df_ecg["dimension"])}', file=f)
-                 # inversion
-                 df_inv_ecg = df_ecg[df_ecg['physical_min'] > df_ecg['physical_max']]
-                 if not df_inv_ecg.empty:
-                     print('<p>ECG polarity: ⚠️ channels with inverted polarity detected!', file=f)
-                     print(f'<p class="indent3">channels: {join_uniq(df_inv_ecg["channel"])}</p>', file=f)
-                 else:
-                     print('<p>ECG polarity: ✅ no inverted polarity detected in ECG channels!', file=f)
-                 # clipping
-                 dr_mask_ecg = df_ecg['res_theoretical']*pow(2,16) <= dr_thres
-                 bad_dr_ecg = df_ecg[dr_mask_ecg]
-                 if not bad_dr_ecg.empty:
-                     print(f'<p>ECG clipping: ⚠️ channels with clipping (dynamic range <= {dr_thres} µV) detected!', file=f)
-                     print(f'<p class="indent3">channels: {join_uniq(bad_dr_ecg["channel"])}</p>', file=f)
-                 else:
-                     print(f'<p>ECG clipping: ✅ no clipping detected in ECG channels (dynamic range <= {dr_thres} µV)!', file=f)
-                 # resolution
-                 r_mask_ecg = df_ecg['res_theoretical'] >= r_thres
-                 bad_res_ecg = df_ecg[r_mask_ecg]
-                 if not bad_res_ecg.empty:
-                     print(f'<p>ECG resolution: ⚠️ channels with low resolution (>= {r_thres} µV) detected!', file=f)
-                     print(f'<p class="indent3">channels: {join_uniq(bad_res_ecg["channel"])}</p>', file=f)
-                 else:
-                     print(f'<p>ECG resolution: ✅ no low resolution detected in ECG channels (>= {r_thres} µV)!', file=f)
-                 print('</div>', file=f)  
-                 # print(f'<p class="indent1">✅ Extraction of ECG parameters from participant {df_ecg["subject"].unique()} completed!</p>', file=f)
-            else:
-                 print('<p class="indent2">❌ No ECG found </p>', file=f) 
+                print('<h4 class="indent1">ECG:</h4>', file=f)
+                if not df_ecg.empty:
+                     print('<div class="indent2">', file=f)
+                     print(f'<p>ECG channels list: {join_values(df_ecg["channel"])}</p>', file=f)
+                     print(f'<p>ECG sampling frequency: {join_uniq(df_ecg["sampling_frequency"])}</p>', file=f)
+                     print(f'<p>ECG Filters (Hz): hp = {join_uniq(df_ecg["highpass"])}; lp = {join_uniq(df_ecg["lowpass"])}; notch = {join_uniq(df_ecg["notch"])}</p>', file=f)
+                     print(f'<p>ECG unit: {join_uniq(df_ecg["dimension"])}', file=f)
+                     # inversion
+                     df_inv_ecg = df_ecg[df_ecg['physical_min'] > df_ecg['physical_max']]
+                     if not df_inv_ecg.empty:
+                         print('<p>ECG polarity: ⚠️ channels with inverted polarity detected!', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(df_inv_ecg["channel"])}</p>', file=f)
+                     else:
+                         print('<p>ECG polarity: ✅ no inverted polarity detected in ECG channels!', file=f)
+                     # clipping
+                     dr_mask_ecg = df_ecg['res_theoretical']*pow(2,16) <= dr_thres
+                     bad_dr_ecg = df_ecg[dr_mask_ecg]
+                     if not bad_dr_ecg.empty:
+                         print(f'<p>ECG clipping: ⚠️ channels with clipping (dynamic range <= {dr_thres} µV) detected!', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(bad_dr_ecg["channel"])}</p>', file=f)
+                     else:
+                         print(f'<p>ECG clipping: ✅ no clipping detected in ECG channels (dynamic range <= {dr_thres} µV)!', file=f)
+                     # resolution
+                     r_mask_ecg = df_ecg['res_theoretical'] >= r_thres
+                     bad_res_ecg = df_ecg[r_mask_ecg]
+                     if not bad_res_ecg.empty:
+                         print(f'<p>ECG resolution: ⚠️ channels with low resolution (>= {r_thres} µV) detected!', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(bad_res_ecg["channel"])}</p>', file=f)
+                     else:
+                         print(f'<p>ECG resolution: ✅ no low resolution detected in ECG channels (>= {r_thres} µV)!', file=f)
+                     print('</div>', file=f)  
+                     # print(f'<p class="indent1">✅ Extraction of ECG parameters from participant {df_ecg["subject"].unique()} completed!</p>', file=f)
+                else:
+                     print('<p class="indent2">❌ No ECG found </p>', file=f) 
+
+            #######################################################################
+            # Extract EMG info
+            if INCLUDE_TYPES['EMG']:
+                mask_emg = df['transducer_type'].str.contains(r'EMG', case = False, na=False) | df['channel'].str.contains(r'emg|chin|menton', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
+                df_emg = df[mask_emg]
+
+                print('<h4 class="indent1">EMG:</h4>', file=f)
+                if not df_emg.empty:
+                     print('<div class="indent2">', file=f)
+                     print(f'<p>EMG channels list: {join_values(df_emg["channel"])}</p>', file=f)
+                     print(f'<p>EMG sampling frequency: {join_uniq(df_emg["sampling_frequency"])}</p>', file=f)
+                     print(f'<p>EMG Filters (Hz): hp = {join_uniq(df_emg["highpass"])}; lp = {join_uniq(df_emg["lowpass"])}; notch = {join_uniq(df_emg["notch"])}</p>', file=f)
+                     print(f'<p>EMG unit: {join_uniq(df_emg["dimension"])}', file=f)
+                     # inversion
+                     df_inv_emg = df_emg[df_emg['physical_min'] > df_emg['physical_max']]
+                     if not df_inv_emg.empty:
+                         print('<p>EMG polarity: ⚠️ channels with inverted polarity detected!', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(df_inv_emg["channel"])}</p>', file=f)
+                     else:
+                         print('<p>EMG polarity: ✅ no inverted polarity detected in EMG channels!', file=f)
+                     # clipping
+                     dr_mask_emg = df_emg['res_theoretical']*pow(2,16) <= dr_thres
+                     bad_dr_emg = df_emg[dr_mask_emg]
+                     if not bad_dr_emg.empty:
+                         print(f'<p>EMG clipping: ⚠️ channels with clipping (dynamic range <= {dr_thres} µV) detected!', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(bad_dr_emg["channel"])}</p>', file=f)
+                     else:
+                         print(f'<p>EMG clipping: ✅ no clipping detected in EMG channels (dynamic range <= {dr_thres} µV)!', file=f)
+                     # resolution
+                     r_mask_emg = df_emg['res_theoretical'] >= r_thres
+                     bad_res_emg = df_emg[r_mask_emg]
+                     if not bad_res_emg.empty:
+                         print(f'<p>EMG resolution: ⚠️ channels with low resolution (>= {r_thres} µV) detected!', file=f)
+                         print(f'<p class="indent3">channels: {join_uniq(bad_res_emg["channel"])}</p>', file=f)
+                     else:
+                         print(f'<p>EMG resolution: ✅ no low resolution detected in EMG channels (>= {r_thres} µV)!', file=f)
+                     print('</div>', file=f)  
+                     # print(f'<p class="indent1">✅ Extraction of EMG parameters from participant {df_emg["subject"].unique()} completed!</p>', file=f)
+                else:
+                     print('<p class="indent2">❌ No EMG found </p>', file=f) 
             
             #######################################################################
 

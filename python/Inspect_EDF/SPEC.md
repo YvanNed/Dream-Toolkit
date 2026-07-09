@@ -211,7 +211,7 @@ Inspects EDF file parameters across an entire dataset **without loading signal d
 
 **Sampling frequency derivation**: the per-channel 8-byte header field is the *number of samples per data record*, **not** the sampling frequency. The parser stores it as `samples_per_record` and computes `sampling_frequency = samples_per_record / duration_data_record`. In classic EDF the data-record duration is 1 s, so the two values coincide; but EDF+ files frequently use a different record duration (e.g. `0.1 s` → `40 / 0.1 = 400 Hz`, or `2 s` → `512 / 2 = 256 Hz`), so dividing by `duration_data_record` is required to match the rate reported by MNE. The computed value is kept as a string (e.g. `'256'`, `'400'`) to preserve the existing `sorted(set(...))` grouping and avoid TSV round-trip type changes. This applies to every tool sharing the custom header parser: `1_inspect_edf_voila.ipynb`, `1_inspect_edf.ipynb`, `1_inspect_edf_perdataset.py`, `1_inspect_edf_perparticipant.py`, and `2_select&remap_channels_edf(_voila).ipynb`.
 
-**Checks performed for EEG, EOG, and ECG channels:**
+**Checks performed for EEG, EOG, ECG, and EMG channels:**
 - Channel configuration and montage consistency across participants
 - Sampling frequency consistency
 - Filter settings consistency
@@ -219,6 +219,29 @@ Inspects EDF file parameters across an entire dataset **without loading signal d
 - Inverted polarity (physical_min > physical_max)
 - Signal clipping (dynamic range ≤ 500 µV)
 - Poor resolution (dynamic range ≥ 0.1 µV per digital unit)
+
+**Channel-type selection + robust detection**: which types are inspected is user-selectable, **default
+EEG + EOG** (ECG and EMG are opt-in). Detection is harmonized across all four files to the same
+*transducer-type OR curated channel-name list* convention as the shared `detect_channel_types` (see
+CLAUDE.md / *Cross-cutting procedures*): EEG = transducer `EEG`/`AGAGCL ELECTRODE` OR `KNOWN_EEG_CHANNEL_RE`,
+then **subtract** any `emg|ecg|eog|ekg|chin|menton` channel name (drops non-EEG sensors captured via the
+generic AGAGCL-ELECTRODE transducer); EOG adds `LOC|ROC|E1|E2` names; ECG adds `EKG`; EMG = transducer
+`EMG` OR `emg|chin|menton` (the `chin|menton` aliases cover Compumedics chin-EMG labels). The selection
+surface differs per delivery form:
+- **Voila** (`1_inspect_edf_voila.ipynb`): four checkboxes (`EEG`/`EOG`/`ECG`/`EMG`, EEG+EOG ticked) shown
+  right after the folder chooser; `run_inspection` gates each per-type section on them (section 5 = EMG),
+  so a run only produces the selected types' tables/report blocks. General dataset info and the
+  anonymization check are type-independent and always run.
+- **Jupyter** (`1_inspect_edf.ipynb`): **no checkboxes** — each type is its own `## N. Inspect X` section
+  (section 5 = EMG) that the user chooses to run cell-by-cell, matching the notebook's manual-run model.
+- **Batch scripts**: a top-of-file `INCLUDE_TYPES` dict selects types. `perparticipant.py` supports all
+  four (EMG block mirrors ECG). `perdataset.py` intentionally aggregates **EEG + EOG only** — ECG/EMG were
+  deliberately left out of the dataset-level report to keep it light; use `perparticipant.py` or the
+  notebooks for per-participant ECG/EMG.
+
+Selecting only the default types (or leaving EMG off) keeps outputs byte-compatible with the pre-selection
+tool. The former standalone `inspect_edf_voila_EMG.ipynb` (a pre-skip/merge fork that hard-coded EMG) is
+superseded by this and can be archived.
 
 **Anonymization check** (section 1.3 in Voila / section 1.4 in Jupyter): inspects the EDF+ *Local Patient ID* field (80-byte header) to detect non-anonymized patient names. The EDF+ format encodes this field as `code sex birthdate name` (space-separated); Compumedics writes the name as `LASTNAME_FIRSTNAME` and replaces it with `X_X` on anonymized export. The check isolates the name sub-field (4th token onward), strips placeholder characters (`X`, `x`, `_`, `,`, `;`, whitespace), and flags the file if anything remains. The `,` and `;` separators are stripped so that headers anonymized by *other* systems using a `Lastname,Firstname` placeholder (e.g. `Xxxxxxx,Xxxx`) are still recognized as anonymized, not just the Compumedics `X_X` form. Additionally, each non-placeholder name token (≥ 3 characters, to avoid false positives from short codes or initials) is searched case-insensitively in the file stem to detect PII leaking into the file name. Two warning levels:
 - `PII in header AND file name` — real name found in both header and file name.
@@ -228,8 +251,8 @@ Files where the check cannot be performed (read failures) are already captured i
 **Outputs** (all written to `<study_folder>/summary_inspection/`, created on first run with a `README.md`):
 - `FULL_summary_table_edf.tsv` — all parameters for all channels/files, including `patient_name` column (raw name sub-field from the EDF+ `patient_id` field)
 - `anonymization_check_edf.tsv` — per-file anonymization status; columns: `subject`, `path`, `patient_id`, `name_subfield`, `patient_id_format`, `header_anonymized`, `name_in_filename`, `anon_warning`
-- `EEG_summary_table.tsv`, `EOG_summary_table.tsv`, `ECG_summary_table.tsv`
-- `EEG_inverted_polarity_edf.tsv`, `EEG_bad_dynamic_range_edf.tsv`, `EEG_bad_resolution_edf.tsv`
+- `EEG_summary_table.tsv`, `EOG_summary_table.tsv`, `ECG_summary_table.tsv`, `EMG_summary_table.tsv` (only the selected types are written; ECG/EMG only when enabled)
+- `EEG_inverted_polarity_edf.tsv`, `EEG_bad_dynamic_range_edf.tsv`, `EEG_bad_resolution_edf.tsv` (and the matching `EOG_*`/`ECG_*`/`EMG_*` set per selected type, plus `<TYPE>_missing_edf.tsv`/`<TYPE>_suspect_edf.tsv`)
 - `EDF_inspection_report.html`, `EDF_perParticipant_report.html`
 - `failed_edf_read.tsv` — files that could not be read
 - `README.md` — describes each output file and which tool generates it
