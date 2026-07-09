@@ -52,7 +52,30 @@ Inspect_EDF/
 
 **Sibling directory** `../Check_EDF/` contains exploratory notebooks used during development (not production tools).
 
-> **Editing the larger notebooks**: see the *rename-to-`.txt`* rule in CLAUDE.md — `Read`/`Edit`/`NotebookEdit` are blocked or size-capped on big `.ipynb` files.
+### Editing the larger notebooks (agent procedure)
+
+`Read` ignores `offset`/`limit` on `.ipynb` and fails once total size passes ~25 k tokens; `Edit` is
+blocked on the `.ipynb` extension and `NotebookEdit` needs a prior whole-file `Read`. So for the large
+notebooks, rename around the extension blocks (**rename-to-`.txt`** method):
+
+1. `mv "<nb>.ipynb" "<nb>.ipynb.txt"` (Bash tool).
+2. Edit the **raw notebook JSON** with Grep / Read (`offset`/`limit`) / Edit — each source line is a
+   `"…\n",` array element; preserve escaping (`\"`, `\\`, `\n`) and array commas (the last element of a
+   `source` array has no trailing comma).
+3. Validate:
+   `& "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -c "import json; json.load(open(r'<nb>.ipynb.txt', encoding='utf-8'))"`.
+4. `mv "<nb>.ipynb.txt" "<nb>.ipynb"` — keep the whole rename in one task so the git diff stays byte-exact.
+
+- **Small notebooks** (`1bis_anonymize_edf*`, `4_remap_events_edf*`): normal `Read` + `NotebookEdit`, no
+  rename needed.
+- **JSON-surgery fallback** (many repetitive / escaping-heavy edits): a one-shot Python script that
+  `json.load`s, string-replaces inside the parsed cell `source` (assert each pattern matches exactly once),
+  and `json.dump`s back with `indent=1, ensure_ascii=False` + trailing newline. **Preserve the original
+  type of `cell["source"]`** — a single string must stay a single string (assigning a list back
+  re-serializes one physical line into ~1500, exploding the diff); if you must write a list, split with
+  `splitlines(keepends=True)` (never `split("\n")`) and re-`compile()` the joined source as a syntax gate.
+  An open IDE may re-serialize the notebook between calls — re-read before each pass. Prefer rename-to-`.txt`
+  when diff minimality matters.
 
 ## Conda environment
 
@@ -178,6 +201,17 @@ instead of restating them; only tool-specific deltas are kept inline.
     (byte-identical scale and image). The tool-7 *navigator* spectrogram is a separate plot (floored
     at −120 dB, p5–p99) and is left as-is. Diagnostic scripts:
     `tools/simple_hypnospectro_yasa_vs_fix.py` and `tools/compare_flat_spectrogram_fix.{py,ipynb}`.
+- **Time-series display cap for DC-coupled data (±500 µV physiological ceiling)**: DC-coupled recordings
+  (Curry `.cdt`, and any acquisition exported in DC with no clipping) carry no export clipping, so slow
+  drift or artefacts can push the p99.9-based autoscale far past physiological range and crush the real
+  EEG in a time-series / butterfly plot. For such tools the shared amplitude limit is **capped** at a wide
+  physiological ceiling — `y_lim = min(max_p999, 500.0)` (constant `DISPLAY_YLIM_UV = 500.0`) — never a
+  hard fixed window, so clean low-amplitude channels still auto-zoom below the cap and the shared
+  cross-channel scale is kept. Applied to the per-channel + butterfly time series **and** the histogram
+  X-axis (`x_lim_hist` follows `y_lim_ts`). Currently **Curry-only** (injected by
+  `tools_curry/_make_tool5_curry.py`, block "cap time-series y-limit…" — re-run the generator after
+  editing); the EDF tools keep the uncapped autoscale on purpose (full range helps spot export clipping).
+  Extend the same cap to any future DC-source tool.
 - **Physical bounds in µV (`get_phys_bounds_uV`)**: MNE stores an EDF channel's physical range as
   `physical_max + offset` in `raw._raw_extras` (not explicit `physical_min`/`physical_max`); the
   `units`/`physical_max`/`offsets` keys are present and identical on MNE 1.9 and 1.12.
@@ -487,8 +521,18 @@ All methods operate on the raw epoch data in µV (`epochs.get_data() * 1e6`, sha
 | **Amplitude** | Peak-to-peak = `max(epoch) − min(epoch)` | W: 300, N1: 250, N2/N3: 200, REM: 250 µV | Per-stage threshold; W/REM more lenient because muscle and eye-movement artefacts are physiologically common in those stages. Equivalent to MNE's `drop_bad(reject=...)` criterion. |
 | **Flat signal** | Peak-to-peak < threshold | 1 µV | Detects disconnected electrodes or amplifier saturation within a single epoch. Logically identical to MNE's `drop_bad(flat=...)` criterion: both compare `ptp` against a low-amplitude threshold. |
 | **Gradient** | `max(|diff(epoch)|)` across time | 100 µV/sample | Maximum sample-to-sample absolute difference; sensitive to sudden jumps, electrode pops, and movement artefacts not captured by peak-to-peak. `diff` and `max` both operate on `axis=-1` (time axis) to handle the 3D `(n_epochs, n_channels, n_times)` array correctly. |
-| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, 2–30 Hz, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`) | MAE > 0.15 OR R² < 0.95 | Fit restricted to ≥2 Hz to limit slow-wave influence. A **full peak model is used deliberately** — periodic components (spindles, alpha…) are modelled and removed *before* assessing the aperiodic fit quality. Forcing `max_n_peaks=0` would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). |
+| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, **configurable fit range, default 2–45 Hz** — see below, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`) | MAE > 0.15 OR R² < 0.95 | Fit lower bound ≥ 2 Hz limits slow-wave influence. A **full peak model is used deliberately** — periodic components (spindles, alpha…) are modelled and removed *before* assessing the aperiodic fit quality. Forcing `max_n_peaks=0` would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). |
 | **Event containment** *(optional, off by default)* | 30 s epoch **containing the onset** of any **selected** canonical scored-event type (arousal, apnea, hypopnea, limb movement, SpO2 desaturation…) | **onset-only** — the epoch holding the event `Start`; the annotated `Duration` is **intentionally ignored** (clinicians often score only the onset without a reliable duration), so each event flags exactly one epoch | **Epoch-level** flag, replicated across all channels → single `flag_event` column. Events read with the shared CSV-first / XML-fallback `load_events(edf, csv_suffix)`; raw labels mapped to canonical via `event_remap.json` (tool 4). UI: a checkbox to activate, **a wrapping row of checkboxes for the canonical types** (all shown at once, populated from the chosen `event_remap.json`), and an inline note explaining the onset-only rule so the choice is informed. A **"Count affected epochs"** button reports, over the participants currently checked in Section 3, how many epochs each selected type would flag (overall + per stage) using only the hypnogram length/stages and events — no signal is read. Missing/unreadable event companions are non-fatal (the file keeps the other 5 methods, never added to `failed`). |
+
+**Configurable 1/f fit range**: the aperiodic fit window is user-editable via two widgets
+(`txt_1f_fmin` / `txt_1f_fmax`, **default 2–45 Hz**); the fit uses
+`freq_mask = (psd_freqs >= fit_fmin) & (psd_freqs <= fit_fmax)`. The Welch PSD ceiling **follows the fit
+max** (`fmax_psd = min(fit_fmax_val, sf/2 - 0.5)`, was hardcoded 30 Hz), and the default bandpass is
+**0.1–50 Hz** so the whole fit band is preserved. The range is persisted in the sidecar as
+`rejection_thresholds.1f_fit_range_hz` and **read back by tool 7** (`qc_rejected_epochs_lib.load_params`
+→ `info['fit_range']`, threaded into `compute_psds(fmax=)` / `fit_1f(fmin=)`; fallback `(2.0, 45.0)`), so
+tool 7's recomputed per-channel attribution matches tool 6's. Wired across tool 6 (EDF + Curry),
+`qc_rejected_epochs_lib.py`, and the tool-7 batch + Voila.
 
 **Custom (non-AASM) stages** (see *Cross-cutting procedures*): an editable `Custom stages` field (Section 1, auto-filled from `config_param/custom_stages.json`) extends the per-stage logic. Each custom stage gets its **own amplitude-threshold widget** (default 250 µV, generated dynamically when the field changes) feeding `ptp_thresholds`; the per-participant summary, `global_rejection_by_stage.tsv`, the heatmap hypnogram strip and the **"Count affected epochs"** estimate all iterate `['W','N1','N2','N3','R'] + custom_stages`. Custom-stage epochs are still rejected by the other (stage-independent) methods regardless.
 
