@@ -43,6 +43,17 @@ specifics live in SPEC.md.
   `load_custom_stages`, `parse_custom_field`, `custom_stage_style`. Tools 5/7 use a custom
   `plot_hypnospectrogram()` because YASA's plotting hard-rejects non-AASM labels. Reading the JSON is
   non-fatal.
+- **Time-series display cap for DC-coupled data (±500 µV physiological ceiling)**: DC-coupled recordings
+  (Curry `.cdt`, and any acquisition exported in DC with no clipping) carry no export clipping, so slow drift
+  or artifacts can push the p99.9-based autoscale far past physiological range and crush the real EEG in a
+  time-series/butterfly plot. For such tools, **cap** the shared amplitude limit at a wide physiological
+  ceiling — `y_lim = min(max_p999, 500.0)` (constant `DISPLAY_YLIM_UV = 500.0`) — never a hard fixed window,
+  so clean low-amplitude channels still auto-zoom below the cap and the shared cross-channel scale is kept.
+  Applied to the per-channel + butterfly time series **and** the histogram X-axis (`x_lim_hist` follows
+  `y_lim_ts`, so capping the one variable covers all three). Currently **Curry-only** (injected by
+  `tools_curry/_make_tool5_curry.py`, block "cap time-series y-limit…" — re-run the generator after editing);
+  the EDF tools keep the uncapped autoscale on purpose (full range helps spot export clipping). Extend the
+  same cap to any future DC-source tool.
 - **Flat/dead-epoch colour scaling (`plot_hypnospectrogram()`)**: exclude near-zero (dead-epoch) columns from
   the `vmin/vmax` percentiles and render them grey, else the spectrogram washes out once >2.5 % of epochs are
   fully flat. Kept in sync across tools 5, 8, 8-voila; clean channels stay byte-identical.
