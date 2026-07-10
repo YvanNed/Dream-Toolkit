@@ -231,7 +231,7 @@ instead of restating them; only tool-specific deltas are kept inline.
   EOG/ECG/EMG. Defined in `8_live_explore_1file`; reuse it when a tool needs the scoring montage,
   pre-filled as an editable selection so the user can correct misses.
 - **Context-channel detection (`detect_context_channels`, tool 2)**: a **header-scan** variant of the same
-  *transducer-type OR name* convention, used by `2_select&remap_channels_edf*` Section 4bis to declare
+  *transducer-type OR name* convention, used by `2_select&remap_channels_edf*` Section 2bis to declare
   per-configuration EOG-Left/EOG-Right/EMG/ECG "context" channels. Unlike `detect_channel_types` (which
   reads an MNE `Raw`), this one operates on the scanned header dataframe (`df_full`) because tool 2 never
   loads signal, and it **tolerates a missing `transducer_type` column** so the generated Curry twin still
@@ -344,7 +344,7 @@ Condition 3 is required for EDFs exported by `mne.export.export_raw()`, which wr
 
 **Section 4 — Define re-reference method**: Section 4 groups configurations by their post-remap canonical channel set (the channels resulting from the Section 3 harmonization), so a re-reference method is defined **once per unique harmonised montage** rather than once per raw configuration. Original configurations that become identical after remapping share a single panel (its title lists the original configs it covers, e.g. `config. 1 (n=26) + config. 3 (n=4)`). On save, the chosen method is fanned out to every original configuration in the group, so `reref_plan_by_config` stays keyed by the original config label and Sections 5/6 are unaffected.
 
-**Section 4bis — Identify context channels (EOG L/R, EMG, ECG)**: an **optional** step that declares, **per
+**Section 2bis — Identify context channels (EOG L/R, EMG, ECG)**: an **optional** step that declares, **per
 channel configuration**, the non-EEG *context* channels — `eog_left`, `eog_right`, `emg`, `ecg` — so any
 downstream tool can pull them in on demand without re-detecting them ad hoc. A "Run context channels" button
 builds one accordion panel per configuration, each with four editable `Dropdown`s auto-filled by
@@ -358,7 +358,7 @@ downstream tool can pass them straight to `include=` at read time):
         "context_channels": {"eog_left": "E1", "eog_right": "E2", "emg": "Menton", "ecg": "EKG"} }
 ```
 The block is **omitted entirely when no context channel is selected**, so `remap_reref_persubject.json` files
-produced without using Section 4bis stay byte-identical. Absent/`null` entries mean "not declared" and every
+produced without using Section 2bis stay byte-identical. Absent/`null` entries mean "not declared" and every
 consumer must treat that as non-fatal. Analysis tools 5/6 ignore this block (they read only the `remap`
 keys); only tools that explicitly ask for it (e.g. tool 7's per-epoch inspector) load these channels.
 
@@ -565,6 +565,8 @@ tool 7's recomputed per-channel attribution matches tool 6's. Wired across tool 
 
 **Two-step QC approach** — Phase 2 does **not** drop epochs. It saves ALL epochs (including flagged ones) with an MNE `metadata` DataFrame attached, so downstream Phase 2b can inspect rejected epochs before finalising the rejection.
 
+**Per-participant pipeline progress bar**: below the participants bar (`i/N` + the current phase from `set_phase`, e.g. `loading EDF…`, `resampling…`, `epoching…`, `rejecting epochs…`, `building report…`) a second `IntProgress` (`progress_step`) spans the *current participant's whole pipeline* in arbitrary "time-cost" units (`COST_LOAD` + optional `COST_RESAMPLE`/`COST_NOTCH`/`COST_FILTER` for the *Load* group, then `COST_EPOCH`, `COST_REJECT`, `COST_SAVE`, `COST_REPORT`). It is sized per participant (the optional steps only count when enabled) and advanced **cumulatively** at each phase (`_reject_base` marks where the *Reject* segment begins), with a **4-segment legend** (`build_step_legend` → **Load / Epoch / Reject / Report**, Report = save+report) glued directly under the bar (`VBox([progress_step, step_legend])`, no top border, square top corners) whose widths are proportional to those costs. Mirrors tool 5's pipeline bar; UI-only, so all outputs stay byte-identical. On the **Curry twin** the same bar is inherited unchanged but its *Reject* segment is **animated** by the per-channel/per-epoch `compute_rejection_masks` callback (see *Curry 9 support → Progress feedback*); in EDF that segment jumps (the rejection runs on the full array, no callback). **Sync constraint**: this bar lives in the EDF original and is string-matched by `tools_curry/_make_tool6_curry.py` — re-run that generator after editing the widgets / display / reject call site.
+
 **Outputs per participant** — the `.fif` + its params sidecar under `<output_folder>/derivatives/<edf_subtree>/`; the TSV/HTML reports under `<output_folder>/reports_preprocessing/`:
 - `{file_id}_all-epo.fif` — all epochs with `epochs.metadata` DataFrame (columns: `epoch_idx`, `stage`, `reject_flag`, `reject_method`, `flag_amplitude`, `flag_flat`, `flag_gradient`, `flag_1f_error`, `flag_1f_r2`, plus `flag_event` **when event rejection ran**). The `flag_<method>` columns are **per-epoch "any channel" booleans** — the per-(epoch, channel) mask is **not** persisted. The per-epoch/per-stage TSVs and `global_rejection_by_stage.tsv` gain the matching `flag_event` / `event` entries the same way — additively, so event-free runs stay byte-compatible with earlier outputs.
 - `{file_id}_preprocessing_params.json` — the resampling / notch / bandpass filter settings (the notch as an additive `notch: {applied, freq_hz}` key, provenance only) + the per-stage rejection thresholds actually used (amplitude p-p per stage, flat, gradient, 1/f MAE/R²) + `methods_run`. Read back by **tool 7** (QC of rejected epochs) to draw threshold reference lines and recompute per-channel margins. Written non-fatally.
@@ -723,10 +725,15 @@ script (parsed-JSON edits: join the cell source, string-replace, re-split; valid
     copy); for extreme density without enough RAM the built-in **resample** is the lever (÷4). This change is
     **Curry-only** (EDF tool 6 untouched); applying it to EDF is a deferred TODO
     (`tools/plan_tool6_memory_feedback.md`).
-  - **Progress feedback**: a second per-channel/per-epoch `IntProgress` bar (fed by a `progress(done, total,
-    msg)` callback threaded into `compute_rejection_masks`) plus step labels in `progress_lbl`
-    (loading / epoching / PSD / rejection / report), so a slow high-density participant is not mistaken for a
-    crash. Mirrors the channel-level feedback added to tool 5.
+  - **Progress feedback**: the per-participant **pipeline bar** now lives in the **EDF original**
+    (`progress_step` + the 4-segment `build_step_legend`, see tool 6 above) and is inherited here unchanged,
+    so EDF and Curry share the same two-bar layout. The Curry-specific twist: its *Reject* segment is
+    **animated** by a `progress(done, total, msg)` callback threaded into the per-channel
+    `compute_rejection_masks` (per channel for the time-domain pass, per epoch for the 1/f fit), filling
+    `[_reject_base, _reject_base + COST_REJECT]` — so a slow high-density participant is not mistaken for a
+    crash. (In EDF that segment jumps, the rejection running on the full array with no callback.) The
+    generator therefore **no longer adds a separate `progress_rej` sub-bar**; it only repoints the callback
+    onto `progress_step` and passes `epochs` (per-channel memory refactor) instead of the full array.
 
 ### Environment
 
