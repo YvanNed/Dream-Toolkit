@@ -26,6 +26,17 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   for EMG); reuse the helper from `8_live_explore_1file`, pre-filled as an editable selection so the user
   can correct misses. Tool 1 inspects EEG/EOG/ECG/EMG with the same *transducer-type OR curated
   name-list* convention, **default selection = EEG + EOG** (ECG/EMG opt-in) across all four files.
+- **Context channels declared once in tool 2 (`2_select&remap_channels_edf*`, Section 4bis)**: identifies,
+  **per channel configuration**, the non-EEG *context* channels — `eog_left`, `eog_right`, `emg`, `ecg` —
+  via a dataframe-based `detect_context_channels(df_sub)` (same *transducer-type OR name* convention, but on
+  the header scan, **not** the raw-based `detect_channel_types`; **must tolerate a missing `transducer_type`
+  column** so the generated Curry twin still works — name-only there). Auto-detected into editable dropdowns
+  (`(none)` if absent), fanned out to participants like `remap`/`ref_channels`, and saved in an **additive,
+  optional** `context_channels` block of `remap_reref_persubject.json` (**omitted when empty** → JSONs
+  without context stay byte-identical). Analysis tools 5/6 ignore it; only tools that explicitly ask (e.g.
+  tool 7's per-epoch inspector) load these channels on demand. EDF Voila + Jupyter kept in sync; the Curry
+  twin is **regenerated** via `tools_curry/_make_tool2_curry.py` (new code passes through — no generator
+  edit needed; re-run it after editing the EDF Voila).
 - **`get_phys_bounds_uV`**: scale MNE's physical bounds by `units[ch]*1e6` — otherwise mV channels
   (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tools 5 & 8 — **keep in sync**.
 
@@ -55,12 +66,26 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   + `1f_fit_range_hz` + `methods_run`), read back by tool 7. Notch (`cb_notch`, MNE default FIR method,
   50 Hz), resampling (also in tool 5, `cb_resample`), and the 1/f fit range (default 2–45 Hz) are all
   optional and **off/neutral by default**.
+- **Context-channels companion (`6_preprocessing` block `[H]`, → tool 7)**: when the participant's
+  `sub_config` carries a tool-2 `context_channels` block, tool 6 reads **only** those declared EOG/EMG/ECG
+  channels from the raw EDF, renames them to role labels (`EOG-L`/`EOG-R`/`EMG`/`ECG`), sets MNE channel
+  types, applies the same optional resample, **display-filters per role** (EOG band-pass 0.3–35 Hz, EMG
+  high-pass 10 Hz, ECG band-pass 0.5–40 Hz — it's a display companion, so filtering in place is fine and
+  makes the tool-7 epoch montage readable), epochs them **identically to the EEG** (`make_fixed_length_epochs`
+  duration=30 from t=0 — same epoch count regardless of sfreq, so 1:1 index alignment), and saves
+  `{file_id}_context-epo.fif`. **Optional + non-fatal**: no `context_channels` → no companion written, all
+  other outputs byte-identical. The Curry generator swaps the reader (`read_raw_edf`→`read_raw_curry`) and
+  drops the suffix-dedup line via a dedicated `_make_tool6_curry.py` replacement — re-run the generator after
+  editing the `[H]` block.
 - **QC of rejected epochs (`7_inspect_rejected_epochs*`)**: reads tool-6 `{file_id}_all-epo.fif`
   (+ optional params JSON), **never reloads the raw EDF**, **never modifies tool-6 outputs**. Per-epoch
   reject decision is authoritative from `epochs.metadata`; per-channel attribution is **recomputed** with
   tool-6 formulas + persisted thresholds. Analysis + plotting live in a **shared module
   `qc_rejected_epochs_lib.py`** — a deliberate exception to the "duplicate helpers" rule; the copied bits
   (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, 1/f fit) must stay in sync with tool 6.
+  An **optional "Show EOG/EMG context" toggle** (default off) stacks the EOG-L/EOG-R/EMG traces under the
+  per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
+  aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op.
 
 **Curry twins** (→ SPEC *Curry 9 support*)
 - **Generated, not hand-edited**: `tools_curry/_make_tool{5,6}_curry.py` regenerate the Curry notebooks
