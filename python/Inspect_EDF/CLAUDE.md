@@ -26,7 +26,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   for EMG); reuse the helper from `8_live_explore_1file`, pre-filled as an editable selection so the user
   can correct misses. Tool 1 inspects EEG/EOG/ECG/EMG with the same *transducer-type OR curated
   name-list* convention, **default selection = EEG + EOG** (ECG/EMG opt-in) across all four files.
-- **Context channels declared once in tool 2 (`2_select&remap_channels_edf*`, Section 4bis)**: identifies,
+- **Context channels declared once in tool 2 (`2_select&remap_channels_edf*`, Section 2bis)**: identifies,
   **per channel configuration**, the non-EEG *context* channels — `eog_left`, `eog_right`, `emg`, `ecg` —
   via a dataframe-based `detect_context_channels(df_sub)` (same *transducer-type OR name* convention, but on
   the header scan, **not** the raw-based `detect_channel_types`; **must tolerate a missing `transducer_type`
