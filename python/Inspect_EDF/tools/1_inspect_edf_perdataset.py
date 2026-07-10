@@ -16,6 +16,11 @@ Created on Mon Sep 22 17:33:14 2025
 dr_thres = 500 # in µV because data are converted to µV (even for EOG and MEG)
 r_thres = 0.1 # in µV
 
+# Channel types aggregated in this dataset-level report (True = inspected).
+# perdataset covers EEG + EOG on purpose (ECG/EMG kept out to keep the report light --
+# use 1_inspect_edf_perparticipant.py or the notebooks for per-participant ECG/EMG).
+INCLUDE_TYPES = {'EEG': True, 'EOG': True}
+
 print("\n----------------------------------------------------------------------")
 print("------------------- Inspection of an EDF database --------------------")
 print("----------------------------------------------------------------------")
@@ -510,297 +515,299 @@ with open(f"{summary_path}/EDF_inspection_report.html", "w", encoding="utf-8") a
     ###########################################################################
     # extract EEG info
     # define common EEG label from the 10-10 (MCN) convention plus older 10-20 labels (T3/T4/T5/T6 = modern T7/T8/P7/P8)
-    COMMON_EEG_label = r'\bFp1\b|\bFpz\b|\bFp2\b|\bAF7\b|\bAF3\b|\bAFz\b|\bAF4\b|\bAF8\b|\bF7\b|\bF5\b|\bF3\b|\bF1\b|\bFz\b|\bF2\b|\bF4\b|\bF6\b|\bF8\b|\bFT7\b|\bFC5\b|\bFC3\b|\bFC1\b|\bFCz\b|\bFC2\b|\bFC4\b|\bFC6\b|\bFT8\b|\bT7\b|\bC5\b|\bC3\b|\bC1\b|\bCz\b|\bC2\b|\bC4\b|\bC6\b|\bT8\b|\bTP7\b|\bCP5\b|\bCP3\b|\bCP1\b|\bCPz\b|\bCP2\b|\bCP4\b|\bCP6\b|\bTP8\b|\bP7\b|\bP5\b|\bP3\b|\bP1\b|\bPz\b|\bP2\b|\bP4\b|\bP6\b|\bP8\b|\bPO7\b|\bPO5\b|\bPO3\b|\bPOz\b|\bPO4\b|\bPO6\b|\bPO8\b|\bO1\b|\bOz\b|\bO2\b|\bM1\b|\bM2\b|\bT3\b|\bT4\b|\bT5\b|\bT6\b|\bEEG\b|\bA2\b|\bA1\b'
-    # select only EEG channels and return a warning if the number of participant is smaller/higher
-    mask_ch = df_full['transducer_type'].str.contains(r'EEG|AGAGCL ELECTRODE', case = False, na=False) | df_full['channel'].str.contains(COMMON_EEG_label, case = False, na=False) # create a mask that returns true for lines containing either EEG/AGAGCL ELECTRODE in the transducer_type column or containing a common EEG label in the channel column
-    df_full_ch = df_full[mask_ch]
-    # remove the emg channels that were captured with the AGAGCL ELECTRODE transducer type 
-    df_full_ch = df_full_ch[~df_full_ch['channel'].str.contains(r'emg|ecg|eog', case=False, na=False)] # the ~ allows to not select the selection (like ! in matlab)
+    if INCLUDE_TYPES['EEG']:
+        COMMON_EEG_label = r'\bFp1\b|\bFpz\b|\bFp2\b|\bAF7\b|\bAF3\b|\bAFz\b|\bAF4\b|\bAF8\b|\bF7\b|\bF5\b|\bF3\b|\bF1\b|\bFz\b|\bF2\b|\bF4\b|\bF6\b|\bF8\b|\bFT7\b|\bFC5\b|\bFC3\b|\bFC1\b|\bFCz\b|\bFC2\b|\bFC4\b|\bFC6\b|\bFT8\b|\bT7\b|\bC5\b|\bC3\b|\bC1\b|\bCz\b|\bC2\b|\bC4\b|\bC6\b|\bT8\b|\bTP7\b|\bCP5\b|\bCP3\b|\bCP1\b|\bCPz\b|\bCP2\b|\bCP4\b|\bCP6\b|\bTP8\b|\bP7\b|\bP5\b|\bP3\b|\bP1\b|\bPz\b|\bP2\b|\bP4\b|\bP6\b|\bP8\b|\bPO7\b|\bPO5\b|\bPO3\b|\bPOz\b|\bPO4\b|\bPO6\b|\bPO8\b|\bO1\b|\bOz\b|\bO2\b|\bM1\b|\bM2\b|\bT3\b|\bT4\b|\bT5\b|\bT6\b|\bEEG\b|\bA2\b|\bA1\b'
+        # select only EEG channels and return a warning if the number of participant is smaller/higher
+        mask_ch = df_full['transducer_type'].str.contains(r'EEG|AGAGCL ELECTRODE', case = False, na=False) | df_full['channel'].str.contains(COMMON_EEG_label, case = False, na=False) # create a mask that returns true for lines containing either EEG/AGAGCL ELECTRODE in the transducer_type column or containing a common EEG label in the channel column
+        df_full_ch = df_full[mask_ch]
+        # remove the emg channels that were captured with the AGAGCL ELECTRODE transducer type 
+        df_full_ch = df_full_ch[~df_full_ch['channel'].str.contains(r'emg|ecg|eog|ekg|chin|menton', case=False, na=False)] # the ~ allows to not select the selection (like ! in matlab)
     
-    # Check if the number of participants with only EEG is the same as df_full. 
-    # If not, it might be because the transducer type was no correctly detected. 
-    # One possibility is to add the type of transducer to the condition line 2 of this cell.
-    if len(df_full['subject'].unique()) > len(df_full_ch['subject'].unique()):
-        # identify missing subjects
-        missing_sub = set(df_full['subject'].unique()) - set(df_full_ch['subject'].unique())
-        print('\n!!! There is less participants in the dataset with only EEGs !!!')
-        # print(f'Missing participants: {missing_sub}')
-        print("Either these participants don't have EEGs.")
-        print("Or the transducer type was not correctly detected.")
-        # get df of missing sub to save and inspect
-        df_miss = df_full[df_full['subject'].isin(missing_sub)]
-        df_miss.to_csv(f'{summary_path}/EEG_missing_edf.tsv', sep = '\t')
-        print(f'Saving informations from participants missing EEGs to:\n{summary_path}/EEG_missing_edf.tsv')
-        print('Please inspect the file, and specifically the column transducer_type if they should have EEGs')
+        # Check if the number of participants with only EEG is the same as df_full. 
+        # If not, it might be because the transducer type was no correctly detected. 
+        # One possibility is to add the type of transducer to the condition line 2 of this cell.
+        if len(df_full['subject'].unique()) > len(df_full_ch['subject'].unique()):
+            # identify missing subjects
+            missing_sub = set(df_full['subject'].unique()) - set(df_full_ch['subject'].unique())
+            print('\n!!! There is less participants in the dataset with only EEGs !!!')
+            # print(f'Missing participants: {missing_sub}')
+            print("Either these participants don't have EEGs.")
+            print("Or the transducer type was not correctly detected.")
+            # get df of missing sub to save and inspect
+            df_miss = df_full[df_full['subject'].isin(missing_sub)]
+            df_miss.to_csv(f'{summary_path}/EEG_missing_edf.tsv', sep = '\t')
+            print(f'Saving informations from participants missing EEGs to:\n{summary_path}/EEG_missing_edf.tsv')
+            print('Please inspect the file, and specifically the column transducer_type if they should have EEGs')
         
-    elif len(df_full['subject'].unique()) < len(df_full_ch['subject'].unique()):
-        print('\n!!! There is more participants in the dataset with only EEGs !!!')
-        print('This should not be the case.')
-        print('Please inspect what is happening in a code editor (spyder..), or ask Yvan.')
-        more_sub = set(df_full_ch['subject'].unique()) - set(df_full['subject'].unique())
-        df_more = df_full_ch[df_full_ch['subject'].isin(more_sub)]
-        df_more.to_csv(f'{summary_path}/EEG_toomany_edf.tsv', sep = '\t')
-        print(f'Saving informations from participants suspect EEGs to:\n{summary_path}/EEG_toomany_edf.tsv')
+        elif len(df_full['subject'].unique()) < len(df_full_ch['subject'].unique()):
+            print('\n!!! There is more participants in the dataset with only EEGs !!!')
+            print('This should not be the case.')
+            print('Please inspect what is happening in a code editor (spyder..), or ask Yvan.')
+            more_sub = set(df_full_ch['subject'].unique()) - set(df_full['subject'].unique())
+            df_more = df_full_ch[df_full_ch['subject'].isin(more_sub)]
+            df_more.to_csv(f'{summary_path}/EEG_toomany_edf.tsv', sep = '\t')
+            print(f'Saving informations from participants suspect EEGs to:\n{summary_path}/EEG_toomany_edf.tsv')
         
-    # saving info from eeg
-    df_full_ch.to_csv(f'{summary_path}/EEG_summary.tsv', sep = '\t')
-    print(f'\nSaving informations from EEGs to:\n{summary_path}/EEG_summary.tsv')
+        # saving info from eeg
+        df_full_ch.to_csv(f'{summary_path}/EEG_summary.tsv', sep = '\t')
+        print(f'\nSaving informations from EEGs to:\n{summary_path}/EEG_summary.tsv')
     
-    print('<h2"><b>EEG:</b></h2>', file=f)
-    if not df_full_ch.empty:
-        print('<div class="indent1">', file=f)
+        print('<h2"><b>EEG:</b></h2>', file=f)
+        if not df_full_ch.empty:
+            print('<div class="indent1">', file=f)
         
-        # EEG configuration check______________________________________________
-        ch_per_sub = df_full_ch.groupby('subject')['channel'].apply(lambda x: tuple(sorted(set(x))))
+            # EEG configuration check______________________________________________
+            ch_per_sub = df_full_ch.groupby('subject')['channel'].apply(lambda x: tuple(sorted(set(x))))
 
-        # identify the channel configuration of each participant and store them in a dict to print per channel config
-        ch_config_dict = {}
-        for config in ch_per_sub.unique():
-            sub = ch_per_sub[ch_per_sub == config].index.tolist()
-            ch_config_dict[config] = sub
+            # identify the channel configuration of each participant and store them in a dict to print per channel config
+            ch_config_dict = {}
+            for config in ch_per_sub.unique():
+                sub = ch_per_sub[ch_per_sub == config].index.tolist()
+                ch_config_dict[config] = sub
         
-        if len(ch_config_dict) > 1:
-            print(f'<p>⚠️ {len(ch_config_dict)} different EEG configurations found</p>', file=f)
-            print('<p class="indent2">You will have to harmonize the number and the name of channels for your analysis</p>', file=f)
-            print('<p class="indent2"><i>You can use the notebook "2_select&remap_channels_edf" to do it</i></p>', file=f)
+            if len(ch_config_dict) > 1:
+                print(f'<p>⚠️ {len(ch_config_dict)} different EEG configurations found</p>', file=f)
+                print('<p class="indent2">You will have to harmonize the number and the name of channels for your analysis</p>', file=f)
+                print('<p class="indent2"><i>You can use the notebook "2_select&remap_channels_edf" to do it</i></p>', file=f)
+            else:
+                print('<p>✅ All your participants have the same EEG channels</p>', file=f)
+            #______________________________________________________________________
+        
+            # EEG sampling frequency check_________________________________________
+            # the sampling frequency configuration
+            sf_per_sub = df_full_ch.groupby('subject')['sampling_frequency'].apply(lambda x: tuple(sorted(set(x))))
+            # identify the sampling frequency configuration of each participant and store them in a dict to print per sampling configuration config
+            sf_config_dict = {}
+            for config in sf_per_sub.unique():
+                sub = sf_per_sub[sf_per_sub == config].index.tolist()
+                sf_config_dict[config] = sub
+        
+            if len(sf_config_dict) > 1:
+                print(f'<p>⚠️ {len(sf_config_dict)} different EEG sampling frequencies found: {join_uniq(df_full_ch["sampling_frequency"])} Hz</p>', file=f)
+                print('<p class="indent2">You can either re-export your data or downsample to a common sampling frequency for your analysis</p>', file=f)
+                print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported</i></p>', file=f)
+            else:
+                print(f'<p>✅ All your participants have the same EEG sampling frequency: {join_uniq(df_full_ch["sampling_frequency"])} Hz</p>', file=f)
+            #______________________________________________________________________
+        
+            # EEG filters check____________________________________________________
+            # Get the list of participants with different filtering parameters
+            # 1st replace NaN because groupby does not like NaN
+            df_filt = df_full_ch.copy()
+            df_filt[['lowpass', 'highpass', 'notch']] = df_filt[['lowpass', 'highpass', 'notch']].fillna('missing')
+        
+            config_filters = (
+                df_filt.groupby(['lowpass', 'highpass', 'notch'])['subject']
+                .apply(lambda x: sorted(set(x)))
+                .reset_index(name = 'subjects')
+            )
+        
+            if len(config_filters) > 1:
+                print(f'<p>⚠️ {len(config_filters)} different EEG filters configurations found:</p>', file=f)
+                for idx, row in config_filters.iterrows():
+                    print(f'<p class="indent3">filter config. {idx+1}: hp = {row["highpass"]} Hz; lp = {row["lowpass"]} Hz; notch = {row["notch"]} Hz<br></p>', file=f)
+                print('<p class="indent2">You can either re-export your data or filter your data to a common fequency</p>', file=f)
+                print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported or filtered</i></p>', file=f)
+            else:
+                print(f'<p>✅ All your participants have the same EEG filters: hp = {join_uniq(config_filters["highpass"])} Hz; lp = {join_uniq(config_filters["lowpass"])} Hz; notch = {join_uniq(config_filters["notch"])} Hz</p>', file=f)
+            #______________________________________________________________________
+        
+            # EEG units check______________________________________________________
+            if len(df_full_ch['dimension'].unique()) > 1:
+                print(f'<p>⚠️ {len(df_full_ch["dimension"].unique())} different EEG units found: {join_uniq(df_full_ch["dimension"])}</p>', file=f)
+                print('<p class="indent2">Before analyzing, make sure that your software (MNE, FIELDTRIP) correctly read your data unit</p>', file=f)
+            else:
+                print(f'<p>✅ All your participants have the same EEG unit: {join_uniq(df_full_ch["dimension"])}</p>', file=f)
+            #______________________________________________________________________
+        
+            # EEG inversion check__________________________________________________
+            df_full_inv = df_full_ch[df_full_ch['physical_min'] > df_full_ch['physical_max']]
+            if not df_full_inv.empty:
+                print('<p><b>EEG polarity</b>: ❌ EEGs with inverted polarity detected!</p>', file=f)
+                print(f'<p class="indent2">It concerns files: {join_uniq(df_full_inv["subject"])}</p>', file=f)
+                print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
+                df_full_inv.to_csv(f'{summary_path}/EEG_inverted_polarity.tsv', sep = '\t')
+                print(f'\nSaving informations from inverted polarity EEGs to:\n{summary_path}/EEG_inverted_polarity.tsv')
+            else:
+                print('<p><b>EEG polarity</b>: ✅ no inverted polarity detected in EEGs!</p>', file=f)
+            #______________________________________________________________________
+        
+            # EEG clipping check___________________________________________________
+            dr_mask = df_full_ch['res_theoretical']*pow(2,16) <= dr_thres
+            bad_dr = df_full_ch[dr_mask]
+            if not bad_dr.empty:
+                print(f'<p><b>EEG clipping</b>: ❌ EEGs with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
+                print(f'<p class="indent2">It concerns files: {join_uniq(bad_dr["subject"])}</p>', file=f)
+                print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
+                bad_dr.to_csv(f'{summary_path}/EEG_bad_dynamic_range.tsv', sep = '\t')
+                print(f'\nSaving informations fram bad dynamic range EEGs to:\n{summary_path}/EEG_bad_dynamic_range.tsv')
+            else:
+                print(f'<p><b>EEG clipping</b>: ✅ no clipping detected in EEGs (dynamic range <= {dr_thres} µV)!</p>', file=f)
+            #______________________________________________________________________
+        
+            # EEG resolution check_________________________________________________
+            r_mask = df_full_ch['res_theoretical'] >= r_thres
+            bad_res = df_full_ch[r_mask]
+            if not bad_res.empty:
+                print(f'<p><b>EEG resolution</b>: ❌ EEGs with low resolution (>= {r_thres} µV) detected!</p>', file=f)
+                print(f'<p class="indent2">It concerns files: {join_uniq(bad_res["subject"])}</p>', file=f)
+                print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
+                bad_res.to_csv(f'{summary_path}/EEG_bad_resolution.tsv', sep = '\t')
+                print(f'\nSaving informations from bad resolution EEGs to:\n{summary_path}/EEG_bad_resolution.tsv')
+            else:
+                print(f'<p><b>EEG resolution</b>: ✅ no low resolution detected in EEGs (>= {r_thres} µV)!</p>', file=f)
+            #______________________________________________________________________
+            print('</div>', file=f)
+            # print('<p class="indent1">✅ Extraction of EEG parameters completed!</p>', file=f)
         else:
-            print('<p>✅ All your participants have the same EEG channels</p>', file=f)
-        #______________________________________________________________________
-        
-        # EEG sampling frequency check_________________________________________
-        # the sampling frequency configuration
-        sf_per_sub = df_full_ch.groupby('subject')['sampling_frequency'].apply(lambda x: tuple(sorted(set(x))))
-        # identify the sampling frequency configuration of each participant and store them in a dict to print per sampling configuration config
-        sf_config_dict = {}
-        for config in sf_per_sub.unique():
-            sub = sf_per_sub[sf_per_sub == config].index.tolist()
-            sf_config_dict[config] = sub
-        
-        if len(sf_config_dict) > 1:
-            print(f'<p>⚠️ {len(sf_config_dict)} different EEG sampling frequencies found: {join_uniq(df_full_ch["sampling_frequency"])} Hz</p>', file=f)
-            print('<p class="indent2">You can either re-export your data or downsample to a common sampling frequency for your analysis</p>', file=f)
-            print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported</i></p>', file=f)
-        else:
-            print(f'<p>✅ All your participants have the same EEG sampling frequency: {join_uniq(df_full_ch["sampling_frequency"])} Hz</p>', file=f)
-        #______________________________________________________________________
-        
-        # EEG filters check____________________________________________________
-        # Get the list of participants with different filtering parameters
-        # 1st replace NaN because groupby does not like NaN
-        df_filt = df_full_ch.copy()
-        df_filt[['lowpass', 'highpass', 'notch']] = df_filt[['lowpass', 'highpass', 'notch']].fillna('missing')
-        
-        config_filters = (
-            df_filt.groupby(['lowpass', 'highpass', 'notch'])['subject']
-            .apply(lambda x: sorted(set(x)))
-            .reset_index(name = 'subjects')
-        )
-        
-        if len(config_filters) > 1:
-            print(f'<p>⚠️ {len(config_filters)} different EEG filters configurations found:</p>', file=f)
-            for idx, row in config_filters.iterrows():
-                print(f'<p class="indent3">filter config. {idx+1}: hp = {row["highpass"]} Hz; lp = {row["lowpass"]} Hz; notch = {row["notch"]} Hz<br></p>', file=f)
-            print('<p class="indent2">You can either re-export your data or filter your data to a common fequency</p>', file=f)
-            print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported or filtered</i></p>', file=f)
-        else:
-            print(f'<p>✅ All your participants have the same EEG filters: hp = {join_uniq(config_filters["highpass"])} Hz; lp = {join_uniq(config_filters["lowpass"])} Hz; notch = {join_uniq(config_filters["notch"])} Hz</p>', file=f)
-        #______________________________________________________________________
-        
-        # EEG units check______________________________________________________
-        if len(df_full_ch['dimension'].unique()) > 1:
-            print(f'<p>⚠️ {len(df_full_ch["dimension"].unique())} different EEG units found: {join_uniq(df_full_ch["dimension"])}</p>', file=f)
-            print('<p class="indent2">Before analyzing, make sure that your software (MNE, FIELDTRIP) correctly read your data unit</p>', file=f)
-        else:
-            print(f'<p>✅ All your participants have the same EEG unit: {join_uniq(df_full_ch["dimension"])}</p>', file=f)
-        #______________________________________________________________________
-        
-        # EEG inversion check__________________________________________________
-        df_full_inv = df_full_ch[df_full_ch['physical_min'] > df_full_ch['physical_max']]
-        if not df_full_inv.empty:
-            print('<p><b>EEG polarity</b>: ❌ EEGs with inverted polarity detected!</p>', file=f)
-            print(f'<p class="indent2">It concerns files: {join_uniq(df_full_inv["subject"])}</p>', file=f)
-            print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
-            df_full_inv.to_csv(f'{summary_path}/EEG_inverted_polarity.tsv', sep = '\t')
-            print(f'\nSaving informations from inverted polarity EEGs to:\n{summary_path}/EEG_inverted_polarity.tsv')
-        else:
-            print('<p><b>EEG polarity</b>: ✅ no inverted polarity detected in EEGs!</p>', file=f)
-        #______________________________________________________________________
-        
-        # EEG clipping check___________________________________________________
-        dr_mask = df_full_ch['res_theoretical']*pow(2,16) <= dr_thres
-        bad_dr = df_full_ch[dr_mask]
-        if not bad_dr.empty:
-            print(f'<p><b>EEG clipping</b>: ❌ EEGs with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
-            print(f'<p class="indent2">It concerns files: {join_uniq(bad_dr["subject"])}</p>', file=f)
-            print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
-            bad_dr.to_csv(f'{summary_path}/EEG_bad_dynamic_range.tsv', sep = '\t')
-            print(f'\nSaving informations fram bad dynamic range EEGs to:\n{summary_path}/EEG_bad_dynamic_range.tsv')
-        else:
-            print(f'<p><b>EEG clipping</b>: ✅ no clipping detected in EEGs (dynamic range <= {dr_thres} µV)!</p>', file=f)
-        #______________________________________________________________________
-        
-        # EEG resolution check_________________________________________________
-        r_mask = df_full_ch['res_theoretical'] >= r_thres
-        bad_res = df_full_ch[r_mask]
-        if not bad_res.empty:
-            print(f'<p><b>EEG resolution</b>: ❌ EEGs with low resolution (>= {r_thres} µV) detected!</p>', file=f)
-            print(f'<p class="indent2">It concerns files: {join_uniq(bad_res["subject"])}</p>', file=f)
-            print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
-            bad_res.to_csv(f'{summary_path}/EEG_bad_resolution.tsv', sep = '\t')
-            print(f'\nSaving informations from bad resolution EEGs to:\n{summary_path}/EEG_bad_resolution.tsv')
-        else:
-            print(f'<p><b>EEG resolution</b>: ✅ no low resolution detected in EEGs (>= {r_thres} µV)!</p>', file=f)
-        #______________________________________________________________________
-        print('</div>', file=f)
-        # print('<p class="indent1">✅ Extraction of EEG parameters completed!</p>', file=f)
-    else:
-        print('<p class="indent1">❌ No EEG found </p>', file=f)
+            print('<p class="indent1">❌ No EEG found </p>', file=f)
     
     ###########################################################################
     
     # ###########################################################################
     # Extract EOG info
-    mask_eog = df_full['transducer_type'].str.contains(r'EOG', case = False, na=False) | df_full['channel'].str.contains(r'EOG', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
-    df_full_eog = df_full[mask_eog]
+    if INCLUDE_TYPES['EOG']:
+        mask_eog = df_full['transducer_type'].str.contains(r'EOG', case = False, na=False) | df_full['channel'].str.contains(r'EOG|LOC|ROC|\bE1\b|\bE2\b', case = False, na=False) # create a mask that returns true for lines containing either EOG in the channel column
+        df_full_eog = df_full[mask_eog]
     
-    # Check if the number of participants with only EOG is the same as df_full. 
-    # If not, it might be because the transducer type was no correctly detected. 
-    # One possibility is to add the type of transducer to the condition line 2 of this cell.
-    if len(df_full['subject'].unique()) > len(df_full_eog['subject'].unique()):
-        # identify missing subjects
-        missing_sub = set(df_full['subject'].unique()) - set(df_full_eog['subject'].unique())
-        print('\n!!! There is less participants in the dataset with only EOGs !!!')
-        # print(f'Missing participants: {missing_sub}')
-        print("Either these participants don't have EOGs.")
-        print("Or the transducer type was not correctly detected.")
-        # get df of missing sub to save and inspect
-        df_full_eogmiss = df_full[df_full['subject'].isin(missing_sub)]
-        df_full_eogmiss.to_csv(f'{summary_path}/EOG_missing_edf.tsv', sep = '\t')
-        print(f'Saving informations from participants missing EOGs to:\n{summary_path}/EOG_missing_edf.tsv')
-        print('Please inspect the file, and specifically the column transducer_type if they should have EOGs')
+        # Check if the number of participants with only EOG is the same as df_full. 
+        # If not, it might be because the transducer type was no correctly detected. 
+        # One possibility is to add the type of transducer to the condition line 2 of this cell.
+        if len(df_full['subject'].unique()) > len(df_full_eog['subject'].unique()):
+            # identify missing subjects
+            missing_sub = set(df_full['subject'].unique()) - set(df_full_eog['subject'].unique())
+            print('\n!!! There is less participants in the dataset with only EOGs !!!')
+            # print(f'Missing participants: {missing_sub}')
+            print("Either these participants don't have EOGs.")
+            print("Or the transducer type was not correctly detected.")
+            # get df of missing sub to save and inspect
+            df_full_eogmiss = df_full[df_full['subject'].isin(missing_sub)]
+            df_full_eogmiss.to_csv(f'{summary_path}/EOG_missing_edf.tsv', sep = '\t')
+            print(f'Saving informations from participants missing EOGs to:\n{summary_path}/EOG_missing_edf.tsv')
+            print('Please inspect the file, and specifically the column transducer_type if they should have EOGs')
         
-    elif len(df_full['subject'].unique()) < len(df_full_eog['subject'].unique()):
-        print('\n!!! There is more participants in the dataset with only EOGs !!!')
-        print('This should not be the case.')
-        print('Please inspect what is happening in a code editor (spyder..), or ask Yvan.')
-        more_sub = set(df_full_eog['subject'].unique()) - set(df_full['subject'].unique())
-        df_more = df_full_eog[df_full_eog['subject'].isin(more_sub)]
-        df_more.to_csv(f'{summary_path}/EOG_toomany_edf.csv', sep = '\t')
-        print(f'Saving informations from participants suspect EOGs to:\n{summary_path}/EOG_toomany_edf.tsv')
+        elif len(df_full['subject'].unique()) < len(df_full_eog['subject'].unique()):
+            print('\n!!! There is more participants in the dataset with only EOGs !!!')
+            print('This should not be the case.')
+            print('Please inspect what is happening in a code editor (spyder..), or ask Yvan.')
+            more_sub = set(df_full_eog['subject'].unique()) - set(df_full['subject'].unique())
+            df_more = df_full_eog[df_full_eog['subject'].isin(more_sub)]
+            df_more.to_csv(f'{summary_path}/EOG_toomany_edf.csv', sep = '\t')
+            print(f'Saving informations from participants suspect EOGs to:\n{summary_path}/EOG_toomany_edf.tsv')
     
-    # saving info from EOG
-    df_full_eog.to_csv(f'{summary_path}/EOG_summary.tsv', sep = '\t')
-    print(f'\nSaving informations from EOGs to:\n{summary_path}/EOG_summary.tsv')
+        # saving info from EOG
+        df_full_eog.to_csv(f'{summary_path}/EOG_summary.tsv', sep = '\t')
+        print(f'\nSaving informations from EOGs to:\n{summary_path}/EOG_summary.tsv')
     
-    print('<h2"><b>EOG:</b></h2>', file=f)
-    if not df_full_eog.empty:
-        print('<div class="indent1">', file=f)
+        print('<h2"><b>EOG:</b></h2>', file=f)
+        if not df_full_eog.empty:
+            print('<div class="indent1">', file=f)
         
-        # EOG configuration check______________________________________________
-        eog_per_sub = df_full_eog.groupby('subject')['channel'].apply(lambda x: tuple(sorted(set(x))))
+            # EOG configuration check______________________________________________
+            eog_per_sub = df_full_eog.groupby('subject')['channel'].apply(lambda x: tuple(sorted(set(x))))
 
-        # identify the channel configuration of each participant and store them in a dict to print per channel config
-        eog_config_dict = {}
-        for config in eog_per_sub.unique():
-            sub = eog_per_sub[eog_per_sub == config].index.tolist()
-            eog_config_dict[config] = sub
+            # identify the channel configuration of each participant and store them in a dict to print per channel config
+            eog_config_dict = {}
+            for config in eog_per_sub.unique():
+                sub = eog_per_sub[eog_per_sub == config].index.tolist()
+                eog_config_dict[config] = sub
         
-        if len(eog_config_dict) > 1:
-            print(f'<p>⚠️ {len(eog_config_dict)} different EOG configurations found</p>', file=f)
-            print('<p class="indent2">You will have to harmonize the number and the name of channels for your analysis</p>', file=f)
-            print('<p class="indent2"><i>You can use the notebook "2_select&remap_channels_edf" to do it</i></p>', file=f)
+            if len(eog_config_dict) > 1:
+                print(f'<p>⚠️ {len(eog_config_dict)} different EOG configurations found</p>', file=f)
+                print('<p class="indent2">You will have to harmonize the number and the name of channels for your analysis</p>', file=f)
+                print('<p class="indent2"><i>You can use the notebook "2_select&remap_channels_edf" to do it</i></p>', file=f)
+            else:
+                print('<p>✅ All your participants have the same EOG channels</p>', file=f)
+            #______________________________________________________________________
+        
+            # EOG sampling frequency check_________________________________________
+            # the sampling frequency configuration
+            sfeog_per_sub = df_full_eog.groupby('subject')['sampling_frequency'].apply(lambda x: tuple(sorted(set(x))))
+            # identify the sampling frequency configuration of each participant and store them in a dict to print per sampling configuration config
+            sfeog_config_dict = {}
+            for config in sfeog_per_sub.unique():
+                sub = sfeog_per_sub[sfeog_per_sub == config].index.tolist()
+                sfeog_config_dict[config] = sub
+        
+            if len(sfeog_config_dict) > 1:
+                print(f'<p>⚠️ {len(sfeog_config_dict)} different EOG sampling frequencies found: {join_uniq(df_full_eog["sampling_frequency"])} Hz</p>', file=f)
+                print('<p class="indent2">You can either re-export your data or downsample to a common sampling frequency for your analysis</p>', file=f)
+                print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported</i></p>', file=f)
+            else:
+                print(f'<p>✅ All your participants have the same EOG sampling frequency: {join_uniq(df_full_eog["sampling_frequency"])} Hz</p>', file=f)
+            #______________________________________________________________________
+        
+            # EOG filters check____________________________________________________
+            # Get the list of participants with different filtering parameters
+            # 1st replace NaN because groupby does not like NaN
+            df_eogfilt = df_full_eog.copy()
+            df_eogfilt[['lowpass', 'highpass', 'notch']] = df_eogfilt[['lowpass', 'highpass', 'notch']].fillna('missing')
+        
+            config_eogfilters = (
+                df_eogfilt.groupby(['lowpass', 'highpass', 'notch'])['subject']
+                .apply(lambda x: sorted(set(x)))
+                .reset_index(name = 'subjects')
+            )
+        
+            if len(config_eogfilters) > 1:
+                print(f'<p>⚠️ {len(config_eogfilters)} different EOG filters configurations found:</p>', file=f)
+                for idx, row in config_eogfilters.iterrows():
+                    print(f'<p class="indent3">filter config. {idx+1}: hp = {row["highpass"]} Hz; lp = {row["lowpass"]} Hz; notch = {row["notch"]} Hz<br></p>', file=f)
+                print('<p class="indent2">You can either re-export your data or filter your data to a common fequency</p>', file=f)
+                print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported or filtered</i></p>', file=f)
+            else:
+                print(f'<p>✅ All your participants have the same EOG filters: hp = {join_uniq(config_eogfilters["highpass"])} Hz; lp = {join_uniq(config_eogfilters["lowpass"])} Hz; notch = {join_uniq(config_eogfilters["notch"])} Hz</p>', file=f)
+            #______________________________________________________________________
+        
+            # EOG units check______________________________________________________
+            if len(df_full_eog['dimension'].unique()) > 1:
+                print(f'<p>⚠️ {len(df_full_eog["dimension"].unique())} different EOG units found: {join_uniq(df_full_eog["dimension"])}</p>', file=f)
+                print('<p class="indent2">Before analyzing, make sure that your software (MNE, FIELDTRIP) correctly read your data unit</p>', file=f)
+            else:
+                print(f'<p>✅ All your participants have the same EOG unit: {join_uniq(df_full_eog["dimension"])}</p>', file=f)
+            #______________________________________________________________________
+        
+            # EOG inversion check__________________________________________________
+            df_full_eoginv = df_full_eog[df_full_eog['physical_min'] > df_full_eog['physical_max']]
+            if not df_full_eoginv.empty:
+                print('<p><b>EOG polarity</b>: ❌ EOGs with inverted polarity detected!</p>', file=f)
+                print(f'<p class="indent2">It concerns files: {join_uniq(df_full_eoginv["subject"])}</p>', file=f)
+                print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
+                df_full_eoginv.to_csv(f'{summary_path}/EOG_inverted_polarity.tsv', sep = '\t')
+                print(f'\nSaving informations from inverted polarity EOGs to:\n{summary_path}/EOG_inverted_polarity.tsv')
+            else:
+                print('<p><b>EOG polarity</b>: ✅ no inverted polarity detected in EOGs!</p>', file=f)
+            #______________________________________________________________________
+        
+            # EOG clipping check___________________________________________________
+            dr_eogmask = df_full_eog['res_theoretical']*pow(2,16) <= dr_thres
+            bad_eogdr = df_full_eog[dr_eogmask]
+            if not bad_eogdr.empty:
+                print(f'<p><b>EOG clipping</b>: ❌ EOGs with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
+                print(f'<p class="indent2">It concerns files: {join_uniq(bad_eogdr["subject"])}</p>', file=f)
+                print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
+                bad_eogdr.to_csv(f'{summary_path}/EOG_bad_dynamic_range.tsv', sep = '\t')
+                print(f'\nSaving informations from bad dynamic range EOGs to:\n{summary_path}/EOG_bad_dynamic_range.tsv')
+            else:
+                print(f'<p><b>EOG clipping</b>: ✅ no clipping detected in EOGs (dynamic range <= {dr_thres} µV)!</p>', file=f)
+            #______________________________________________________________________
+        
+            # EOG resolution check_________________________________________________
+            r_eogmask = df_full_eog['res_theoretical'] >= r_thres
+            bad_eogres = df_full_eog[r_eogmask]
+            if not bad_eogres.empty:
+                print(f'<p><b>EOG resolution</b>: ❌ EOGs with low resolution (>= {r_thres} µV) detected!</p>', file=f)
+                print(f'<p class="indent2">It concerns files: {join_uniq(bad_eogres["subject"])}</p>', file=f)
+                print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
+                bad_eogres.to_csv(f'{summary_path}/EOG_bad_resolution.tsv', sep = '\t')
+                print(f'\nSaving informations from bad resolution EOGs to:\n{summary_path}/EOG_bad_resolution.tsv')
+            else:
+                print(f'<p><b>EOG resolution</b>: ✅ no low resolution detected in EOGs (>= {r_thres} µV)!</p>', file=f)
+            #______________________________________________________________________
+            print('</div>', file=f)
+            # print('<p class="indent1">✅ Extraction of EOG parameters completed!</p>', file=f)
         else:
-            print('<p>✅ All your participants have the same EOG channels</p>', file=f)
-        #______________________________________________________________________
-        
-        # EOG sampling frequency check_________________________________________
-        # the sampling frequency configuration
-        sfeog_per_sub = df_full_eog.groupby('subject')['sampling_frequency'].apply(lambda x: tuple(sorted(set(x))))
-        # identify the sampling frequency configuration of each participant and store them in a dict to print per sampling configuration config
-        sfeog_config_dict = {}
-        for config in sfeog_per_sub.unique():
-            sub = sfeog_per_sub[sfeog_per_sub == config].index.tolist()
-            sfeog_config_dict[config] = sub
-        
-        if len(sfeog_config_dict) > 1:
-            print(f'<p>⚠️ {len(sfeog_config_dict)} different EOG sampling frequencies found: {join_uniq(df_full_eog["sampling_frequency"])} Hz</p>', file=f)
-            print('<p class="indent2">You can either re-export your data or downsample to a common sampling frequency for your analysis</p>', file=f)
-            print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported</i></p>', file=f)
-        else:
-            print(f'<p>✅ All your participants have the same EOG sampling frequency: {join_uniq(df_full_eog["sampling_frequency"])} Hz</p>', file=f)
-        #______________________________________________________________________
-        
-        # EOG filters check____________________________________________________
-        # Get the list of participants with different filtering parameters
-        # 1st replace NaN because groupby does not like NaN
-        df_eogfilt = df_full_eog.copy()
-        df_eogfilt[['lowpass', 'highpass', 'notch']] = df_eogfilt[['lowpass', 'highpass', 'notch']].fillna('missing')
-        
-        config_eogfilters = (
-            df_eogfilt.groupby(['lowpass', 'highpass', 'notch'])['subject']
-            .apply(lambda x: sorted(set(x)))
-            .reset_index(name = 'subjects')
-        )
-        
-        if len(config_eogfilters) > 1:
-            print(f'<p>⚠️ {len(config_eogfilters)} different EOG filters configurations found:</p>', file=f)
-            for idx, row in config_eogfilters.iterrows():
-                print(f'<p class="indent3">filter config. {idx+1}: hp = {row["highpass"]} Hz; lp = {row["lowpass"]} Hz; notch = {row["notch"]} Hz<br></p>', file=f)
-            print('<p class="indent2">You can either re-export your data or filter your data to a common fequency</p>', file=f)
-            print('<p class="indent2"><i>You can use the notebook "1_inspect_edf_voila.ipynb" to identify which participants need to be re-exported or filtered</i></p>', file=f)
-        else:
-            print(f'<p>✅ All your participants have the same EOG filters: hp = {join_uniq(config_eogfilters["highpass"])} Hz; lp = {join_uniq(config_eogfilters["lowpass"])} Hz; notch = {join_uniq(config_eogfilters["notch"])} Hz</p>', file=f)
-        #______________________________________________________________________
-        
-        # EOG units check______________________________________________________
-        if len(df_full_eog['dimension'].unique()) > 1:
-            print(f'<p>⚠️ {len(df_full_eog["dimension"].unique())} different EOG units found: {join_uniq(df_full_eog["dimension"])}</p>', file=f)
-            print('<p class="indent2">Before analyzing, make sure that your software (MNE, FIELDTRIP) correctly read your data unit</p>', file=f)
-        else:
-            print(f'<p>✅ All your participants have the same EOG unit: {join_uniq(df_full_eog["dimension"])}</p>', file=f)
-        #______________________________________________________________________
-        
-        # EOG inversion check__________________________________________________
-        df_full_eoginv = df_full_eog[df_full_eog['physical_min'] > df_full_eog['physical_max']]
-        if not df_full_eoginv.empty:
-            print('<p><b>EOG polarity</b>: ❌ EOGs with inverted polarity detected!</p>', file=f)
-            print(f'<p class="indent2">It concerns files: {join_uniq(df_full_eoginv["subject"])}</p>', file=f)
-            print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
-            df_full_eoginv.to_csv(f'{summary_path}/EOG_inverted_polarity.tsv', sep = '\t')
-            print(f'\nSaving informations from inverted polarity EOGs to:\n{summary_path}/EOG_inverted_polarity.tsv')
-        else:
-            print('<p><b>EOG polarity</b>: ✅ no inverted polarity detected in EOGs!</p>', file=f)
-        #______________________________________________________________________
-        
-        # EOG clipping check___________________________________________________
-        dr_eogmask = df_full_eog['res_theoretical']*pow(2,16) <= dr_thres
-        bad_eogdr = df_full_eog[dr_eogmask]
-        if not bad_eogdr.empty:
-            print(f'<p><b>EOG clipping</b>: ❌ EOGs with clipping (dynamic range <= {dr_thres} µV) detected!</p>', file=f)
-            print(f'<p class="indent2">It concerns files: {join_uniq(bad_eogdr["subject"])}</p>', file=f)
-            print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
-            bad_eogdr.to_csv(f'{summary_path}/EOG_bad_dynamic_range.tsv', sep = '\t')
-            print(f'\nSaving informations from bad dynamic range EOGs to:\n{summary_path}/EOG_bad_dynamic_range.tsv')
-        else:
-            print(f'<p><b>EOG clipping</b>: ✅ no clipping detected in EOGs (dynamic range <= {dr_thres} µV)!</p>', file=f)
-        #______________________________________________________________________
-        
-        # EOG resolution check_________________________________________________
-        r_eogmask = df_full_eog['res_theoretical'] >= r_thres
-        bad_eogres = df_full_eog[r_eogmask]
-        if not bad_eogres.empty:
-            print(f'<p><b>EOG resolution</b>: ❌ EOGs with low resolution (>= {r_thres} µV) detected!</p>', file=f)
-            print(f'<p class="indent2">It concerns files: {join_uniq(bad_eogres["subject"])}</p>', file=f)
-            print('<p class="indent2"><b>We strongly recommend to re-export the data</b></p>', file=f)
-            bad_eogres.to_csv(f'{summary_path}/EOG_bad_resolution.tsv', sep = '\t')
-            print(f'\nSaving informations from bad resolution EOGs to:\n{summary_path}/EOG_bad_resolution.tsv')
-        else:
-            print(f'<p><b>EOG resolution</b>: ✅ no low resolution detected in EOGs (>= {r_thres} µV)!</p>', file=f)
-        #______________________________________________________________________
-        print('</div>', file=f)
-        # print('<p class="indent1">✅ Extraction of EOG parameters completed!</p>', file=f)
-    else:
-        print('<p class="indent1">❌ No EOG found </p>', file=f)
+            print('<p class="indent1">❌ No EOG found </p>', file=f)
     # ###########################################################################
     
     # ###########################################################################
