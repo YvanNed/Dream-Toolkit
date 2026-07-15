@@ -152,6 +152,17 @@ instead of restating them; only tool-specific deltas are kept inline.
   rows, all others kept) so the tables stay the full cumulative dataset across runs. Aggregated summary
   files are regenerated from every per-item file present, not just the current run. Shared by tools 1, 2,
   5, 6 (and the hypno/event variants), each keyed on its own identifier (`path`, participant id, `file_id`).
+  - **Interruption-safety (the skip gate requires data, not just a report)**: an item is skipped only when
+    **both** its human report **and** its durable per-item data are on disk; if exactly one is present
+    (run interrupted between the two, or a manual delete) the item is **reprocessed** and a `⚠` mismatch
+    warning is surfaced (tool 5: in the loop output + the folder-selection info line; tool 6: in the
+    Section 3 participant-loading `load_info`). Per-item data is written **before** the report so
+    "report ⇒ data" always holds going forward, and every cumulative/aggregated table is rebuilt by
+    **globbing the per-item files on disk** — never from an in-memory list keyed on the current run's
+    `attempted_ids`. This closes the failure where an interrupted-then-skipped item's rows were lost
+    forever. Tool 5 markers: `{file_id}_quality_metrics.tsv`; tool 6 marker: `{file_id}_epoch_rejection.tsv`
+    (its `global_epoch_rejection.tsv` is now globbed from disk like `global_rejection_by_stage.tsv`,
+    excluding the global file itself since it shares the `_epoch_rejection.tsv` suffix).
 - **Lenient JSON loader**: every read of a config JSON parses strictly first and, on failure, repairs a
   single trailing comma before a closing `}`/`]` (a common hand-edit mistake) before retrying. Shared by
   the config readers of tools 2 and 4.
@@ -319,7 +330,7 @@ Writes **header-anonymized copies** of EDF files in batch, so a non-anonymized d
 
 **Workflow (Voila)**:
 1. Select the data folder → every EDF is scanned (headers only) and classified; an info line reports `N total, M not anonymized, K already anonymized`.
-2. Review table — one row per file to process: an include checkbox (pre-ticked for non-anonymized files), an editable new-name field, and a colour-coded badge (`name in header AND file name` / `name in header only` / `already anonymized`). Options: anonymize `recording_id` trailing fields (on), skip files already in the output folder / recompute everything (on), also list already-anonymized files (off).
+2. Review table — one row per file to process: an include checkbox (pre-ticked for non-anonymized files), an editable new-name field, and a colour-coded badge (`name in header AND file name` / `name in header only` / `already anonymized`). Options: anonymize `recording_id` trailing fields (on), skip files already in the output folder / recompute everything (on), also list already-anonymized files (off). **Interruption-safe skip** (see *Skip + cumulative-merge*): a file is skipped only when **both** its anonymized copy **and** its `anonymization_log.tsv` row exist; a copy present without a log row (run interrupted before the end-of-loop log write) is **re-anonymized** with a `⚠` warning to restore the audit trail (copy + header patch is idempotent), rather than skipped and lost forever.
 3. Run → anonymized copies are written and the log is updated.
 
 **Outputs** (under `<study_folder>/anonymized/`, mirroring the EDF sub-folder tree):
@@ -480,9 +491,11 @@ Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pc
 
 **Outputs per run**:
 - `<data_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_overview.html` — HTML reports mirror the EDF subfolder structure under `reports_quality_overview/`
-- `<data_folder>/reports_quality_overview/quality_summary.tsv` — all numeric metrics for all channels, cumulative across runs (always at root); columns: `file_id`, `channel`, `mean_uV`, `std_uV`, `kurtosis`, `skewness`, `p99_abs_uV`, `p999_abs_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `n_peaks`, `suspect_reason`, `exclude` (last two columns)
+- `<data_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_metrics.tsv` — the **per-file** numeric-metrics table (same columns as `quality_summary.tsv`), written next to the HTML **before** it (so "report exists ⇒ data exists"). This is the durable per-item data and the skip gate's *data present* marker (see *Skip + cumulative-merge*).
+- `<data_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_by_stage.tsv` — the **per-file** by-stage table (same columns as `quality_summary_by_stage.tsv`); written only when the participant has a valid hypnogram.
+- `<data_folder>/reports_quality_overview/quality_summary.tsv` — all numeric metrics for all channels, cumulative across runs (always at root); columns: `file_id`, `channel`, `mean_uV`, `std_uV`, `kurtosis`, `skewness`, `p99_abs_uV`, `p999_abs_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `n_peaks`, `suspect_reason`, `exclude` (last two columns). **Regenerated each run from all `*_quality_metrics.tsv` on disk** (`rglob`, sorted by `file_id, channel`) — not an in-memory merge — so a file processed earlier and skipped now is never dropped (interruption-safe).
 - `<data_folder>/reports_quality_overview/dataset_overview.html` — dataset-level statistics and plots (always at root, regenerated each run)
-- `<data_folder>/reports_quality_overview/quality_summary_by_stage.tsv` — key metrics split by sleep stage, one row per `file_id × channel × stage`; columns: `file_id`, `channel`, `stage`, `mean_uV`, `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `p99_abs_uV`, `p999_abs_uV`. Populated only for participants with a valid hypnogram. Cumulative merge: rows for `file_id ∈ attempted_ids` are replaced, all others kept (same as `quality_summary.tsv`).
+- `<data_folder>/reports_quality_overview/quality_summary_by_stage.tsv` — key metrics split by sleep stage, one row per `file_id × channel × stage`; columns: `file_id`, `channel`, `stage`, `mean_uV`, `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `p99_abs_uV`, `p999_abs_uV`. Populated only for participants with a valid hypnogram. **Regenerated from all `*_quality_by_stage.tsv` on disk** (same rule as `quality_summary.tsv`, sorted by `file_id, channel, stage`).
 - `<data_folder>/reports_quality_overview/failed_files.tsv` — files that could not be read (at root)
 
 **End-of-run summary** (printed in the notebook output): participants processed, participants with ≥1 flagged channel, total flagged channels, files failed to load, path to `dataset_overview.html`.
@@ -494,9 +507,11 @@ Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pc
 Implemented as a Voila notebook with four sections: (1) path configuration, (2) preprocessing and rejection parameters, (3) participant selection, (4) processing loop. **Section 2 is organised into two headed sub-sections**: **Preprocessing** (resampling + notch + bandpass filter) and **Epoch rejection** (peak-to-peak amplitude per stage, flat signal & gradient, 1/f fit quality, and the optional event-based rejection — see below).
 
 **Inputs**:
-- `quality_summary.tsv` from Phase 1 — `exclude` column identifies channels to drop before preprocessing
-- `remap_reref_persubject.json` from `2_select&remap_channels_edf` — drives channel remapping and re-referencing per participant
+- `quality_summary.tsv` from Phase 1 — **optional** (strongly encouraged); its `exclude` column pre-fills the per-channel drop selection. Its `FileChooser` shows only `quality_summary.tsv` (`filter_pattern`), not the per-file `*_quality_metrics.tsv` that quality_overview also writes in that folder.
+- `remap_reref_persubject.json` from `2_select&remap_channels_edf` — drives channel remapping and re-referencing per participant, **and is the fallback channel source** for participants absent from `quality_summary.tsv` (see *Section 3 discovery* below)
 - Raw EDF files and remapped hypnograms (default suffix `_Hypnogram_remapped.txt`)
+
+**Section 3 participant discovery (EDF folder = ground truth)**: the participant list is built from the **EDF files on disk** (`fc_edf` folder, recursive), *not* from `quality_summary.tsv` — so a recording present on disk with a config entry is never hidden just because it is missing from the QC file. Per participant, the channel list + `exclude` pre-selection comes from `quality_summary.tsv` if present, else from the config **`remap` values** (remapped names, nothing pre-excluded), else empty (shown, flagged *not found in JSON config*, unchecked). `quality_summary.tsv` is optional (removed from the Run guard); when absent or partial, `load_info` surfaces `⚠` warnings for every discrepancy: EDF-count vs quality-count, EDFs missing from quality (loaded from config), EDFs missing from config (unprocessable), and stale quality entries with no EDF on disk. All cross-source id matching is `os.path.normcase`-wrapped at the comparison only.
 - *(optional, for event-based rejection)* `config_param/event_remap.json` from `4_remap_events_edf` and the per-EDF scored-event companions (`*_event_xml.csv` / `*.edf.XML`). Section 1 has an explicit `event_remap.json` `FileChooser` (auto-pointed at `<edf_folder>/config_param/` when present) and an editable **`Event CSV suffix:`** field auto-detected from the `.csv` companions next to the EDFs (most frequent suffix, shortest on ties; colour-coded info line), mirroring the suffix auto-detection of tools 4 / 5.
 
 **Channel-name handling when loading EDF data from notebook outputs** (critical):
@@ -576,8 +591,8 @@ tool 7's recomputed per-channel attribution matches tool 6's. Wired across tool 
 - `{file_id}_preprocessing_report.html` — MNE HTML report with the heatmap and two rejection tables. The **per-stage rejection table** has one row per stage (W/N1/N2/N3/R + custom) and one column per method (Amplitude, Flat, Gradient, 1/f error, 1/f R², and Event when event rejection ran), each cell showing the **% in front and the raw count `(n)` in parentheses**; % is relative to the stage total (same denominator as `global_rejection_by_stage.tsv`). When event rejection is enabled, a second **"Event-based rejection by type"** table lists one row per selected canonical event type (+ a bold `(any selected)` union row) with the flagged epoch count, % of all epochs, then `%(n)` per stage — so event types that reject too many epochs can be spotted and de-selected. Both tables are report-only (HTML); no TSV schema changes. Built by `build_stage_method_html()` / `build_event_type_html()`, with per-type epoch masks computed in the run loop via `compute_event_epoch_mask(..., [t], ...)`.
 
 **Global output** (in `<output_folder>/reports_preprocessing/`):
-- `global_epoch_rejection.tsv` — concatenation of all `{file_id}_epoch_rejection.tsv` across participants
-- `global_rejection_by_stage.tsv` — concatenation of all `{file_id}_rejection_summary.tsv` across participants
+- `global_epoch_rejection.tsv` — concatenation of all `{file_id}_epoch_rejection.tsv` across participants, **regenerated by globbing them from disk each run** (excluding the global file itself, which shares the `_epoch_rejection.tsv` suffix) — not an in-memory merge, so an interrupted-then-skipped participant is never dropped (see *Skip + cumulative-merge*)
+- `global_rejection_by_stage.tsv` — concatenation of all `{file_id}_rejection_summary.tsv` across participants (also globbed from disk each run)
 - `preprocessing_failed.tsv` — participants that could not be processed (EDF not found, config missing, hypno mismatch, etc.)
 
 ### 7. Interactive QC of rejected epochs — Phase 2b (`7_inspect_rejected_epochs_voila.ipynb`, `7_inspect_rejected_epochs_batch.py`, `qc_rejected_epochs_lib.py`)

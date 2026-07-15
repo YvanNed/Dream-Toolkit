@@ -108,8 +108,11 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   or freezes the UI; always surface errors via a widget or `print()`.
 - **Skip + cumulative-merge**: every per-participant processing tool has a "Skip already processed" checkbox
   (on by default), an "N / M already done" info line, and merge/replace output semantics (cumulative per-row
-  files merged on the item id; aggregated summaries regenerated from all per-item files). See *Cross-cutting
-  procedures* in SPEC.md; reference impls: tools 5 & 6.
+  files merged on the item id; aggregated summaries regenerated from all per-item files). **Interruption-safe**:
+  skip an item only when **both** its report **and** its durable per-item data are on disk (mismatch → ⚠ warn +
+  reprocess); write per-item data **before** the report; rebuild every cumulative/aggregated table by **globbing
+  the per-item files on disk**, never from an in-memory `attempted_ids` merge. See *Cross-cutting procedures* in
+  SPEC.md; reference impls: tools 5 & 6.
 - **Normalize path comparisons**: wrap **both** sides of any path/stem/filename string comparison
   (`==`, `in`, `.isin()`, set/dict membership) in `os.path.normcase(...)` **at the comparison only** (keep
   the stored/displayed value original). Prevents skip checks silently failing on `C:`/`c:` and `/`/`\`.
