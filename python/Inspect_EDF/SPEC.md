@@ -172,6 +172,21 @@ instead of restating them; only tool-specific deltas are kept inline.
   intent**: tool 3 prefers the **shortest** suffix on ties (target = raw, unremapped hypnogram); tools 5
   and 6 prefer the **longest** suffix among candidates appearing for ≥ 50% of the maximum count
   (target = the more specific remapped/processed version).
+  **Event `.txt` exclusion + display/selection split** (tools 3, 5, 6): the auto-*selection* skips
+  candidate suffixes containing `event` (case-insensitive, `sel_counts`), while the *displayed* candidate
+  list keeps **every** `.txt` suffix found, with `← selected` marking the one auto-filled into the widget.
+  Curry exports scored events as `*_ScoredEvents_Export.txt` — a `.txt` living next to the hypnograms whose
+  suffix (24 chars) is **longer** than `_Hypnogram_remapped.txt` (23) — so the "prefer the longest" rule of
+  tools 5/6 would otherwise auto-select the event export and read event lines as sleep stages (`np.loadtxt`
+  then fails with a *column count changed* error whose numbers vary per file, since it splits event labels
+  on whitespace). Excluding `event` rather than requiring `hypno` leaves hypnogram naming unconstrained;
+  displaying all candidates keeps a mis-detection visible and hand-correctable. The ≥ 50% threshold is
+  computed **within** the selectable (non-event) set, so a numerous event export cannot raise the bar high
+  enough to disqualify a partially-remapped hypnogram; when *only* event suffixes exist the selection falls
+  back to them rather than failing. Same `event` convention, opposite polarity, in tool 4 (`"event" in name`
+  — it *wants* the export). Inert in the EDF tools (scored events are `.csv`/`.XML`, never `.txt`) but kept
+  in the EDF source so it passes through to the Curry twins; tool 3 was already immune via "shortest wins",
+  the exclusion only makes it explicit.
 - **Event sourcing (CSV-first / XML-fallback)**: scored events are read via a shared `load_events()` —
   the Compumedics event CSV (`Name, Start, Duration`, default suffix `_event_xml.csv`) first, then the
   `<ScoredEvents>` of the `*.edf.XML` (`CMPStudyConfig`). Shared by tool 4 (harmonization) and tool 8
@@ -655,7 +670,7 @@ Each recording is a small directory of sibling files sharing one stem (e.g. `y_S
 | `{stem}.cdt.dpo` | **plain-text** parameter sidecar (~7 kB): channel labels, sampling rate, start datetime, per-channel impedances, 3-D sensor positions |
 | `{stem}.cdt.ceo` | native events (binary; **not** used — see events below) |
 | `{stem}_Hypnogram_Export.txt` | one stage label per 30 s epoch (same format as the EDF hypnograms) |
-| `{stem}_ScoredEvents_Export.txt` | scored events, **UTF-16 text export** (often French labels) |
+| `{stem}_ScoredEvents_Export.txt` | scored events, comma-separated text export (often French labels). **Encoding varies between exports** — UTF-16 (with BOM) on some, plain UTF-8/ANSI on others: `load_events_curry()` sniffs the BOM (`\xff\xfe`/`\xfe\xff` → UTF-16, else UTF-8 with `errors="replace"`). Never assume UTF-16 |
 
 Unlike Compumedics EDF, Curry uses a **single global sampling rate** for all channels, stores signal as
 **float** (no digital→physical scaling, so no EDF physical bounds), never appends MNE `-0`/`-1` duplicate
@@ -686,8 +701,19 @@ suffixes, and carries **real electrode positions**.
 ### Recipe: adapting an EDF tool to Curry
 
 Each Curry tool is generated from its EDF twin by a small, re-runnable `tools_curry/_make_toolN_curry.py`
-script (parsed-JSON edits: join the cell source, string-replace, re-split; validated by `json.load` +
-`ast.parse` of every code cell). The recurring deltas:
+script. `_make_tool{2,4,5,6}_curry.py` do **parsed-JSON edits** (join the cell source, string-replace,
+re-split; validated by `json.load` + `ast.parse` of every code cell), so their patterns are ordinary Python
+source with real newlines and quotes.
+
+> **`_make_tool3_curry.py` is the exception: it string-replaces the RAW notebook JSON.** In raw JSON a
+> newline is the two characters `\n` and a quote is `\"`, so **every pattern in it must be a plain,
+> escape-free substring** — a pattern containing a real newline or a bare `"` silently never matches and is
+> reported only as a `⚠ NOT FOUND` line. Always check the run prints **5/5 replacements applied**: a lower
+> count means a replacement was skipped and EDF wording leaked into the twin. (Such a miss was found in
+> Jul 2026 — the "No EDF files" → "No .cdt files" pattern had never matched, and the twin on disk carried a
+> hand-edit that regeneration reverted.)
+
+The recurring deltas:
 
 1. **Discovery**: `rglob('*.edf')` → `rglob('*.cdt')` (match bare `f.suffix == '.cdt'`, exclude `._*`).
 2. **Header reads** → `read_curry_header()`; classify channels by the `.dpo` **EEG group** (authoritative)
