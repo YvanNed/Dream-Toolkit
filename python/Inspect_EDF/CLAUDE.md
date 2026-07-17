@@ -53,6 +53,10 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
   never a fixed window. Currently **Curry-only**; EDF tools keep the uncapped autoscale on purpose (full
   range helps spot export clipping). Extend to any future DC-source tool.
+- **Checkbox-revealed widgets**: a parameter box shown/hidden by a checkbox must derive its **initial**
+  `display` from that checkbox (`display='' if cb.value else 'none'`), never hard-code `'none'` — the
+  `observe` handler only fires on a *change*, so a pre-ticked checkbox would leave its box hidden (as it did
+  in the Curry twin of tool 5, where `hp_check` defaults ON). Applies to tools 5 & 6; use it for any new one.
 - **Dual delivery**: every user-facing tool ships a code-visible Jupyter notebook **and** a code-hidden
   Voila app (kept in sync); some add a batch `.py`. Outputs are TSV (machine) + HTML (human).
 

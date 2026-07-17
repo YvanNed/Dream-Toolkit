@@ -269,6 +269,20 @@ instead of restating them; only tool-specific deltas are kept inline.
   can scroll by accident (shifting the row content). Fix: set `overflow='hidden'` explicitly on such row
   layouts (applied to the Section 3 "Harmonize labels" rows of `4_remap_events_edf*`); keep the intended
   scroll only on the outer list container.
+- **Checkbox-revealed parameter widgets (initial `display` follows the checkbox)**: the optional-parameter
+  boxes (resampling target, high-pass corner, notch frequency) are hidden until their checkbox is ticked,
+  via an `observe(..., names='value')` handler setting `w.layout.display = '' if change['new'] else 'none'`.
+  An observer only fires on a **change**, so a box whose layout hard-codes `display='none'` stays invisible
+  under a checkbox that *starts* ticked — the user has to untick and retick to reveal it. The initial
+  visibility must therefore be **derived from the checkbox value** at construction:
+  `layout=widgets.Layout(width='320px', display='' if cb_resample.value else 'none')` (the checkbox is
+  defined just above, so its `.value` is available). This is invisible while every such checkbox defaults
+  to `False`, but the **Curry twin of tool 5 ticks `hp_check` ON by default** (DC-coupled data, injected by
+  `_make_tool5_curry.py`) — which is where the bug surfaced. Applied to all four boxes: `txt_target_freq`
+  + `hp_freq` in `5_quality_overview_voila`, `txt_target_freq` + `txt_notch_freq` in `6_preprocessing_voila`
+  (tool 6's bandpass `txt_l_freq`/`txt_h_freq` are always visible — no toggle — and are unaffected). Edit
+  the **EDF** notebooks and re-run the Curry generators; neither generator string-matches these blocks, so
+  the pattern passes through. Apply the same derivation to any new checkbox-revealed widget.
 
 ## Tool descriptions
 
