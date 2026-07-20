@@ -583,13 +583,13 @@ The two tools then differ only in what follows:
 
 **Epoch rejection — six methods** (the sixth, *Event overlap*, is optional and off by default):
 
-All methods operate on the raw epoch data in µV (`epochs.get_data() * 1e6`, shape `n_epochs × n_channels × n_times`). Rejection masks are boolean arrays of shape `(n_epochs, n_channels)` — a `True` entry means that (epoch, channel) pair was flagged. An epoch is considered **rejected** if *any* channel is flagged by *any* method. A single ordered registry — `METHOD_ORDER = ['amplitude', 'flat', 'gradient', '1f_error', '1f_r2', 'event']` with `METHOD_CODE`/`MULTIPLE_CODE` — is the one source of truth shared by the mask builder, heatmap, per-epoch log, per-stage summary and global table, so `event` appears in every output **only when event rejection actually ran** and older event-free outputs keep their original column set.
+All methods operate on the epoch data in µV. The time-domain methods (amplitude / flat / gradient) read the signal **one channel at a time** from `epochs` (`epochs.get_data(picks=[ci])[:, 0, :] * 1e6`) so a high-density montage is never materialised as a second full `n_epochs × n_channels × n_times` float64 array (see *Per-channel rejection (memory)* under Curry 9 support — the same code runs in EDF and Curry); the 1/f method works on the small precomputed Welch PSD array. Rejection masks are boolean arrays of shape `(n_epochs, n_channels)` — a `True` entry means that (epoch, channel) pair was flagged. An epoch is considered **rejected** if *any* channel is flagged by *any* method. A single ordered registry — `METHOD_ORDER = ['amplitude', 'flat', 'gradient', '1f_error', '1f_r2', 'event']` with `METHOD_CODE`/`MULTIPLE_CODE` — is the one source of truth shared by the mask builder, heatmap, per-epoch log, per-stage summary and global table, so `event` appears in every output **only when event rejection actually ran** and older event-free outputs keep their original column set.
 
 | Method | Signal feature | Default threshold | Notes |
 |--------|---------------|-------------------|-------|
 | **Amplitude** | Peak-to-peak = `max(epoch) − min(epoch)` | W: 300, N1: 250, N2/N3: 200, REM: 250 µV | Per-stage threshold; W/REM more lenient because muscle and eye-movement artefacts are physiologically common in those stages. Equivalent to MNE's `drop_bad(reject=...)` criterion. |
 | **Flat signal** | Peak-to-peak < threshold | 1 µV | Detects disconnected electrodes or amplifier saturation within a single epoch. Logically identical to MNE's `drop_bad(flat=...)` criterion: both compare `ptp` against a low-amplitude threshold. |
-| **Gradient** | `max(|diff(epoch)|)` across time | 100 µV/sample | Maximum sample-to-sample absolute difference; sensitive to sudden jumps, electrode pops, and movement artefacts not captured by peak-to-peak. `diff` and `max` both operate on `axis=-1` (time axis) to handle the 3D `(n_epochs, n_channels, n_times)` array correctly. |
+| **Gradient** | `max(|diff(epoch)|)` across time | 100 µV/sample | Maximum sample-to-sample absolute difference; sensitive to sudden jumps, electrode pops, and movement artefacts not captured by peak-to-peak. `diff` and `max` both operate on `axis=-1` (time axis) of the per-channel `(n_epochs, n_times)` slice. |
 | **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, **configurable fit range, default 2–45 Hz** — see below, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`) | MAE > 0.15 OR R² < 0.95 | Fit lower bound ≥ 2 Hz limits slow-wave influence. A **full peak model is used deliberately** — periodic components (spindles, alpha…) are modelled and removed *before* assessing the aperiodic fit quality. Forcing `max_n_peaks=0` would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). |
 | **Event containment** *(optional, off by default)* | 30 s epoch **containing the onset** of any **selected** canonical scored-event type (arousal, apnea, hypopnea, limb movement, SpO2 desaturation…) | **onset-only** — the epoch holding the event `Start`; the annotated `Duration` is **intentionally ignored** (clinicians often score only the onset without a reliable duration), so each event flags exactly one epoch | **Epoch-level** flag, replicated across all channels → single `flag_event` column. Events read with the shared CSV-first / XML-fallback `load_events(edf, csv_suffix)`; raw labels mapped to canonical via `event_remap.json` (tool 4). UI: a checkbox to activate, **a wrapping row of checkboxes for the canonical types** (all shown at once, populated from the chosen `event_remap.json`), and an inline note explaining the onset-only rule so the choice is informed. A **"Count affected epochs"** button reports, over the participants currently checked in Section 3, how many epochs each selected type would flag (overall + per stage) using only the hypnogram length/stages and events — no signal is read. Missing/unreadable event companions are non-fatal (the file keeps the other 5 methods, never added to `failed`). |
 
@@ -609,7 +609,7 @@ tool 7's recomputed per-channel attribution matches tool 6's. Wired across tool 
 
 **Two-step QC approach** — Phase 2 does **not** drop epochs. It saves ALL epochs (including flagged ones) with an MNE `metadata` DataFrame attached, so downstream Phase 2b can inspect rejected epochs before finalising the rejection.
 
-**Per-participant pipeline progress bar**: below the participants bar (`i/N` + the current phase from `set_phase`, e.g. `loading EDF…`, `resampling…`, `epoching…`, `rejecting epochs…`, `building report…`) a second `IntProgress` (`progress_step`) spans the *current participant's whole pipeline* in arbitrary "time-cost" units (`COST_LOAD` + optional `COST_RESAMPLE`/`COST_NOTCH`/`COST_FILTER` for the *Load* group, then `COST_EPOCH`, `COST_REJECT`, `COST_SAVE`, `COST_REPORT`). It is sized per participant (the optional steps only count when enabled) and advanced **cumulatively** at each phase (`_reject_base` marks where the *Reject* segment begins), with a **4-segment legend** (`build_step_legend` → **Load / Epoch / Reject / Report**, Report = save+report) glued directly under the bar (`VBox([progress_step, step_legend])`, no top border, square top corners) whose widths are proportional to those costs. Mirrors tool 5's pipeline bar; UI-only, so all outputs stay byte-identical. On the **Curry twin** the same bar is inherited unchanged but its *Reject* segment is **animated** by the per-channel/per-epoch `compute_rejection_masks` callback (see *Curry 9 support → Progress feedback*); in EDF that segment jumps (the rejection runs on the full array, no callback). **Sync constraint**: this bar lives in the EDF original and is string-matched by `tools_curry/_make_tool6_curry.py` — re-run that generator after editing the widgets / display / reject call site.
+**Per-participant pipeline progress bar**: below the participants bar (`i/N` + the current phase from `set_phase`, e.g. `loading EDF…`, `resampling…`, `epoching…`, `rejecting epochs…`, `building report…`) a second `IntProgress` (`progress_step`) spans the *current participant's whole pipeline* in arbitrary "time-cost" units (`COST_LOAD` + optional `COST_RESAMPLE`/`COST_NOTCH`/`COST_FILTER` for the *Load* group, then `COST_EPOCH`, `COST_REJECT`, `COST_SAVE`, `COST_REPORT`). It is sized per participant (the optional steps only count when enabled) and advanced **cumulatively** at each phase (`_reject_base` marks where the *Reject* segment begins), with a **4-segment legend** (`build_step_legend` → **Load / Epoch / Reject / Report**, Report = save+report) glued directly under the bar (`VBox([progress_step, step_legend])`, no top border, square top corners) whose widths are proportional to those costs. Mirrors tool 5's pipeline bar; UI-only, so all outputs stay byte-identical. Its *Reject* segment is **animated** by the per-channel/per-epoch `compute_rejection_masks` callback (`_rej_progress` → `progress_step`, per channel for the time-domain pass then per epoch for the 1/f fit, filling `[_reject_base, _reject_base + COST_REJECT]`), so a slow high-density participant is not mistaken for a crash — **identical in EDF and the Curry twin**, since both now run the rejection per channel (see *Curry 9 support → Per-channel rejection*). **Sync constraint**: this bar and the callback live in the EDF original and pass through / are string-matched by `tools_curry/_make_tool6_curry.py` — re-run that generator after editing the widgets / display / reject call site.
 
 **Outputs per participant** — the `.fif` + its params sidecar under `<output_folder>/derivatives/<edf_subtree>/`; the TSV/HTML reports under `<output_folder>/reports_preprocessing/`:
 - `{file_id}_all-epo.fif` — all epochs with `epochs.metadata` DataFrame (columns: `epoch_idx`, `stage`, `reject_flag`, `reject_method`, `flag_amplitude`, `flag_flat`, `flag_gradient`, `flag_1f_error`, `flag_1f_r2`, plus `flag_event` **when event rejection ran**). The `flag_<method>` columns are **per-epoch "any channel" booleans** — the per-(epoch, channel) mask is **not** persisted. The per-epoch/per-stage TSVs and `global_rejection_by_stage.tsv` gain the matching `flag_event` / `event` entries the same way — additively, so event-free runs stay byte-compatible with earlier outputs.
@@ -769,26 +769,25 @@ The recurring deltas:
   text export via the `load_events` wrapper. All rejection methods, per-stage summaries, `_all-epo.fif`,
   `_epoch_rejection.tsv`, `_rejection_summary.tsv`, and the `_preprocessing_params.json` sidecar are
   identical to tool 6, so **tool 7 (QC of rejected epochs) works on Curry outputs unchanged**.
-  - **Per-channel rejection (Curry-only, memory)**: the EDF tool materialises the whole
-    `epochs_data_uV = epochs.get_data() * 1e6` array (a 3rd full copy after `raw._data` and `epochs._data`),
-    which overflows RAM for a high-density montage (32 ch @ 1024 Hz ≈ 3× ~9.5 GiB). The generator rewrites
-    `compute_rejection_masks` to receive the `epochs` object and read **one channel at a time**
-    (`epochs.get_data(picks=[ci])`), and adds `del raw` right after epoching — dropping the sustained peak
-    from ~3× to ~1× (~9.8 GiB). **Formulas are unchanged**, so the per-(epoch, channel) masks are
-    byte-identical to the EDF tool (verified by an equivalence test) and all outputs / tool-7 compatibility
-    are preserved. The transient epoching peak stays ~2× (`raw._data` + `epochs._data` coexist during the
-    copy); for extreme density without enough RAM the built-in **resample** is the lever (÷4). This change is
-    **Curry-only** (EDF tool 6 untouched); applying it to EDF is a deferred TODO
-    (`tools/plan_tool6_memory_feedback.md`).
-  - **Progress feedback**: the per-participant **pipeline bar** now lives in the **EDF original**
-    (`progress_step` + the 4-segment `build_step_legend`, see tool 6 above) and is inherited here unchanged,
-    so EDF and Curry share the same two-bar layout. The Curry-specific twist: its *Reject* segment is
-    **animated** by a `progress(done, total, msg)` callback threaded into the per-channel
-    `compute_rejection_masks` (per channel for the time-domain pass, per epoch for the 1/f fit), filling
-    `[_reject_base, _reject_base + COST_REJECT]` — so a slow high-density participant is not mistaken for a
-    crash. (In EDF that segment jumps, the rejection running on the full array with no callback.) The
-    generator therefore **no longer adds a separate `progress_rej` sub-bar**; it only repoints the callback
-    onto `progress_step` and passes `epochs` (per-channel memory refactor) instead of the full array.
+  - **Per-channel rejection (memory) — shared EDF + Curry**: `compute_rejection_masks` receives the
+    `epochs` object and reads the signal **one channel at a time** for the time-domain methods
+    (`epochs.get_data(picks=[ci])[:, 0, :] * 1e6`) instead of materialising a full `epochs.get_data() * 1e6`
+    array (which would be a 3rd full copy after `raw._data` and `epochs._data` — ~3× ~9.5 GiB for 32 ch @
+    1024 Hz, enough to overflow RAM); with `del raw` right after epoching this drops the sustained
+    rejection-time peak from ~3× to ~1× (~9.8 GiB). **Formulas are unchanged**, so the per-(epoch, channel)
+    masks — and therefore every output (`.fif` metadata, `_epoch_rejection.tsv`, `_rejection_summary.tsv`,
+    heatmap) and tool-7 compatibility — are **byte-identical** to the former full-array version (verified
+    end-to-end: the sha256 of each output file matches on the test EDFs, old vs new). The transient epoching
+    peak stays ~2× (`raw._data` + `epochs._data` coexist during the copy); for extreme density without enough
+    RAM the built-in **resample** is the lever (÷4). This now lives in the **EDF source** (`tools/6_preprocessing_voila.ipynb`)
+    and is format-agnostic, so it **passes through into the Curry twin unchanged** — the generator no longer
+    injects it.
+  - **Progress feedback — shared EDF + Curry**: the per-participant **pipeline bar** (`progress_step` + the
+    4-segment `build_step_legend`, see tool 6 above) and the `_rej_progress` callback that animates its
+    *Reject* segment (per channel for the time-domain pass, per epoch for the 1/f fit, filling
+    `[_reject_base, _reject_base + COST_REJECT]`) both live in the **EDF source** and are inherited by the
+    twin unchanged, so EDF and Curry share the exact same two-bar layout and animation — a slow high-density
+    participant is never mistaken for a crash in either. The generator adds **no** separate rejection sub-bar.
 
 ### Environment
 

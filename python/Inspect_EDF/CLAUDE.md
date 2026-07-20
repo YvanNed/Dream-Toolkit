@@ -69,7 +69,10 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   **byte-compatible**. Writes the `{file_id}_preprocessing_params.json` sidecar (thresholds actually used
   + `1f_fit_range_hz` + `methods_run`), read back by tool 7. Notch (`cb_notch`, MNE default FIR method,
   50 Hz), resampling (also in tool 5, `cb_resample`), and the 1/f fit range (default 2–45 Hz) are all
-  optional and **off/neutral by default**.
+  optional and **off/neutral by default**. `compute_rejection_masks` reads the signal **one channel at a
+  time** from `epochs` (+ `del raw` after epoching) to bound memory on dense montages; formulas unchanged so
+  every output is **byte-identical** to the former full-array version, and the code is format-agnostic (EDF
+  source, passes through to the Curry twin). Keep the formulas in sync with tool 7's `qc_rejected_epochs_lib.py`.
 - **Context-channels companion (`6_preprocessing` block `[H]`, → tool 7)**: when the participant's
   `sub_config` carries a tool-2 `context_channels` block, tool 6 reads **only** those declared EOG/EMG/ECG
   channels from the raw EDF, renames them to role labels (`EOG-L`/`EOG-R`/`EMG`/`ECG`), sets MNE channel
@@ -95,7 +98,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **Generated, not hand-edited**: `tools_curry/_make_tool{5,6}_curry.py` regenerate the Curry notebooks
   from the EDF originals by string replacement. Edit the EDF notebook, then **re-run the generator**. New
   code passes through automatically **unless** it sits inside a block the generator string-matches or
-  wholesale-replaces (e.g. tool 6's memory-efficient per-channel `compute_rejection_masks`), in which case
+  wholesale-replaces (e.g. tool 6's Curry load block, event loader, or `[H]` context reader), in which case
   the change must be mirrored in the generator.
 
 ## Working agreements
