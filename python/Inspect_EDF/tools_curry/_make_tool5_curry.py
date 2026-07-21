@@ -192,11 +192,13 @@ replace_in_cell(cell1,
     "remove bounds_pct flag_channel check",
 )
 
-# 1h. Remove bounds_pct from KEY_METRICS
+# 1h. Remove bounds_pct from OVERVIEW_KEY_METRICS (shared by generate_dataset_overview and the
+# per-participant "All electrodes" figures; 4-space indent — the literal KEY_METRICS/LABELS blocks
+# were lifted to these module-level constants).
 replace_in_cell(cell1,
-    "        \"std_uV\", \"flat_pct\", \"bounds_pct\", \"hist_extreme_pct\",",
-    "        \"std_uV\", \"flat_pct\", \"hist_extreme_pct\",",
-    "KEY_METRICS remove bounds_pct",
+    "    \"std_uV\", \"flat_pct\", \"bounds_pct\", \"hist_extreme_pct\",",
+    "    \"std_uV\", \"flat_pct\", \"hist_extreme_pct\",",
+    "OVERVIEW_KEY_METRICS remove bounds_pct",
 )
 
 # 1i. Remove bounds_pct from ALL_NUMERIC
@@ -206,11 +208,11 @@ replace_in_cell(cell1,
     "ALL_NUMERIC remove bounds_pct",
 )
 
-# 1j. Remove bounds_pct from LABELS
+# 1j. Remove bounds_pct from OVERVIEW_METRIC_LABELS (4-space indent — lifted to a module constant)
 replace_in_cell(cell1,
-    "        \"bounds_pct\": \"At EDF bounds (%)\",\n",
+    "    \"bounds_pct\": \"At EDF bounds (%)\",\n",
     "",
-    "LABELS remove bounds_pct",
+    "OVERVIEW_METRIC_LABELS remove bounds_pct",
 )
 
 # 1k. Remove bounds_pct from STAGE_METRICS (inside generate_dataset_overview)
