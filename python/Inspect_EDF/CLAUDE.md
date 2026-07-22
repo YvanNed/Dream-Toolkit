@@ -53,6 +53,11 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
   never a fixed window. Currently **Curry-only**; EDF tools keep the uncapped autoscale on purpose (full
   range helps spot export clipping). Extend to any future DC-source tool.
+- **Distribution `n_peaks` histogram = robust-clipped**: in tool 5 the histogram feeding the Savitzky-Golay
+  curve + `find_peaks` is bounded to robust percentiles (`HIST_CLIP_PCT`, **uniform EDF + Curry**) so rare
+  extremes don't over-smooth the curve into a dome/flat line on DC data; `hist_extreme_pct` stays on a
+  **separate full-range** histogram (only `n_peaks` changes, now more sensitive). Passes through the Curry
+  generator unchanged. → SPEC §5 *Distribution histogram — robust range for peak detection*.
 - **Checkbox-revealed widgets**: a parameter box shown/hidden by a checkbox must derive its **initial**
   `display` from that checkbox (`display='' if cb.value else 'none'`), never hard-code `'none'` — the
   `observe` handler only fires on a *change*, so a pre-ticked checkbox would leave its box hidden (as it did
