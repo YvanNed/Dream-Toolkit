@@ -291,18 +291,11 @@ NEW_EVENTS = (
 )
 replace_in_cell(code, OLD_EVENTS, NEW_EVENTS, "event loader")
 
-# Remove _events_multiset (only used by the text/CSV-vs-XML check)
-replace_in_cell(code,
-    'def _events_multiset(events, second_resolution=False):\n'
-    '    """Multiset of (name_lower, start, duration) for source comparison. second_resolution=True\n'
-    '    floors start/duration to whole seconds — used for the .txt export, whose clock times are\n'
-    '    truncated to the second; otherwise sub-second (3-decimal) precision is kept (CSV/XML)."""\n'
-    '    if second_resolution:\n'
-    '        return Counter((n.strip().lower(), int(s), int(d)) for (n, s, d) in events)\n'
-    '    return Counter((n.strip().lower(), round(s, 3), round(d, 3)) for (n, s, d) in events)\n'
-    '\n\n',
-    "",
-    "remove _events_multiset")
+# Remove _canon_events + _match_events (only used by the text/CSV-vs-XML check)
+remove_between(code,
+    "def _canon_events(events):",
+    "# ---- shared state filled by the scan ----",
+    "remove _canon_events + _match_events")
 
 # ===========================================================================
 print("\n=== Cell 1: Section 1 banner + widgets ===")
@@ -340,13 +333,18 @@ replace_in_cell(code,
     'section1bis = widgets.HTML("""\n'
     '<hr style="height:4px; background-color:black; border:none;">\n'
     '<h2>1bis. (Optional) Check text/CSV vs XML consistency</h2>\n'
-    '<p>Verifies that, for every file having <b>both</b> a primary source (the <code>.txt</code> text\n'
-    'export if present, else the <code>*_event_xml.csv</code>) <b>and</b> the\n'
-    '<code>&lt;ScoredEvents&gt;</code> of the <code>*.edf.XML</code>, the two describe the same events\n'
-    '(name + start + duration, tolerance 1e-3 s). For the <code>.txt</code> the clock times are\n'
-    'converted to seconds using the EDF recording-start datetime. Writes\n'
-    '<code>config_param/event_source_mismatch.tsv</code>. Opt-in because it forces reading both files\n'
-    'for every EDF.</p>\n'
+    '<p>For every file having <b>both</b> a primary source (the <code>.txt</code> text export if present,\n'
+    'else the <code>*_event_xml.csv</code>) <b>and</b> the <code>&lt;ScoredEvents&gt;</code> of the\n'
+    '<code>*.edf.XML</code>, checks that the two describe the same events. Labels are normalized to the\n'
+    '<b>canonical vocabulary</b> (so English XML and French <code>.txt</code> compare equal) and events are\n'
+    'matched by <b>type + start time within ±(Match&nbsp;tolerance) seconds</b> (default 1&nbsp;s — the\n'
+    '<code>.txt</code> truncates clock times to the second and the two exports can round a start\n'
+    'differently; set 0 for strict same-second matching). Events paired within the tolerance but carrying\n'
+    '<b>different labels</b> are listed in <code>cooccur_label_pairs</code> as candidate same-events whose\n'
+    'names are not yet harmonized (e.g. a cross-language pair) — <b>inspect those pairs to decide whether\n'
+    'they are truly one event or two distinct events that merely fall within the tolerance</b>. Events with\n'
+    'no counterpart show up as only-in-one-source (e.g. an export that omits snoring). Writes\n'
+    '<code>config_param/event_source_mismatch.tsv</code>. Opt-in because it reads both files per EDF.</p>\n'
     '""")\n\n',
     "",
     "remove section1bis banner")
@@ -366,10 +364,13 @@ replace_in_cell(code,
     'csv_suffix = widgets.Text(value="_ScoredEvents_Export.txt", description="Event export suffix:",',
     "csv_suffix widget")
 
-# Remove section1bis widgets (run_check_button + out_check)
+# Remove section1bis widgets (run_check_button + tol_seconds + out_check)
 replace_in_cell(code,
     '# Section 1bis\n'
     'run_check_button = widgets.Button(description="Run text/CSV vs XML check", button_style="info", icon="check")\n'
+    'tol_seconds = widgets.BoundedIntText(value=1, min=0, max=10, description="Match tolerance (s):",\n'
+    '                                     style={"description_width": "initial"},\n'
+    '                                     layout=widgets.Layout(width="170px"))\n'
     'out_check = widgets.Output()\n\n',
     "",
     "remove section1bis widgets")
@@ -556,7 +557,7 @@ replace_in_cell(code,
     "remove txt_suffix from layout")
 
 replace_in_cell(code,
-    "    section1bis, run_check_button, out_check,\n",
+    "    section1bis, widgets.HBox([run_check_button, tol_seconds]), out_check,\n",
     "",
     "remove section1bis from layout")
 

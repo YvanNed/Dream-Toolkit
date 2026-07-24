@@ -46,7 +46,11 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `curry_io._parse_events_txt`), then `*_event_xml.csv`, then the `<ScoredEvents>` of `*.edf.XML`. The scan
   needs **only names** (Start/Duration left NaN, no EDF-header read); `read_edf_start_datetime` (header
   offsets 168/176) converts `.txt` clock times to seconds **only** in the 1bis check, which compares the
-  primary text source vs XML (**`.txt` at second resolution** — the export truncates to the second). French
+  primary text source vs XML **language-robustly**: `_canon_events` normalizes names to the canonical vocab
+  (so EN/FR compare equal) + floors starts to the second, then `_match_events` greedily pairs events
+  **within ±`tol` s** (editable `Match tol (s)`, default 1, 0=strict; same-label pass then any-label pass)
+  classifying them as matched / cooccur-difflabel (paired in time, different name — cross-language
+  discovery aid, or two distinct events within tol) / only-in-one-source. French
   labels get `FRENCH_EVENT_RULES`/`suggest_canonical` (shared verbatim with the Curry twin). **Tool 8 is
   unchanged** (CSV-first/XML-fallback). Re-run `tools_curry/_make_tool4_curry.py` after editing the EDF Voila.
   Labels harmonized to canonical via `config_param/event_remap.json`. → SPEC *Cross-cutting → Event sourcing* + §4.
