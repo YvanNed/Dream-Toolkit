@@ -2,14 +2,14 @@
 """
 Tool 7 (batch twin) — Section-2 QC report of rejected epochs, per participant AND database-level.
 
-Runs the same per-stage analysis as 7_inspect_rejected_epochs_voila.ipynb over a whole derivatives
+Runs the same per-stage analysis as 7_reject_manually_voila.ipynb over a whole derivatives
 tree (no interaction), then aggregates a database-level view. Reuses qc_rejected_epochs_lib so the
 plots stay identical to the notebook. The interactive per-epoch navigator / override / clean-epo save
 are notebook-only; this batch produces reports only and never modifies tool-6 outputs.
 
 Usage
 -----
-    python 7_inspect_rejected_epochs_batch.py <derivatives_root> [--no-1f] [--limit N] [--out DIR]
+    python 7_reject_manually_batch.py <derivatives_root> [--no-1f] [--limit N] [--out DIR]
 
     <derivatives_root>  folder holding the tool-6 *_all-epo.fif files (searched recursively)
     --no-1f             skip specparam 1/f fitting (much faster; MAE/R² columns left blank)

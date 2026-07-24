@@ -75,15 +75,17 @@ cell3 = code_cells[2]  # UI
 cell4 = code_cells[3]  # main processing
 
 print("=== Cell 0: imports ===")
+# NB: the EDF tool-5 import block is wrapped in a try/except ImportError, so these lines are
+# indented 4 spaces; the injected curry imports are kept inside the try so they are guarded too.
 replace_in_cell(cell0,
-    "import yasa",
-    "import yasa\nimport sys as _sys\n"
-    "# curry shared modules — located next to this notebook\n"
-    "_here = os.path.dirname(os.path.abspath('__file__'))\n"
-    "if _here not in _sys.path:\n"
-    "    _sys.path.insert(0, _here)\n"
-    "from curry_header import read_curry_header\n"
-    "from curry_io import read_curry_signal, load_hypnogram_curry",
+    "    import yasa",
+    "    import yasa\n    import sys as _sys\n"
+    "    # curry shared modules — located next to this notebook\n"
+    "    _here = os.path.dirname(os.path.abspath('__file__'))\n"
+    "    if _here not in _sys.path:\n"
+    "        _sys.path.insert(0, _here)\n"
+    "    from curry_header import read_curry_header\n"
+    "    from curry_io import read_curry_signal, load_hypnogram_curry",
     "cell0 curry imports",
 )
 

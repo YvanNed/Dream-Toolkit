@@ -41,8 +41,19 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tools 5 & 8 — **keep in sync**.
 
 **Shared conventions** (→ SPEC *Cross-cutting procedures*)
-- **Scored events (`load_events`)**: read the Compumedics `*_event_xml.csv` first, then the
-  `<ScoredEvents>` of `*.edf.XML`; labels harmonized to canonical via `config_param/event_remap.json`.
+- **Scored events (`load_events`)**: tool 4 reads three Compumedics companions **TXT-first** — the
+  `*_ScoredEvents_Export.txt` text export (French, UTF-16-or-UTF-8, no header, clock-time; parsed inline like
+  `curry_io._parse_events_txt`), then `*_event_xml.csv`, then the `<ScoredEvents>` of `*.edf.XML`. The scan
+  needs **only names** (Start/Duration left NaN, no EDF-header read); `read_edf_start_datetime` (header
+  offsets 168/176) converts `.txt` clock times to seconds **only** in the 1bis check, which compares the
+  primary text source vs XML **language-robustly**: `_canon_events` normalizes names to the canonical vocab
+  (so EN/FR compare equal) + floors starts to the second, then `_match_events` greedily pairs events
+  **within ±`tol` s** (editable `Match tol (s)`, default 1, 0=strict; same-label pass then any-label pass)
+  classifying them as matched / cooccur-difflabel (paired in time, different name — cross-language
+  discovery aid, or two distinct events within tol) / only-in-one-source. French
+  labels get `FRENCH_EVENT_RULES`/`suggest_canonical` (shared verbatim with the Curry twin). **Tool 8 is
+  unchanged** (CSV-first/XML-fallback). Re-run `tools_curry/_make_tool4_curry.py` after editing the EDF Voila.
+  Labels harmonized to canonical via `config_param/event_remap.json`. → SPEC *Cross-cutting → Event sourcing* + §4.
 - **Custom (non-AASM) sleep stages**: declared once in `config_param/custom_stages.json` (written only by
   `3_remap_hypno`, read by tools 5/6/7). Three duplicated helpers (`load_custom_stages`,
   `parse_custom_field`, `custom_stage_style`); tools 5/7 use a custom `plot_hypnospectrogram()` because
@@ -78,6 +89,17 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   time** from `epochs` (+ `del raw` after epoching) to bound memory on dense montages; formulas unchanged so
   every output is **byte-identical** to the former full-array version, and the code is format-agnostic (EDF
   source, passes through to the Curry twin). Keep the formulas in sync with tool 7's `qc_rejected_epochs_lib.py`.
+  **Configurable epoch length** (`dd_epoch_len`, divisors of 30 ≥ 5 s, **default 30 = classic**): the 30 s
+  hypnogram is validated/trimmed at 30 s then **expanded** (`np.repeat(expert_hypno, 30 // epoch_sec)`) so each
+  sub-epoch inherits its parent stage; `make_fixed_length_epochs(duration=epoch_sec)`, event mask + context
+  companion + Welch window (`min(4, epoch_sec)·sf`) all take `epoch_sec`, sidecar gains `epoch_length_s`
+  (30 when absent). Event flagging stays onset-only with an **amber warning** when ≠ 30 s. Thread `epoch_sec`
+  consistently across tool 6 → context companion → sidecar → tools 7/7bis/`qc_rejected_epochs_lib` (re-run the
+  Curry generator). → SPEC §6 *Epoching (configurable epoch length)*.
+  **Output location**: tool 6 writes its `.fif`/sidecar/context under **`derivatives/raw_epo/<subtree>/`**
+  (sibling of tool 7's `clean_epo_manual/` and 7bis's `clean_epo_auto/`); tools 7/7bis **strip a leading
+  `raw_epo/`** when mirroring the subtree into their `clean_epo_*/` (pre-`raw_epo` layouts pass through), and
+  tool 6 deletes stale same-id copies at the old `derivatives/<subtree>/` location on reprocess.
 - **Context-channels companion (`6_preprocessing` block `[H]`, → tool 7)**: when the participant's
   `sub_config` carries a tool-2 `context_channels` block, tool 6 reads **only** those declared EOG/EMG/ECG
   channels from the raw EDF, renames them to role labels (`EOG-L`/`EOG-R`/`EMG`/`ECG`), sets MNE channel
@@ -89,7 +111,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   other outputs byte-identical. The Curry generator swaps the reader (`read_raw_edf`→`read_raw_curry`) and
   drops the suffix-dedup line via a dedicated `_make_tool6_curry.py` replacement — re-run the generator after
   editing the `[H]` block.
-- **QC of rejected epochs (`7_inspect_rejected_epochs*`)**: reads tool-6 `{file_id}_all-epo.fif`
+- **Manually reject flagged epochs (`7_reject_manually*`)**: reads tool-6 `{file_id}_all-epo.fif`
   (+ optional params JSON), **never reloads the raw EDF**, **never modifies tool-6 outputs**. Per-epoch
   reject decision is authoritative from `epochs.metadata`; per-channel attribution is **recomputed** with
   tool-6 formulas + persisted thresholds. Analysis + plotting live in a **shared module
@@ -97,7 +119,22 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, 1/f fit) must stay in sync with tool 6.
   An **optional "Show EOG/EMG context" toggle** (default off) stacks the EOG-L/EOG-R/EMG traces under the
   per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
-  aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op.
+  aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op. Its `_clean-epo.fif`
+  (+ reviewed TSVs) is written to **`derivatives/clean_epo_manual/<subtree>/`** (sibling of 7bis's
+  `clean_epo_auto/`), not "next to the `.fif`".
+- **Automatic epoch rejection (`7bis_reject_automatically_voila`)**: **flagging → rejection** decision tool
+  (naming scheme: 6 flag → 7 manual → 7bis auto; 7/7bis are alternatives). Voila; it reads only
+  format-agnostic `.fif` + `{file_id}_epoch_channel_rejection.tsv` (both identical from Curry tool 6), so its
+  **Curry twin is a verbatim copy** — `tools_curry/_make_tool7bis_curry.py` re-copies + retitles (no
+  EDF-specific code to swap; re-run after editing the EDF notebook). **Channel-first then epoch**
+  (`auto_reject_decision`): drop a channel flagged in
+  > `channel_pct` of in-scope epochs, then reject an in-scope epoch flagged in > `epoch_pct` of the *remaining
+  good* channels (both default 20 %, editable; computed over the **stages of interest** only). Reads tool-6
+  outputs **read-only**; writes `{file_id}_clean-epo.fif` (selected stages, dropped channels removed) +
+  `_autoreject_decision.tsv` (durable record + global-summary source, written **before** the report) +
+  `_autoreject_report.html` under **`derivatives/clean_epo_auto/<subtree>/`**. No interpolation (channels are
+  dropped; deferred). Skip gate = clean-epo **and** decision TSV present; global summary rebuilt by globbing
+  the per-file decision TSVs. All-channels-/all-epochs-rejected → non-fatal `failed`, no clean-epo. See SPEC §7bis.
 
 **Curry twins** (→ SPEC *Curry 9 support*)
 - **Generated, not hand-edited**: `tools_curry/_make_tool{5,6}_curry.py` regenerate the Curry notebooks
