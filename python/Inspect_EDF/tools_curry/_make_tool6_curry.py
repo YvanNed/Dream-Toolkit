@@ -91,21 +91,23 @@ replace_in_cell(md0, "[group sub-folders mirroring the EDF folder structure, if 
 # ===========================================================================
 print("\n=== Cell 1: imports ===")
 # Drop the now-unused XML parser import (the Curry event export is plain text).
+# NB: the EDF tool-6 import block is wrapped in a try/except ImportError, so these lines are
+# indented 4 spaces; the injected curry imports are kept inside the try so they are guarded too.
 replace_in_cell(imports,
-    "import warnings\nimport xml.etree.ElementTree as ET\nfrom pathlib import Path",
-    "import warnings\nfrom pathlib import Path",
+    "    import warnings\n    import xml.etree.ElementTree as ET\n    from pathlib import Path",
+    "    import warnings\n    from pathlib import Path",
     "remove ET import")
 replace_in_cell(imports,
-    "from specparam import SpectralModel\n\nwarnings.filterwarnings('ignore')",
-    "from specparam import SpectralModel\n"
-    "import sys as _sys\n"
-    "# curry shared modules — located next to this notebook\n"
-    "_here = os.path.dirname(os.path.abspath('__file__'))\n"
-    "if _here not in _sys.path:\n"
-    "    _sys.path.insert(0, _here)\n"
-    "from curry_header import read_curry_header\n"
-    "from curry_io import load_events_curry, rec_start_from_header\n\n"
-    "warnings.filterwarnings('ignore')",
+    "    from specparam import SpectralModel\nexcept ImportError as e:",
+    "    from specparam import SpectralModel\n"
+    "    import sys as _sys\n"
+    "    # curry shared modules — located next to this notebook\n"
+    "    _here = os.path.dirname(os.path.abspath('__file__'))\n"
+    "    if _here not in _sys.path:\n"
+    "        _sys.path.insert(0, _here)\n"
+    "    from curry_header import read_curry_header\n"
+    "    from curry_io import load_events_curry, rec_start_from_header\n"
+    "except ImportError as e:",
     "curry imports")
 
 # ===========================================================================
