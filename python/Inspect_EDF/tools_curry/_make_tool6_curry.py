@@ -512,7 +512,11 @@ print("\n=== Cell 8: [H] context-channels companion (Curry reader) ===")
 # For Curry, swap the EDF reader for read_raw_curry and drop the (removed) suffix-dedup helper.
 # Run BEFORE the global edf_path -> cdt_path rename so these OLD strings still match.
 replace_in_cell(run_cell,
-    "                    ctx_probe = mne.io.read_raw_edf(str(edf_path), preload=False, verbose=False)\n"
+    "                    # Read only the declared context channels (include=), exactly like the EEG read:\n"
+    "                    # otherwise MNE upsamples every channel in the file to its max rate (e.g. a fast\n"
+    "                    # ECG), which was raising 'bad allocation' on mixed-rate montages.\n"
+    "                    ctx_probe = mne.io.read_raw_edf(str(edf_path), preload=False, encoding='latin-1',\n"
+    "                                                    include=list(orig_to_role.keys()), verbose=False)\n"
     "                    ctx_probe, _ = drop_suffix_duplicates(ctx_probe)\n",
     "                    ctx_probe = mne.io.read_raw_curry(str(edf_path), preload=False, verbose='ERROR')\n",
     "cell8 [H] context reader")
