@@ -248,7 +248,15 @@ instead of restating them; only tool-specific deltas are kept inline.
     (their span < 45 → `max()` is a no-op → still byte-identical) yet restores contrast on degraded ones;
     the degraded epochs stay **visible in blue** (low power), only the dead ones are greyed. The quantitative
     QC flags (`flat_pct`/`bounds_pct`/…/`exclude`) are independent of this colour scale, so detection is
-    unaffected. Applied to the **across-channel median** spectrogram of tool 5's
+    unaffected. **Absolute-dB colorbar** (`render_hypnospectrogram`, tool 5 per-channel + median):
+    because the colour scale is *relative* (auto-scaled per channel), a **globally attenuated / low-gain**
+    channel looks structurally normal — the within-channel greying/blue logic can't reveal a uniform
+    problem. A `Power [dB]` colorbar (attached to **both** the hypnogram strip and spectrogram axes so
+    they stay x-aligned) exposes it: e.g. the ×0.01 dead channel `734 C3` sits at −55…−23 dB vs a healthy
+    channel's −15…+18 dB, an ~40 dB downward shift visible at a glance. This is a display-only change
+    (it re-lays-out every per-channel figure, clean ones included, on purpose); the numeric `std_uV` /
+    "All electrodes" figures remain the primary catch for globally-bad channels. **Tool 5 only for now**
+    (tool 8's monolithic copy left without a colorbar). Applied to the **across-channel median** spectrogram of tool 5's
     Overview (see §5), the very same criterion yields *majority-of-channels* semantics for free: a
     column is greyed only when most channels are dead at that epoch, since that is what makes the
     median drop — no separate majority-vote code. The tool-7 *navigator* spectrogram is a separate plot
