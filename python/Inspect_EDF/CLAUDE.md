@@ -59,7 +59,11 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `parse_custom_field`, `custom_stage_style`); tools 5/7 use a custom `plot_hypnospectrogram()` because
   YASA's plotting hard-rejects non-AASM labels. Reading the JSON is non-fatal.
 - **Flat/dead-epoch colour scaling (`plot_hypnospectrogram()`)**: exclude near-zero (dead-epoch) columns
-  from the vmin/vmax percentiles and render them grey; keep in sync across tools 5, 8, 8-voila.
+  from the vmin/vmax percentiles and render them grey, **then cap the colour span
+  (`vmin = max(vmin, vmax − 45)`)** so a continuum of partly-flat/clipped low-power epochs can't drag
+  `vmin` and wash the plot to red (clean channels span < 45 dB → untouched, still byte-identical). Keep
+  both in sync across tools 5, 8, 8-voila (+ tool 5's Curry twin via `_make_tool5_curry.py`). → SPEC
+  *Cross-cutting → Flat/dead-epoch colour scaling*.
 - **Time-series display cap for DC-coupled data**: DC sources (Curry `.cdt`, any DC export with no
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
   never a fixed window. Currently **Curry-only**; EDF tools keep the uncapped autoscale on purpose (full

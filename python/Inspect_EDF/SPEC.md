@@ -237,7 +237,18 @@ instead of restating them; only tool-specific deltas are kept inline.
     `plot_hypnospectrogram()` therefore excludes near-zero columns from the `vmin/vmax` percentiles
     (a column is valid when its peak dB is within 60 dB of the median epoch peak) and renders the
     excluded columns grey (`#d9d9d9`, "no signal"); clean channels (no dead epoch) are unaffected
-    (byte-identical scale and image). Applied to the **across-channel median** spectrogram of tool 5's
+    (byte-identical scale and image). **Dynamic-range cap (`vmin = max(vmin, vmax − 45)`)**: the
+    60 dB column gate only removes *fully* dead epochs; a recording with a **continuum of partly-flat /
+    clipped low-power epochs** (e.g. `1WIBE0543_N1`: ~20 % flat + ±500 µV clipping on every EEG channel)
+    leaves degraded-but-valid columns whose peak dB sits ~20–60 dB below the median. Those survive the
+    gate but still drag the pixel-percentile `vmin` to ≈ −59 dB, pushing RdBu_r's white midpoint down to
+    ≈ −22 dB so all real EEG (> −20 dB) washes to red again. Capping the colour **span** at 45 dB after
+    the percentile fixes this: a healthy hypnospectrogram's real structure fits within ~35 dB (measured
+    max across all clean `test_data` channels = 34.6 dB), so the cap **never touches** clean channels
+    (their span < 45 → `max()` is a no-op → still byte-identical) yet restores contrast on degraded ones;
+    the degraded epochs stay **visible in blue** (low power), only the dead ones are greyed. The quantitative
+    QC flags (`flat_pct`/`bounds_pct`/…/`exclude`) are independent of this colour scale, so detection is
+    unaffected. Applied to the **across-channel median** spectrogram of tool 5's
     Overview (see §5), the very same criterion yields *majority-of-channels* semantics for free: a
     column is greyed only when most channels are dead at that epoch, since that is what makes the
     median drop — no separate majority-vote code. The tool-7 *navigator* spectrogram is a separate plot
