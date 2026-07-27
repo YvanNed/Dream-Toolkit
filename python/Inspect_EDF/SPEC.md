@@ -93,6 +93,13 @@ Defined in `environment.yml`. Key packages:
 
 ## How to run the tools
 
+**Canonical working directory = the repo root (`Inspect_EDF/`).** Launch every tool from there (paths below
+are relative to it). This keeps one consistent cwd for the shared libraries, `config_param/*.json`, hypnogram
+lookups and outputs across the whole suite. As a safety net the tools also resolve their shared modules
+independent of cwd — the EDF tools' `tools/qc_rejected_epochs_lib.py` and the Curry tools'
+`tools_curry/curry_header.py` / `curry_io.py` are found whether Voila is launched from the repo root **or**
+from the tool's own folder — but the repo root is the documented, recommended launch directory.
+
 ### Interactive Voila apps (no-code mode)
 ```bash
 conda activate inspect_edf
@@ -106,6 +113,18 @@ voila tools/6_preprocessing_voila.ipynb
 voila tools/7_reject_manually_voila.ipynb
 voila tools/7bis_reject_automatically_voila.ipynb
 voila tools/8_live_explore_1file_voila.ipynb
+```
+
+### Curry 9 (`.cdt`) Voila twins (run from the repo root, same as the EDF tools)
+```bash
+conda activate inspect_edf
+voila tools_curry/1_inspect_curry_voila.ipynb
+voila "tools_curry/2_select&remap_channels_curry_voila.ipynb"
+voila tools_curry/3_remap_hypno_curry_voila.ipynb
+voila tools_curry/4_remap_events_curry_voila.ipynb
+voila tools_curry/5_quality_overview_curry_voila.ipynb
+voila tools_curry/6_preprocessing_curry_voila.ipynb
+voila tools_curry/7bis_reject_automatically_curry_voila.ipynb
 ```
 
 ### Standard Jupyter notebooks
@@ -255,8 +274,8 @@ instead of restating them; only tool-specific deltas are kept inline.
     they stay x-aligned) exposes it: e.g. the ×0.01 dead channel `734 C3` sits at −55…−23 dB vs a healthy
     channel's −15…+18 dB, an ~40 dB downward shift visible at a glance. This is a display-only change
     (it re-lays-out every per-channel figure, clean ones included, on purpose); the numeric `std_uV` /
-    "All electrodes" figures remain the primary catch for globally-bad channels. **Tool 5 only for now**
-    (tool 8's monolithic copy left without a colorbar). Applied to the **across-channel median** spectrogram of tool 5's
+    "All electrodes" figures remain the primary catch for globally-bad channels. Present in **tools 5 & 8**
+    (tool 8's monolithic `plot_hypnospectrogram` carries the same colorbar block — keep in sync). Applied to the **across-channel median** spectrogram of tool 5's
     Overview (see §5), the very same criterion yields *majority-of-channels* semantics for free: a
     column is greyed only when most channels are dead at that epoch, since that is what makes the
     median drop — no separate majority-vote code. The tool-7 *navigator* spectrogram is a separate plot
@@ -758,7 +777,9 @@ identically by the Curry tool 6, so there is **no EDF-specific code to swap** (u
 twin `tools_curry/7bis_reject_automatically_curry_voila.ipynb` is therefore a **verbatim copy** of the EDF
 notebook with only the title retitled, produced by `tools_curry/_make_tool7bis_curry.py` (re-run it after
 editing the EDF notebook — it re-copies + syntax-checks; the generator asserts every code cell is byte-equal
-to the source). Launch it from the repo root so the shared `tools/qc_rejected_epochs_lib.py` is importable.
+to the source). The shared-library import search in the setup cell probes `cwd`, `cwd/tools`,
+`dirname(cwd)/tools` and `cwd/../tools`, so `tools/qc_rejected_epochs_lib.py` is found whether Voila is
+launched from the repo root **or** from `tools_curry/` (where the twin lives, the lib in `../tools`).
 
 ### 8. Live single-file explorer (`8_live_explore_1file.ipynb`, `8_live_explore_1file_voila.ipynb`)
 

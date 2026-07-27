@@ -145,7 +145,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   from the EDF originals by string replacement. Edit the EDF notebook, then **re-run the generator**. New
   code passes through automatically **unless** it sits inside a block the generator string-matches or
   wholesale-replaces (e.g. tool 6's Curry load block, event loader, or `[H]` context reader), in which case
-  the change must be mirrored in the generator.
+  the change must be mirrored in the generator. (`7bis` is the exception — format-agnostic, so
+  `_make_tool7bis_curry.py` is a **verbatim copy + retitle**.)
+- **Canonical launch cwd = repo root; shared-module imports must be cwd-independent**: every tool is run
+  from `Inspect_EDF/` (see SPEC *How to run*), but the shared-module import must still resolve from either
+  cwd. The Curry twins (1,2,4,5,6) probe `cwd`, `cwd/tools_curry`, `dirname(cwd)/tools_curry` for
+  `curry_header.py`; 7bis (EDF + Curry) probes the `tools/` variants for `qc_rejected_epochs_lib.py`. This
+  block lives in the **generators** (except tool 1 = hand-edited, no generator) — fix it there and
+  **re-run the generator**, never the old `os.path.dirname(os.path.abspath('__file__'))` (= cwd only,
+  breaks from the repo root).
 
 ## Working agreements
 
