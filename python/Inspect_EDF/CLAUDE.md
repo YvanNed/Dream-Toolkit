@@ -59,7 +59,11 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `parse_custom_field`, `custom_stage_style`); tools 5/7 use a custom `plot_hypnospectrogram()` because
   YASA's plotting hard-rejects non-AASM labels. Reading the JSON is non-fatal.
 - **Flat/dead-epoch colour scaling (`plot_hypnospectrogram()`)**: exclude near-zero (dead-epoch) columns
-  from the vmin/vmax percentiles and render them grey; keep in sync across tools 5, 8, 8-voila.
+  from the vmin/vmax percentiles and render them grey, **then cap the colour span
+  (`vmin = max(vmin, vmax − 45)`)** so a continuum of partly-flat/clipped low-power epochs can't drag
+  `vmin` and wash the plot to red (clean channels span < 45 dB → untouched, still byte-identical). Keep
+  both in sync across tools 5, 8, 8-voila (+ tool 5's Curry twin via `_make_tool5_curry.py`). → SPEC
+  *Cross-cutting → Flat/dead-epoch colour scaling*.
 - **Time-series display cap for DC-coupled data**: DC sources (Curry `.cdt`, any DC export with no
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
   never a fixed window. Currently **Curry-only**; EDF tools keep the uncapped autoscale on purpose (full
@@ -141,7 +145,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   from the EDF originals by string replacement. Edit the EDF notebook, then **re-run the generator**. New
   code passes through automatically **unless** it sits inside a block the generator string-matches or
   wholesale-replaces (e.g. tool 6's Curry load block, event loader, or `[H]` context reader), in which case
-  the change must be mirrored in the generator.
+  the change must be mirrored in the generator. (`7bis` is the exception — format-agnostic, so
+  `_make_tool7bis_curry.py` is a **verbatim copy + retitle**.)
+- **Canonical launch cwd = repo root; shared-module imports must be cwd-independent**: every tool is run
+  from `Inspect_EDF/` (see SPEC *How to run*), but the shared-module import must still resolve from either
+  cwd. The Curry twins (1,2,4,5,6) probe `cwd`, `cwd/tools_curry`, `dirname(cwd)/tools_curry` for
+  `curry_header.py`; 7bis (EDF + Curry) probes the `tools/` variants for `qc_rejected_epochs_lib.py`. This
+  block lives in the **generators** (except tool 1 = hand-edited, no generator) — fix it there and
+  **re-run the generator**, never the old `os.path.dirname(os.path.abspath('__file__'))` (= cwd only,
+  breaks from the repo root).
 
 ## Working agreements
 

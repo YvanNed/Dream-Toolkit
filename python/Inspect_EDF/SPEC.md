@@ -93,6 +93,13 @@ Defined in `environment.yml`. Key packages:
 
 ## How to run the tools
 
+**Canonical working directory = the repo root (`Inspect_EDF/`).** Launch every tool from there (paths below
+are relative to it). This keeps one consistent cwd for the shared libraries, `config_param/*.json`, hypnogram
+lookups and outputs across the whole suite. As a safety net the tools also resolve their shared modules
+independent of cwd — the EDF tools' `tools/qc_rejected_epochs_lib.py` and the Curry tools'
+`tools_curry/curry_header.py` / `curry_io.py` are found whether Voila is launched from the repo root **or**
+from the tool's own folder — but the repo root is the documented, recommended launch directory.
+
 ### Interactive Voila apps (no-code mode)
 ```bash
 conda activate inspect_edf
@@ -106,6 +113,18 @@ voila tools/6_preprocessing_voila.ipynb
 voila tools/7_reject_manually_voila.ipynb
 voila tools/7bis_reject_automatically_voila.ipynb
 voila tools/8_live_explore_1file_voila.ipynb
+```
+
+### Curry 9 (`.cdt`) Voila twins (run from the repo root, same as the EDF tools)
+```bash
+conda activate inspect_edf
+voila tools_curry/1_inspect_curry_voila.ipynb
+voila "tools_curry/2_select&remap_channels_curry_voila.ipynb"
+voila tools_curry/3_remap_hypno_curry_voila.ipynb
+voila tools_curry/4_remap_events_curry_voila.ipynb
+voila tools_curry/5_quality_overview_curry_voila.ipynb
+voila tools_curry/6_preprocessing_curry_voila.ipynb
+voila tools_curry/7bis_reject_automatically_curry_voila.ipynb
 ```
 
 ### Standard Jupyter notebooks
@@ -237,7 +256,26 @@ instead of restating them; only tool-specific deltas are kept inline.
     `plot_hypnospectrogram()` therefore excludes near-zero columns from the `vmin/vmax` percentiles
     (a column is valid when its peak dB is within 60 dB of the median epoch peak) and renders the
     excluded columns grey (`#d9d9d9`, "no signal"); clean channels (no dead epoch) are unaffected
-    (byte-identical scale and image). Applied to the **across-channel median** spectrogram of tool 5's
+    (byte-identical scale and image). **Dynamic-range cap (`vmin = max(vmin, vmax − 45)`)**: the
+    60 dB column gate only removes *fully* dead epochs; a recording with a **continuum of partly-flat /
+    clipped low-power epochs** (e.g. `1WIBE0543_N1`: ~20 % flat + ±500 µV clipping on every EEG channel)
+    leaves degraded-but-valid columns whose peak dB sits ~20–60 dB below the median. Those survive the
+    gate but still drag the pixel-percentile `vmin` to ≈ −59 dB, pushing RdBu_r's white midpoint down to
+    ≈ −22 dB so all real EEG (> −20 dB) washes to red again. Capping the colour **span** at 45 dB after
+    the percentile fixes this: a healthy hypnospectrogram's real structure fits within ~35 dB (measured
+    max across all clean `test_data` channels = 34.6 dB), so the cap **never touches** clean channels
+    (their span < 45 → `max()` is a no-op → still byte-identical) yet restores contrast on degraded ones;
+    the degraded epochs stay **visible in blue** (low power), only the dead ones are greyed. The quantitative
+    QC flags (`flat_pct`/`bounds_pct`/…/`exclude`) are independent of this colour scale, so detection is
+    unaffected. **Absolute-dB colorbar** (`render_hypnospectrogram`, tool 5 per-channel + median):
+    because the colour scale is *relative* (auto-scaled per channel), a **globally attenuated / low-gain**
+    channel looks structurally normal — the within-channel greying/blue logic can't reveal a uniform
+    problem. A `Power [dB]` colorbar (attached to **both** the hypnogram strip and spectrogram axes so
+    they stay x-aligned) exposes it: e.g. the ×0.01 dead channel `734 C3` sits at −55…−23 dB vs a healthy
+    channel's −15…+18 dB, an ~40 dB downward shift visible at a glance. This is a display-only change
+    (it re-lays-out every per-channel figure, clean ones included, on purpose); the numeric `std_uV` /
+    "All electrodes" figures remain the primary catch for globally-bad channels. Present in **tools 5 & 8**
+    (tool 8's monolithic `plot_hypnospectrogram` carries the same colorbar block — keep in sync). Applied to the **across-channel median** spectrogram of tool 5's
     Overview (see §5), the very same criterion yields *majority-of-channels* semantics for free: a
     column is greyed only when most channels are dead at that epoch, since that is what makes the
     median drop — no separate majority-vote code. The tool-7 *navigator* spectrogram is a separate plot
@@ -614,7 +652,7 @@ The two tools then differ only in what follows:
 
 **Event flagging when epoch length ≠ 30 s** (see the event method below): the onset-only rule is **kept** (`compute_event_epoch_mask` takes `epoch_sec`; an event flags only the sub-epoch containing its `Start`), and a **prominent amber warning** (`epoch_warn`, shown whenever `dd_epoch_len.value != 30`, plus a per-file `⚠` printed in the run log when event flagging is on) reminds the user that — because annotated durations are unreliable — an event spanning several sub-epochs leaves the others un-flagged, a risk that grows as epochs shrink.
 
-**Epoch rejection — six methods** (the sixth, *Event overlap*, is optional and off by default):
+**Epoch rejection — six methods, each individually enable/disable-able** (the four signal-quality methods default ON, *Event overlap* is optional and off by default; see *Per-method enable/disable* below):
 
 **Vocabulary — flagging, not rejection**: tool 6 only *flags* (epoch, channel) pairs; the actual **rejection**
 (and channel interpolation) is delegated to the downstream decision tool (`7bis_reject_automatically`, see
@@ -624,14 +662,16 @@ compatibility (`.fif` `reject_flag`/`reject_method`, TSV columns `n_rejected`/`p
 function names `compute_rejection_masks`/`build_rejection_summary`, file names `*_rejection*.tsv`, sidecar key
 `rejection_thresholds`).
 
-All methods operate on the epoch data in µV. The time-domain methods (amplitude / flat / gradient) read the signal **one channel at a time** from `epochs` (`epochs.get_data(picks=[ci])[:, 0, :] * 1e6`) so a high-density montage is never materialised as a second full `n_epochs × n_channels × n_times` float64 array (see *Per-channel rejection (memory)* under Curry 9 support — the same code runs in EDF and Curry); the 1/f method works on the small precomputed Welch PSD array. Flagging masks are boolean arrays of shape `(n_epochs, n_channels)` — a `True` entry means that (epoch, channel) pair was flagged. These per-(epoch, channel) masks are now **persisted** to `{file_id}_epoch_channel_rejection.tsv` (the fine-grained source of truth for the decision tool); the `.fif` per-epoch `reject_flag` still uses the naive rule *an epoch is flagged if any channel is flagged by any method* — a default flag, **not** the final rejection. The per-stage / global **flagging percentages are computed over (epoch × channel) pairs** (`pct = flagged_pairs / (n_epochs_in_stage × n_channels)`), replacing the former "≥1 bad channel ⇒ whole epoch" rate that saturated at ~100% as soon as every epoch had one bad channel. A single ordered registry — `METHOD_ORDER = ['amplitude', 'flat', 'gradient', '1f_error', '1f_r2', 'event']` with `METHOD_CODE`/`MULTIPLE_CODE` — is the one source of truth shared by the mask builder, heatmap, per-epoch log, per-(epoch, channel) log, per-stage summary and global table, so `event` appears in every output **only when event flagging actually ran** and older event-free outputs keep their original column set.
+All methods operate on the epoch data in µV. The time-domain methods (amplitude / flat / gradient) read the signal **one channel at a time** from `epochs` (`epochs.get_data(picks=[ci])[:, 0, :] * 1e6`) so a high-density montage is never materialised as a second full `n_epochs × n_channels × n_times` float64 array (see *Per-channel rejection (memory)* under Curry 9 support — the same code runs in EDF and Curry); the 1/f method works on the small precomputed Welch PSD array. Flagging masks are boolean arrays of shape `(n_epochs, n_channels)` — a `True` entry means that (epoch, channel) pair was flagged. These per-(epoch, channel) masks are now **persisted** to `{file_id}_epoch_channel_rejection.tsv` (the fine-grained source of truth for the decision tool); the `.fif` per-epoch `reject_flag` still uses the naive rule *an epoch is flagged if any channel is flagged by any method* — a default flag, **not** the final rejection. The per-stage / global **flagging percentages are computed over (epoch × channel) pairs** (`pct = flagged_pairs / (n_epochs_in_stage × n_channels)`), replacing the former "≥1 bad channel ⇒ whole epoch" rate that saturated at ~100% as soon as every epoch had one bad channel. A single ordered registry — `METHOD_ORDER = ['amplitude', 'flat', 'gradient', '1f_error', '1f_r2', 'event']` with `METHOD_CODE`/`MULTIPLE_CODE` — is the one source of truth shared by the mask builder, heatmap, per-epoch log, per-(epoch, channel) log, per-stage summary and global table. Every consumer selects `[m for m in METHOD_ORDER if m in mask_dict]`, so **any method the user disables** (see *Per-method enable/disable* below) — like `event` when off — is simply absent from `mask_dict`, `methods_run`, and every downstream column/row; older or method-subset outputs keep their own column set.
+
+**Per-method enable/disable** (checkboxes `cb_amplitude` / `cb_flat` / `cb_gradient` / `cb_1f` / `cb_event_reject`): each flagging method is its own UI subsection — a checkbox, a grey one-line description, and its threshold widget(s), the latter shown/hidden from the checkbox (checkbox-revealed-widgets rule, initial `display` derived from the value). The four signal-quality methods default **ON** (a default run stays byte-identical to before), `event` **OFF**. A disabled method is not computed and not added to `mask_dict` (so it vanishes from every table, exactly like `event`), and `methods_run` in the sidecar records the true subset. **Unticking `cb_1f` skips `compute_psd` entirely** (the caller passes `psds=None`) — the whole Welch-PSD + specparam fit is the dominant cost on short epochs, so this is the main speed-up (the fit scales ~linearly with epoch count *and* each fit is slower on the noisy short-epoch PSD). One checkbox `cb_1f` governs **both** `1f_error` and `1f_r2` (they share the single fit). A **guard** blocks the run (red message) if no method is ticked. `1f_error` and `1f_r2` remain gated by PSD presence (`do_1f = psds is not None`); the three time-domain methods take `do_amplitude`/`do_flat`/`do_gradient` args in `compute_rejection_masks` (default `True`, so the Curry twin and any old caller pass through). **Mixed-method safeguard**: at run start tool 6 reads `methods_run` from every existing `{file_id}_preprocessing_params.json` under `derivatives/` and, comparing the **signal-quality** subset only (`event` excluded — its presence legitimately varies per file with the annotations), shows a **non-blocking amber warning** if any already-processed file used a different method set, since mixing sets makes the per-method rates in `global_rejection_by_stage.tsv` non-comparable across files (see that file's `n_part_{m}` canary below).
 
 | Method | Signal feature | Default threshold | Notes |
 |--------|---------------|-------------------|-------|
 | **Amplitude** | Peak-to-peak = `max(epoch) − min(epoch)` | W: 300, N1: 250, N2/N3: 200, REM: 250 µV | Per-stage threshold; W/REM more lenient because muscle and eye-movement artefacts are physiologically common in those stages. Equivalent to MNE's `drop_bad(reject=...)` criterion. |
 | **Flat signal** | Peak-to-peak < threshold | 1 µV | Detects disconnected electrodes or amplifier saturation within a single epoch. Logically identical to MNE's `drop_bad(flat=...)` criterion: both compare `ptp` against a low-amplitude threshold. |
 | **Gradient** | `max(|diff(epoch)|)` across time | 100 µV/sample | Maximum sample-to-sample absolute difference; sensitive to sudden jumps, electrode pops, and movement artefacts not captured by peak-to-peak. `diff` and `max` both operate on `axis=-1` (time axis) of the per-channel `(n_epochs, n_times)` slice. |
-| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, **configurable fit range, default 2–45 Hz** — see below, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`) | MAE > 0.15 OR R² < 0.95 | Fit lower bound ≥ 2 Hz limits slow-wave influence. A **full peak model is used deliberately** — periodic components (spindles, alpha…) are modelled and removed *before* assessing the aperiodic fit quality. Forcing `max_n_peaks=0` would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). |
+| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, **configurable fit range, default 2–45 Hz** — see below, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`, **`max_n_peaks=8`**) | MAE > 0.15 OR R² < 0.95 | Fit lower bound ≥ 2 Hz limits slow-wave influence. A **capped peak model is used** (`max_n_peaks=8`): periodic components (spindles, alpha…) are still modelled and removed *before* assessing the aperiodic fit quality, but the peak search is **bounded** so a noisy short-epoch PSD (e.g. 6 s epochs → only ~2 Welch segments) cannot send specparam into a runaway peak-fitting loop that made each fit ~2–3× slower. 8 ≥ the realistic neural peak count on 2–45 Hz, so this is **not** the `max_n_peaks=0` case, which would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. **⚠ Not byte-neutral**: capping at 8 changes MAE/R² (hence the 1/f flag) wherever specparam previously fit > 8 peaks — on clean 30 s PSDs it usually fits few, so existing outputs are *nearly* unchanged, but **reprocess a dataset once to homogenise**. **Sync constraint**: the `SpectralModel(...)` lives in **three copies that must change together** — tool 6 EDF (`compute_rejection_masks`), its Curry twin (regenerated by `_make_tool6_curry.py`), and `qc_rejected_epochs_lib.py` (tools 7/7bis recompute attribution with it) — else tool 7's recomputed attribution diverges from tool 6's flags. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). |
 | **Event containment** *(optional, off by default)* | 30 s epoch **containing the onset** of any **selected** canonical scored-event type (arousal, apnea, hypopnea, limb movement, SpO2 desaturation…) | **onset-only** — the epoch holding the event `Start`; the annotated `Duration` is **intentionally ignored** (clinicians often score only the onset without a reliable duration), so each event flags exactly one epoch | **Epoch-level** flag, replicated across all channels → single `flag_event` column. Events read with the shared CSV-first / XML-fallback `load_events(edf, csv_suffix)`; raw labels mapped to canonical via `event_remap.json` (tool 4). UI: a checkbox to activate, **a wrapping row of checkboxes for the canonical types** (all shown at once, populated from the chosen `event_remap.json`), and an inline note explaining the onset-only rule so the choice is informed. A **"Count affected epochs"** button reports, over the participants currently checked in Section 3, how many epochs each selected type would flag (overall + per stage) using only the hypnogram length/stages and events — no signal is read. Missing/unreadable event companions are non-fatal (the file keeps the other 5 methods, never added to `failed`). |
 
 **Configurable 1/f fit range**: the aperiodic fit window is user-editable via two widgets
@@ -657,7 +697,7 @@ tool 7's recomputed per-channel attribution matches tool 6's. Wired across tool 
 - `{file_id}_preprocessing_params.json` — the resampling / notch / bandpass filter settings (the notch as an additive `notch: {applied, freq_hz}` key, provenance only) + the additive `epoch_length_s` (the selected epoch length; **30 assumed when absent**, so older sidecars stay compatible) + the per-stage rejection thresholds actually used (amplitude p-p per stage, flat, gradient, 1/f MAE/R²) + `methods_run`. Read back by **tool 7** (QC of rejected epochs) to draw threshold reference lines, recompute per-channel margins, and label the epoch length (`qc_rejected_epochs_lib.load_params → info['epoch_length_s']`). Written non-fatally.
 
   *Migration note*: earlier tool-6 versions wrote the `.fif`/sidecar/context directly under `derivatives/<edf_subtree>/`. When reprocessing such a file, tool 6 deletes the stale same-id copies at that old location so tools 7/7bis (which discover participants by recursively globbing `*_all-epo.fif`) never see the id twice. Tools 7/7bis strip a leading `raw_epo/` component when mirroring the subtree into `clean_epo_*/`, so a pre-`raw_epo` layout still maps to the same `clean_epo_*/<subtree>/`.
-- `{file_id}_context-epo.fif` — **optional** EOG/EMG/ECG "context" companion (block `[H]`), written **only** when the participant's `sub_config` carries a tool-2 `context_channels` block. Tool 6 reads just those declared channels from the raw EDF, renames them to role labels (`EOG-L`/`EOG-R`/`EMG`/`ECG`), sets MNE channel types, applies the same optional resample, **display-filters per role** (AASM-like: EOG band-pass 0.3–35 Hz, EMG high-pass 10 Hz, ECG band-pass 0.5–40 Hz — so the tool-7 epoch montage is readable), and epochs them **identically to the EEG** (`make_fixed_length_epochs`, duration 30 s from t=0 → same epoch count regardless of sfreq, so 1:1 index alignment with `{file_id}_all-epo.fif`). Non-fatal: when no context is declared no companion is written and all other outputs stay byte-identical. Read on demand by **tool 7**'s per-epoch view (`load_context_epochs`).
+- `{file_id}_context-epo.fif` — **optional** EOG/EMG/ECG "context" companion (block `[H]`), written **only** when the participant's `sub_config` carries a tool-2 `context_channels` block. Tool 6 reads just those declared channels from the raw EDF **with `include=` at read time** (exactly like the EEG read — otherwise MNE upsamples every channel in the file to its file-wide max rate, which raised a `bad allocation` on mixed-rate montages), renames them to role labels (`EOG-L`/`EOG-R`/`EMG`/`ECG`), sets MNE channel types, then **unifies the sampling rate to the EEG working rate** (`epochs.info['sfreq']` — native, or the explicit resample target: a single `.fif` requires one rate for all channels, so EOG/EMG/ECG at different native rates are brought to the EEG's rate; display companion only), **display-filters per role** (AASM-like: EOG band-pass 0.3–35 Hz, EMG high-pass 10 Hz, ECG band-pass 0.5–40 Hz — so the tool-7 epoch montage is readable), and epochs them **identically to the EEG** (`make_fixed_length_epochs`, duration 30 s from t=0 → same epoch count regardless of sfreq, so 1:1 index alignment with `{file_id}_all-epo.fif`). Non-fatal: when no context is declared no companion is written and all other outputs stay byte-identical. Read on demand by **tool 7**'s per-epoch view (`load_context_epochs`).
 - `{file_id}_epoch_rejection.tsv` — per-epoch flagging table (columns: `file_id`, `epoch_idx`, `stage`, `reject_flag`, one `flag_<method>` bool per method, incl. `flag_event` when event flagging ran). Unchanged (epoch-level "any channel" mirror of the `.fif` decision), kept for human/downstream convenience.
 - `{file_id}_epoch_channel_rejection.tsv` — **per-(epoch, channel)** flagging table = the fine-grained **source of truth** for the decision tool. Dense (one row per (epoch, channel) pair, **epoch-major**: all channels of epoch 0, then epoch 1, …), columns: `file_id`, `epoch_idx`, `stage`, `channel`, one `flag_<method>` bool per method (incl. `flag_event` when event flagging ran — **replicated across all channels** of a flagged epoch, since `mask_dict['event']` is tiled), and `reject_any` (OR over the methods present). Self-sufficient: all channels appear for every epoch, so channel list and denominators are derivable without loading the `.fif`. Built by `build_epoch_channel_rejection_log()` (vectorised from the `(n_epochs, n_channels)` masks), written non-fatally before the report. **Per-file only** — no global concatenation (volume). It **also gates the skip check** (see below).
 - `{file_id}_rejection_summary.tsv` — per stage per method flagging counts, now **over (epoch × channel) pairs** (columns unchanged: `file_id`, `stage`, `method`, `n_total`, `n_rejected`, `pct_rejected`; **values redefined**: `n_total = n_epochs_in_stage × n_channels`, `n_rejected` = flagged pairs, `pct_rejected` their ratio). Not byte-identical to the pre-change file — reprocess the dataset once to homogenise.
@@ -665,7 +705,7 @@ tool 7's recomputed per-channel attribution matches tool 6's. Wired across tool 
 
 **Global output** (always at the `<output_folder>/reports_preprocessing/` **root**, not in a subfolder):
 - `global_epoch_rejection.tsv` — concatenation of all `{file_id}_epoch_rejection.tsv` across participants, **regenerated by recursively globbing them from disk each run** (`rglob`, so the per-file tables in the `<edf_subtree>/` subfolders are all found; excluding the global file itself, which shares the `_epoch_rejection.tsv` suffix) — not an in-memory merge, so an interrupted-then-skipped participant is never dropped (see *Skip + cumulative-merge*)
-- `global_rejection_by_stage.tsv` — concatenation of all `{file_id}_rejection_summary.tsv` across participants (also `rglob`-ed from disk each run). Counts are **pair-based** (inherited from the per-file summaries — `build_global_summary_table` sums `n_total`/`n_rejected` and recomputes the pooled `pct`, so no code change was needed).
+- `global_rejection_by_stage.tsv` — concatenation of all `{file_id}_rejection_summary.tsv` across participants (also `rglob`-ed from disk each run). Counts are **pair-based** (inherited from the per-file summaries — `build_global_summary_table` sums `n_total`/`n_rejected` and recomputes the pooled `pct`). Each method also gets an additive **`n_part_{m}`** column = the number of participants that actually ran method `m`. It is a **canary, not a correction**: `pct_rej_{m}` keeps the pooled denominator `n_total` (summed over **all** participants), so when a method was run on only part of the database `pct_rej_{m}` is **diluted** and `n_part_{m} < n_participants` makes that visible. On a uniformly-processed database `n_part_{m} == n_participants` (constant column, no interpretation change); the mixed-method start-of-run warning above is meant to keep it that way.
 - `preprocessing_failed.tsv` — participants that could not be processed (EDF not found, config missing, hypno mismatch, etc.)
 
 ### 7. Manually reject flagged epochs — Phase 2b (`7_reject_manually_voila.ipynb`, `7_reject_manually_batch.py`, `qc_rejected_epochs_lib.py`)
@@ -718,19 +758,25 @@ deferred). Uses `reject_any` (event, being epoch-level, raises every channel's b
 channels** would be dropped; **all in-scope epochs** rejected. (On sparse 3-channel montages with high
 flagging the 20 % channel threshold can drop every channel — expected; the thresholds are editable.)
 
-**Outputs** under **`derivatives/clean_epo_auto/<edf_subtree>/`** (mirrors the tool-6 subtree):
+**Outputs** under **`derivatives/clean_epo_auto/<edf_subtree>/`** — a **sibling of tool 6's `raw_epo/`**
+(and tool 7's `clean_epo_manual/`), all directly under `derivatives/`. Tool 6 writes the epoched `.fif`
+under `derivatives/raw_epo/<edf_subtree>/`, so 7bis **strips the leading `raw_epo/`** when mapping the
+source subtree to its output subtree (helpers `_clean_base` / `_clean_subtree`; legacy flat layouts without
+`raw_epo/` pass through) — outputs must **not** nest as `clean_epo_auto/raw_epo/<subtree>/`:
 - `{file_id}_clean-epo.fif` — selected-stage kept epochs, dropped channels removed; `metadata` gains
   `auto_reject_channel_pct` / `auto_reject_epoch_pct` / `auto_reject_stages` provenance.
 - `{file_id}_autoreject_decision.tsv` — one-row durable record **and** the global-summary row source
-  (thresholds, stages, `rejected_channels`, per-channel `channel_badness_pct`, `n_epochs_scope` /
+  (thresholds, stages, `rejected_channels`, per-channel `channel_badness_pct`, `n_epochs` /
   `n_epochs_rejected` / `n_epochs_kept` / `pct_epochs_rejected`). Written **before** the report.
 - `{file_id}_autoreject_report.html` — an `mne.Report`: a channels × epochs flagged-pair heatmap (dropped
-  channels' rows in red, a rejected-epoch strip, a hypnogram strip) + the per-stage rejected/kept table.
+  channels' flagged cells greyed + a red bold label; a rejected-epoch strip; a hypnogram strip — the matrix
+  height scales with the channel count while the two strips keep a fixed height) + the per-stage table.
 
-**Global** (at `clean_epo_auto/` root): `global_autoreject_summary.tsv` (**rebuilt each run by globbing the
-per-file `_autoreject_decision.tsv` from disk** — interruption-safe), an end-of-run **summary table** shown
-in the notebook + a `% epochs rejected per participant` bar in `autoreject_database_report.html`, and
-`autoreject_failed.tsv`. **Skip + cumulative-merge**: a participant is skipped when **both** its clean-epo and
+**Global** (at `clean_epo_auto/` root): `global_autoreject_summary.tsv` (full schema, **rebuilt each run by
+globbing the per-file `_autoreject_decision.tsv` from disk** — interruption-safe), an end-of-run **compact
+summary table** shown in the notebook (`file_id`, `n_channels`, `n_channels_rejected` and `n_epochs_rejected`
+each with the % in parentheses, `n_epochs`) + a `% epochs rejected per participant` bar and the **full**
+table in `autoreject_database_report.html`, and `autoreject_failed.tsv`. **Skip + cumulative-merge**: a participant is skipped when **both** its clean-epo and
 its decision TSV exist (uncheck *Skip* to reprocess); path comparisons are `os.path.normcase`-safe via the
 shared helpers.
 
@@ -739,7 +785,9 @@ identically by the Curry tool 6, so there is **no EDF-specific code to swap** (u
 twin `tools_curry/7bis_reject_automatically_curry_voila.ipynb` is therefore a **verbatim copy** of the EDF
 notebook with only the title retitled, produced by `tools_curry/_make_tool7bis_curry.py` (re-run it after
 editing the EDF notebook — it re-copies + syntax-checks; the generator asserts every code cell is byte-equal
-to the source). Launch it from the repo root so the shared `tools/qc_rejected_epochs_lib.py` is importable.
+to the source). The shared-library import search in the setup cell probes `cwd`, `cwd/tools`,
+`dirname(cwd)/tools` and `cwd/../tools`, so `tools/qc_rejected_epochs_lib.py` is found whether Voila is
+launched from the repo root **or** from `tools_curry/` (where the twin lives, the lib in `../tools`).
 
 ### 8. Live single-file explorer (`8_live_explore_1file.ipynb`, `8_live_explore_1file_voila.ipynb`)
 

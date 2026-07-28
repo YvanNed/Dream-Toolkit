@@ -101,10 +101,15 @@ replace_in_cell(imports,
     "    from specparam import SpectralModel\nexcept ImportError as e:",
     "    from specparam import SpectralModel\n"
     "    import sys as _sys\n"
-    "    # curry shared modules — located next to this notebook\n"
-    "    _here = os.path.dirname(os.path.abspath('__file__'))\n"
-    "    if _here not in _sys.path:\n"
-    "        _sys.path.insert(0, _here)\n"
+    "    # curry shared modules — found whether Voila is launched from the repo root or tools_curry/\n"
+    "    _here = os.getcwd()\n"
+    "    for _cand in (_here, os.path.join(_here, 'tools_curry'),\n"
+    "                  os.path.join(os.path.dirname(_here), 'tools_curry')):\n"
+    "        if os.path.isfile(os.path.join(_cand, 'curry_header.py')):\n"
+    "            _cand = os.path.abspath(_cand)\n"
+    "            if _cand not in _sys.path:\n"
+    "                _sys.path.insert(0, _cand)\n"
+    "            break\n"
     "    from curry_header import read_curry_header\n"
     "    from curry_io import load_events_curry, rec_start_from_header\n"
     "except ImportError as e:",
@@ -512,7 +517,11 @@ print("\n=== Cell 8: [H] context-channels companion (Curry reader) ===")
 # For Curry, swap the EDF reader for read_raw_curry and drop the (removed) suffix-dedup helper.
 # Run BEFORE the global edf_path -> cdt_path rename so these OLD strings still match.
 replace_in_cell(run_cell,
-    "                    ctx_probe = mne.io.read_raw_edf(str(edf_path), preload=False, verbose=False)\n"
+    "                    # Read only the declared context channels (include=), exactly like the EEG read:\n"
+    "                    # otherwise MNE upsamples every channel in the file to its max rate (e.g. a fast\n"
+    "                    # ECG), which was raising 'bad allocation' on mixed-rate montages.\n"
+    "                    ctx_probe = mne.io.read_raw_edf(str(edf_path), preload=False, encoding='latin-1',\n"
+    "                                                    include=list(orig_to_role.keys()), verbose=False)\n"
     "                    ctx_probe, _ = drop_suffix_duplicates(ctx_probe)\n",
     "                    ctx_probe = mne.io.read_raw_curry(str(edf_path), preload=False, verbose='ERROR')\n",
     "cell8 [H] context reader")
