@@ -116,16 +116,21 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   drops the suffix-dedup line via a dedicated `_make_tool6_curry.py` replacement — re-run the generator after
   editing the `[H]` block.
 - **Manually reject flagged epochs (`7_reject_manually*`)**: reads tool-6 `{file_id}_all-epo.fif`
-  (+ optional params JSON), **never reloads the raw EDF**, **never modifies tool-6 outputs**. Per-epoch
+  (+ optional params JSON), **never reloads the raw EDF**, **never modifies tool-6 outputs**. **Section 1 =
+  optional data folder + Raw-epochs folder** (like 7bis **minus** the reports picker — tool 7 never reads
+  `reports_preprocessing/`); `find_participants` runs on the chosen raw folder so versioned tool-6 runs stay
+  apart on the participant dropdown. `data_root` = the selected data folder, else the `derivatives/`
+  ancestor's parent. Per-epoch
   reject decision is authoritative from `epochs.metadata`; per-channel attribution is **recomputed** with
   tool-6 formulas + persisted thresholds. Analysis + plotting live in a **shared module
   `qc_rejected_epochs_lib.py`** — a deliberate exception to the "duplicate helpers" rule; the copied bits
   (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, 1/f fit) must stay in sync with tool 6.
   An **optional "Show EOG/EMG context" toggle** (default off) stacks the EOG-L/EOG-R/EMG traces under the
   per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
-  aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op. Its `_clean-epo.fif`
-  (+ reviewed TSVs) is written to **`derivatives/clean_epo_manual/<subtree>/`** (sibling of 7bis's
-  `clean_epo_auto/`), not "next to the `.fif`".
+  aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op. **Data/reports
+  split** (both folders precomputed at load: `S['out_folder']` / `S['reports_folder']`): `_clean-epo.fif` →
+  **`derivatives/clean_epo_manual/<subtree>/`**; reviewed TSVs + `qc2b_report.html` → **`reports_rejection_manual/`**
+  (`deriv_root.parent/…`, beside `reports_preprocessing/`).
 - **Automatic epoch rejection (`7bis_reject_automatically_voila`)**: **flagging → rejection** decision tool
   (naming scheme: 6 flag → 7 manual → 7bis auto; 7/7bis are alternatives). Voila; it reads only
   format-agnostic `.fif` + `{file_id}_epoch_channel_rejection.tsv` (both identical from Curry tool 6), so its
@@ -134,11 +139,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (`auto_reject_decision`): drop a channel flagged in
   > `channel_pct` of in-scope epochs, then reject an in-scope epoch flagged in > `epoch_pct` of the *remaining
   good* channels (both default 20 %, editable; computed over the **stages of interest** only). Reads tool-6
-  outputs **read-only**; writes `{file_id}_clean-epo.fif` (selected stages, dropped channels removed) +
-  `_autoreject_decision.tsv` (durable record + global-summary source, written **before** the report) +
-  `_autoreject_report.html` under **`derivatives/clean_epo_auto/<subtree>/`**. No interpolation (channels are
-  dropped; deferred). Skip gate = clean-epo **and** decision TSV present; global summary rebuilt by globbing
-  the per-file decision TSVs. All-channels-/all-epochs-rejected → non-fatal `failed`, no clean-epo. See SPEC §7bis.
+  outputs **read-only**. **Section 1 = two explicit folder pickers (raw-epochs + reports) + a Scan button**
+  (+ an optional data-folder chooser that pre-points them) — *not* one root scanned recursively, so
+  renamed/versioned tool-6 runs (`raw_epo_v2`, `reports_preprocessing_v2`) stay apart. **Data/reports split**:
+  `{file_id}_clean-epo.fif` (selected stages, dropped channels removed) → **`clean_epo_auto/`** (`raw_root.parent/…`,
+  beside the raw folder); `_autoreject_decision.tsv` (durable record + global-summary source, written **before**
+  the report) + `_autoreject_report.html` + the global summary/report → **`reports_rejection_auto/`**
+  (`reports_root.parent/…`, beside the reports folder). No interpolation (channels dropped; deferred). Skip gate
+  = clean-epo **and** decision TSV present; global summary rebuilt by globbing the per-file decision TSVs.
+  All-channels-/all-epochs-rejected → still get a decision row + report (100 % in the summary), no clean-epo. See SPEC §7bis.
 
 **Curry twins** (→ SPEC *Curry 9 support*)
 - **Generated, not hand-edited**: `tools_curry/_make_tool{5,6}_curry.py` regenerate the Curry notebooks

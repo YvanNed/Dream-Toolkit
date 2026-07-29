@@ -714,13 +714,17 @@ Manual quality control of the epochs that `6_preprocessing_voila` flagged: inspe
 
 **Shared library (`qc_rejected_epochs_lib.py`)**: the analysis + plotting used by both the notebook and the batch live in one module (imported by both) to avoid drift — `METHOD_ORDER`, the heatmap/method colour palette, the custom-stage helpers, the Welch-PSD config and the specparam 1/f fit are copied from tool 6 and kept in sync. The **per-epoch reject decision is authoritative from `epochs.metadata`**, while the **per-channel attribution** shown here (which channel drove a flag, margins to threshold) is **recomputed** from the signal with the same formulas + the persisted thresholds (fallback: tool-6 defaults when no params JSON is present). Tool 6 now *does* persist the per-(epoch, channel) boolean masks (`{file_id}_epoch_channel_rejection.tsv`), but tool 7 still recomputes because it needs the **continuous metric values** (p-p, gradient, 1/f MAE/R²) for its plots, not just the booleans — a future refactor could let it read the booleans from that TSV for the attribution while still recomputing the values (see task plan §8.3).
 
-**Section 1 — Load**: a `FileChooser` for the derivatives root lists every `*_all-epo.fif` found recursively; a participant dropdown loads one file (`mne.read_epochs`), reads the params JSON (thresholds) and auto-fills the editable `Custom stages` field. A summary reports epoch/rejection counts, channels, sfreq, and whether thresholds came from the params JSON or defaults.
+**Section 1 — Load**: **two folder pickers** (mirroring 7bis, minus the reports picker — tool 7 never reads `reports_preprocessing/`): an **optional Data folder** (`fc_data`, holds `derivatives/` + `reports_preprocessing/`) that on selection `reset(path=…)`s the raw picker to `<data>/derivatives`, and a **Raw-epochs folder** (`fc_raw`, holds the tool-6 `*_all-epo.fif`, e.g. `derivatives/raw_epo`). Selecting the raw folder explicitly (instead of one derivatives root scanned recursively) keeps renamed/versioned tool-6 runs apart on the participant dropdown. `find_participants(raw_root)` fills the dropdown; the params JSON + custom stages are read from the fif's folder / the data folder; a summary reports epoch/rejection counts, channels, sfreq, and threshold source. **Output derivation** (data vs reports split, precomputed at load): clean `.fif` → `raw_root.parent/clean_epo_manual/<subtree>/` (beside the raw folder), reports → `<data_root>/reports_rejection_manual/<subtree>/` (beside `reports_preprocessing/`), where `<subtree>` is the participant path relative to the raw folder and `data_root` is the selected Data folder or, if unset, derived by finding the `derivatives/` ancestor of the raw folder (its parent).
 
-**Section 2 — Global per-stage report** (Run): per sleep stage (`W/N1/N2/N3/R` + custom) — a **PSD overlay** (per-epoch mean-across-channel PSD: clean epochs grey + median/IQR band, rejected epochs coloured by their reject method), **metric distributions** (p-p, gradient, 1/f MAE, 1/f R² — clean vs rejected, with threshold lines), a **p-p vs gradient scatter** (method-coloured), and a **stage × method rejection table** (from the metadata flags). 1/f is fitted per epoch (~1 min for a full night); the editable thresholds drive only the reference lines. Assembled into an `mne.Report`; **Save** writes `{file_id}_qc2b_report.html`.
+**Section 2 — Global per-stage report** (Run): per sleep stage (`W/N1/N2/N3/R` + custom) — a **PSD overlay** (per-epoch mean-across-channel PSD: clean epochs grey + median/IQR band, rejected epochs coloured by their reject method), **metric distributions** (p-p, gradient, 1/f MAE, 1/f R² — clean vs rejected, with threshold lines), a **p-p vs gradient scatter** (method-coloured), and a **stage × method rejection table** (from the metadata flags). 1/f is fitted per epoch (~1 min for a full night); the editable thresholds drive only the reference lines. Assembled into an `mne.Report`; **Save** writes `{file_id}_qc2b_report.html` into `reports_rejection_manual/` (see Section 4).
 
 **Section 3 — Per-epoch navigator** (Run): walks the rejected epochs (filterable by method or stage). For the current epoch: a **stacked montage** (± context) with the current-epoch trace of each channel coloured by its recomputed flagging method, the gradient-max sample marked, and method-coloured channel labels. An optional **"Show EOG/EMG context"** checkbox (default off) stacks the EOG-L/EOG-R/EMG traces (own scale, dotted divider) below the EEG montage when the `{file_id}_context-epo.fif` companion exists — loaded on demand via `load_context_epochs` and aligned by epoch index (no raw-EDF reload); absent companion → the toggle is a no-op. Plus a **detail panel** — PSD + aperiodic fit (worst-R² channel), mean band power (δ/θ/α/σ/β) + 50 Hz ratio, an epoch spectrogram, and a per-channel metric table (value vs threshold). A **keep / reject** toggle overrides the decision in both directions — confirm a rejection or *rescue* a clean-looking flagged epoch.
 
-**Section 4 — Manual override & save**: a review strip (hypnogram + final keep/reject per epoch, overridden epochs marked) and counts (kept / rejected / rescued / newly-rejected). **Save** writes, into a dedicated **`derivatives/clean_epo_manual/<edf_subtree>/`** folder (kept separate from tool 7bis's `clean_epo_auto/`; mirrors the tool-6 subtree; relocated from the former "next to the `.fif`" — safe because nothing downstream reads `_clean-epo.fif`): `{file_id}_clean-epo.fif` (kept epochs only; metadata carries `manual_override` + `final_reject`), `{file_id}_epoch_rejection_reviewed.tsv` (per-epoch metadata + the two override columns), and `{file_id}_qc2b_review_log.tsv` (one row per overridden epoch: `epoch_idx`, `stage`, `orig_reject`, `final_reject`, `action` ∈ rescued/added). Override granularity is **whole-epoch** (only 3–4 EEG channels, and `clean-epo.fif` drops whole epochs anyway).
+**Section 4 — Manual override & save**: a review strip (hypnogram + final keep/reject per epoch, overridden epochs marked) and counts (kept / rejected / rescued / newly-rejected). **Save** follows the toolkit's **`derivatives/` (data) vs `reports_*` (reports) split** — both output folders are precomputed once at participant load (`S['out_folder']` / `S['reports_folder']`, reused by the Section-2 and Section-4 save handlers):
+- **DATA** → **`derivatives/clean_epo_manual/<edf_subtree>/`** (kept separate from tool 7bis's `clean_epo_auto/`; mirrors the tool-6 subtree, stripping a leading `raw_epo/`): only `{file_id}_clean-epo.fif` (kept epochs only; metadata carries `manual_override` + `final_reject`).
+- **REPORTS** → **`reports_rejection_manual/<edf_subtree>/`** (beside `reports_preprocessing/`, sibling of 7bis's `reports_rejection_auto/`; = `deriv_root.parent/reports_rejection_manual/`): `{file_id}_epoch_rejection_reviewed.tsv` (per-epoch metadata + the two override columns), `{file_id}_qc2b_review_log.tsv` (one row per overridden epoch: `epoch_idx`, `stage`, `orig_reject`, `final_reject`, `action` ∈ rescued/added), and the Section-2 `{file_id}_qc2b_report.html`.
+
+Override granularity is **whole-epoch** (only 3–4 EEG channels, and `clean-epo.fif` drops whole epochs anyway).
 
 **Batch twin (`7_reject_manually_batch.py`)**: `python 7_reject_manually_batch.py <derivatives_root> [--no-1f] [--limit N] [--out DIR]`. Runs Section 2 for every participant (writing each `{file_id}_qc2b_report.html`) plus a **database-level aggregate** — rejection rate per participant, rejection rate by stage across participants, pooled metric distributions + scatter — in `qc2b_database_report.html`, alongside `qc2b_database_rejection_summary.tsv` (one row per `file_id × stage`: `n_total`, `n_rejected`, per-method counts, `pct_rejected`). `--no-1f` skips the slow 1/f fitting. The batch is report-only (no `.fif`/override written). Outputs default to `<derivatives_root>/qc2b_reports/`.
 
@@ -736,13 +740,28 @@ PREP / FASTER): a globally-bad channel is **dropped before** the epoch vote, so 
 epoch it appears in. Voila-only (no batch twin — the run loop already processes the whole database). It is a
 pure **decision + write** tool: it reads tool-6 outputs **read-only** and never modifies them.
 
-**Inputs** — the **tool-6 output folder** (the parent holding `derivatives/` + `reports_preprocessing/`, or
-the `derivatives/` folder directly; `resolve_tool6_roots` accepts either):
-- `derivatives/**/{file_id}_all-epo.fif` — the signal (participants discovered via
-  `qc_rejected_epochs_lib.find_participants`).
-- `reports_preprocessing/**/{file_id}_epoch_channel_rejection.tsv` — the per-(epoch, channel) flags
-  (`reject_any` = all methods incl. `event`). The **stage set is derived from the TSV** `stage` column
-  (self-sufficient; AASM + any custom stage), so no `custom_stages.json` is needed.
+**Inputs — Section 1 selects two folders explicitly, then a `Scan` button** (deliberately *not* one root
+scanned recursively — tool 6 is often re-run with different parameters and its outputs renamed/versioned side
+by side, e.g. `raw_epo`, `raw_epo_v2`, `reports_preprocessing_v2`; a recursive `rglob` on `derivatives/`
+would mix every version, duplicating `file_id`s):
+- **Data folder** (`fc_data`, **optional** convenience, first chooser — holds `derivatives/` +
+  `reports_preprocessing/` as in tool 6): on selection it `reset(path=…)`s `fc_raw` to `<data>/derivatives`
+  (where the `raw_epo*` folders sit) and `fc_reports` to `<data>` (parent of the `reports_preprocessing*`
+  folders), so the two choosers below open at the right place. The user still picks the specific
+  (possibly versioned) subfolder; it does not select anything on its own.
+- **Raw-epochs folder** (`fc_raw`) — holds the tool-6 `{file_id}_all-epo.fif` (e.g. `derivatives/raw_epo`);
+  participants are `qc_rejected_epochs_lib.find_participants(raw_root)` and each participant's subtree is
+  `fif.parent.relative_to(raw_root)`.
+- **Reports folder** (`fc_reports`) — holds `{file_id}_epoch_channel_rejection.tsv` (e.g.
+  `reports_preprocessing`); each TSV is located by `reports_root.rglob(...)` **within this folder only**
+  (cached at scan time as `S['tsv_by_fid']`, reused by the run). `reject_any` = all methods incl. `event`.
+- **Scan** lists the participants, warns (orange) when some have no matching TSV in the reports folder
+  (version mismatch), and **derives the stage set from the TSVs' `stage` column** (self-sufficient; AASM +
+  any custom stage — no `custom_stages.json` needed), populating one checkbox per stage.
+- **Output root** = `raw_root.parent / clean_epo_auto/` — i.e. `clean_epo_auto/` is written **beside the
+  chosen raw-epochs folder** (so it lands next to `raw_epo/` under `derivatives/`, and versioned raw folders
+  keep their outputs separate). No `resolve_tool6_roots` / `raw_epo`-stripping is needed anymore: the subtree
+  is relative to the explicitly-chosen raw folder.
 
 **Decision** (`auto_reject_decision`, both thresholds editable, defaults **20 %** via
 `DEFAULT_CHANNEL_REJECT_PCT` / `DEFAULT_EPOCH_REJECT_PCT`; computed over the **stages of interest** only):
@@ -758,27 +777,29 @@ deferred). Uses `reject_any` (event, being epoch-level, raises every channel's b
 channels** would be dropped; **all in-scope epochs** rejected. (On sparse 3-channel montages with high
 flagging the 20 % channel threshold can drop every channel — expected; the thresholds are editable.)
 
-**Outputs** under **`derivatives/clean_epo_auto/<edf_subtree>/`** — a **sibling of tool 6's `raw_epo/`**
-(and tool 7's `clean_epo_manual/`), all directly under `derivatives/`. Tool 6 writes the epoched `.fif`
-under `derivatives/raw_epo/<edf_subtree>/`, so 7bis **strips the leading `raw_epo/`** when mapping the
-source subtree to its output subtree (helpers `_clean_base` / `_clean_subtree`; legacy flat layouts without
-`raw_epo/` pass through) — outputs must **not** nest as `clean_epo_auto/raw_epo/<subtree>/`:
-- `{file_id}_clean-epo.fif` — selected-stage kept epochs, dropped channels removed; `metadata` gains
-  `auto_reject_channel_pct` / `auto_reject_epoch_pct` / `auto_reject_stages` provenance.
-- `{file_id}_autoreject_decision.tsv` — one-row durable record **and** the global-summary row source
-  (thresholds, stages, `rejected_channels`, per-channel `channel_badness_pct`, `n_epochs` /
-  `n_epochs_rejected` / `n_epochs_kept` / `pct_epochs_rejected`). Written **before** the report.
-- `{file_id}_autoreject_report.html` — an `mne.Report`: a channels × epochs flagged-pair heatmap (dropped
-  channels' flagged cells greyed + a red bold label; a rejected-epoch strip; a hypnogram strip — the matrix
-  height scales with the channel count while the two strips keep a fixed height) + the per-stage table.
+**Outputs — the toolkit's `derivatives/` (data) vs `reports_*` (reports) split** (`<subtree>` = the
+participant path relative to the chosen raw folder):
+- **DATA** — `<raw_root.parent>/clean_epo_auto/<subtree>/{file_id}_clean-epo.fif`: `clean_epo_auto/` beside
+  the chosen raw-epochs folder, so when `raw_root == derivatives/raw_epo` it lands at
+  `derivatives/clean_epo_auto/` (a sibling of tool 6's `raw_epo/` and tool 7's `clean_epo_manual/`). The
+  **only** file here is the `.fif` (selected-stage kept epochs, dropped channels removed; `metadata` gains
+  `auto_reject_channel_pct` / `auto_reject_epoch_pct` / `auto_reject_stages` provenance).
+- **REPORTS** — `<reports_root.parent>/reports_rejection_auto/<subtree>/`: `reports_rejection_auto/` beside
+  the chosen reports folder (i.e. next to `reports_preprocessing/`). Per participant:
+  - `{file_id}_autoreject_decision.tsv` — one-row durable record **and** the global-summary row source
+    (thresholds, stages, `rejected_channels`, per-channel `channel_badness_pct`, `n_epochs` /
+    `n_epochs_rejected` / `n_epochs_kept` / `pct_epochs_rejected`). Written **before** the report.
+  - `{file_id}_autoreject_report.html` — an `mne.Report`: a channels × epochs flagged-pair heatmap (dropped
+    channels' flagged cells greyed + a red bold label; a rejected-epoch strip; a hypnogram strip — the matrix
+    height scales with the channel count while the two strips keep a fixed height) + the per-stage table.
 
-**Global** (at `clean_epo_auto/` root): `global_autoreject_summary.tsv` (full schema, **rebuilt each run by
-globbing the per-file `_autoreject_decision.tsv` from disk** — interruption-safe), an end-of-run **compact
-summary table** shown in the notebook (`file_id`, `n_channels`, `n_channels_rejected` and `n_epochs_rejected`
-each with the % in parentheses, `n_epochs`) + a `% epochs rejected per participant` bar and the **full**
-table in `autoreject_database_report.html`, and `autoreject_failed.tsv`. **Skip + cumulative-merge**: a participant is skipped when **both** its clean-epo and
-its decision TSV exist (uncheck *Skip* to reprocess); path comparisons are `os.path.normcase`-safe via the
-shared helpers.
+**Global** (at the `reports_rejection_auto/` root): `global_autoreject_summary.tsv` (full schema, **rebuilt
+each run by globbing the per-file `_autoreject_decision.tsv` from disk** — interruption-safe), an end-of-run
+**compact summary table** shown in the notebook (`file_id`, `n_channels`, `n_channels_rejected` and
+`n_epochs_rejected` each with the % in parentheses, `n_epochs`) + a `% epochs rejected per participant` bar
+and the **full** table in `autoreject_database_report.html`, and `autoreject_failed.tsv`. **Skip +
+cumulative-merge**: a participant is skipped when **both** its clean-epo (in `clean_epo_auto/`) and its
+decision TSV (in `reports_rejection_auto/`) exist (uncheck *Skip* to reprocess).
 
 **Curry twin (verbatim copy)**: 7bis reads only format-agnostic MNE `.fif` + the TSV, both produced
 identically by the Curry tool 6, so there is **no EDF-specific code to swap** (unlike tools 5/6). The Curry
