@@ -90,13 +90,10 @@ replace_in_cell(md0, "[group sub-folders mirroring the EDF folder structure, if 
 
 # ===========================================================================
 print("\n=== Cell 1: imports ===")
-# Drop the now-unused XML parser import (the Curry event export is plain text).
+# Keep the xml.etree.ElementTree import: _events_df_from_xml now passes through unchanged, so the
+# Curry twin can also read a *.cdt.XML companion if one exists (mirrors the full TXT/CSV/XML chain).
 # NB: the EDF tool-6 import block is wrapped in a try/except ImportError, so these lines are
 # indented 4 spaces; the injected curry imports are kept inside the try so they are guarded too.
-replace_in_cell(imports,
-    "    import warnings\n    import xml.etree.ElementTree as ET\n    from pathlib import Path",
-    "    import warnings\n    from pathlib import Path",
-    "remove ET import")
 replace_in_cell(imports,
     "    from specparam import SpectralModel\nexcept ImportError as e:",
     "    from specparam import SpectralModel\n"
@@ -111,7 +108,7 @@ replace_in_cell(imports,
     "                _sys.path.insert(0, _cand)\n"
     "            break\n"
     "    from curry_header import read_curry_header\n"
-    "    from curry_io import load_events_curry, rec_start_from_header\n"
+    "    from curry_io import rec_start_from_header\n"
     "except ImportError as e:",
     "curry imports")
 
@@ -149,98 +146,40 @@ replace_in_cell(shared,
     "",
     "remove suffix helpers")
 
-# 2b. Replace the CSV/XML event loader with the Curry text-export loader
-OLD_EVENTS = (
-    "# ---- Event companion loading: CSV first, *.edf.XML (<ScoredEvents>) fallback ----\n"
-    "# Same loader as 4_remap_events_edf / 8_live_explore; returns a DataFrame (Name/Start/Duration).\n"
-    "def event_companion_paths(edf_path, csv_suffix='_event_xml.csv'):\n"
-    "    \"\"\"Return (csv_path_or_None, xml_path_or_None) for an EDF stem.\"\"\"\n"
-    "    edf_path = Path(edf_path)\n"
-    "    csv = edf_path.with_name(f'{edf_path.stem}{csv_suffix}')\n"
-    "    csv = csv if csv.exists() else None\n"
-    "    xml = None\n"
-    "    for cand in (f'{edf_path.name}.XML', f'{edf_path.name}.xml'):\n"
-    "        p = edf_path.with_name(cand)\n"
-    "        if p.exists():\n"
-    "            xml = p\n"
-    "            break\n"
-    "    return csv, xml\n"
-    "\n\n"
-    "def _events_df_from_csv(csv_path):\n"
-    "    \"\"\"Parse a Compumedics event CSV -> DataFrame Name/Start/Duration, or None.\"\"\"\n"
-    "    df = pd.read_csv(str(csv_path))\n"
-    "    cols = {c.lower(): c for c in df.columns}\n"
-    "    if 'name' in cols and 'start' in cols and 'duration' in cols:\n"
-    "        return df.rename(columns={cols['name']: 'Name', cols['start']: 'Start',\n"
-    "                                  cols['duration']: 'Duration'})[['Name', 'Start', 'Duration']]\n"
-    "    return None\n"
-    "\n\n"
-    "def _events_df_from_xml(xml_path):\n"
-    "    \"\"\"Parse the <ScoredEvents> of a Profusion CMPStudyConfig .edf.XML\n"
-    "    -> DataFrame Name/Start/Duration (seconds), or None.\"\"\"\n"
-    "    root = ET.parse(str(xml_path)).getroot()\n"
-    "    rows = []\n"
-    "    for se in root.iter('ScoredEvent'):\n"
-    "        name_el = se.find('Name')\n"
-    "        if name_el is None or name_el.text is None:\n"
-    "            continue\n"
-    "        start_el = se.find('Start')\n"
-    "        dur_el = se.find('Duration')\n"
-    "        start = float(start_el.text) if (start_el is not None and start_el.text) else np.nan\n"
-    "        dur = float(dur_el.text) if (dur_el is not None and dur_el.text) else np.nan\n"
-    "        rows.append((name_el.text.strip(), start, dur))\n"
-    "    if not rows:\n"
-    "        return None\n"
-    "    return pd.DataFrame(rows, columns=['Name', 'Start', 'Duration'])\n"
-    "\n\n"
-    "def load_events(edf_path, csv_suffix='_event_xml.csv'):\n"
-    "    \"\"\"Load scored events next to the EDF, CSV-first then *.edf.XML fallback.\n"
-    "    Returns (DataFrame Name/Start/Duration in seconds, source) with source in\n"
-    "    {'csv', 'xml'}, or (None, None) when no usable event companion is found.\"\"\"\n"
-    "    csv, xml = event_companion_paths(edf_path, csv_suffix)\n"
-    "    if csv is not None:\n"
-    "        try:\n"
-    "            df = _events_df_from_csv(csv)\n"
-    "            if df is not None:\n"
-    "                return df, 'csv'\n"
-    "        except Exception:\n"
-    "            pass  # fall through to the XML\n"
-    "    if xml is not None:\n"
-    "        try:\n"
-    "            df = _events_df_from_xml(xml)\n"
-    "            if df is not None:\n"
-    "                return df, 'xml'\n"
-    "        except Exception:\n"
-    "            pass\n"
-    "    return None, None\n"
-    "\n\n"
+# 2b. Swap ONLY the recording-start reader: EDF fixed-header offsets -> Curry .cdt header.
+# The rest of the event section (event_companion_paths, _events_df_from_txt/csv/xml, and the
+# load_events TXT->CSV->XML dispatcher) is format-agnostic and passes through unchanged, so the
+# Curry twin mirrors the same TXT-first / CSV / XML fallback chain. The function name is kept so
+# the passed-through load_events dispatcher (which calls read_edf_start_datetime) still resolves.
+OLD_STARTDT = (
+    "def read_edf_start_datetime(edf_path):\n"
+    "    \"\"\"Read the EDF recording-start datetime from the fixed header (offset 168 = date\n"
+    "    'dd.mm.yy', 176 = time 'hh.mm.ss'), applying the EDF 2-digit-year clipping\n"
+    "    (00-84 -> 20xx, 85-99 -> 19xx). Header-only read; returns a datetime or None on failure.\"\"\"\n"
+    "    try:\n"
+    "        with open(edf_path, 'rb') as f:\n"
+    "            f.seek(168)\n"
+    "            date_str = f.read(8).decode('ascii', 'replace').strip()   # dd.mm.yy\n"
+    "            time_str = f.read(8).decode('ascii', 'replace').strip()   # hh.mm.ss\n"
+    "        dd, mm, yy = (int(x) for x in date_str.split('.'))\n"
+    "        hh, mi, ss = (int(x) for x in time_str.split('.'))\n"
+    "        year = 2000 + yy if yy <= 84 else 1900 + yy\n"
+    "        return datetime.datetime(year, mm, dd, hh, mi, ss)\n"
+    "    except Exception:\n"
+    "        return None"
 )
-NEW_EVENTS = (
-    "# ---- Event loading: Curry French text export (*_ScoredEvents_Export.txt) ----\n"
-    "# Wrapper matching the EDF loader's (path, suffix) -> (DataFrame, source) signature so the\n"
-    "# downstream call sites stay unchanged. It reads the .cdt.dpo header for the recording-start\n"
-    "# datetime, then curry_io.load_events_curry converts the export's clock times to seconds.\n"
-    "def load_events(cdt_path, event_suffix='_ScoredEvents_Export.txt'):\n"
-    "    \"\"\"Load Curry scored events next to the .cdt file. Returns\n"
-    "    (DataFrame Name/Start/Duration in seconds, 'txt') or (None, None).\"\"\"\n"
-    "    cdt_path = Path(cdt_path)\n"
-    "    ev_path = cdt_path.with_name(f'{cdt_path.stem}{event_suffix}')\n"
-    "    if not ev_path.exists():\n"
-    "        return None, None\n"
+NEW_STARTDT = (
+    "def read_edf_start_datetime(cdt_path):\n"
+    "    \"\"\"Curry recording-start datetime, read from the .cdt header (curry_header) rather than the\n"
+    "    EDF fixed header. Returns a datetime or None on failure. (Name kept for the shared\n"
+    "    load_events dispatcher, which converts the .txt clock times to seconds using it.)\"\"\"\n"
     "    try:\n"
     "        hdr = read_curry_header(str(cdt_path))\n"
-    "        rec_start = rec_start_from_header(hdr)\n"
-    "        if rec_start is None:\n"
-    "            return None, None\n"
-    "        df = load_events_curry(str(ev_path), rec_start)\n"
-    "        if df is None or df.empty:\n"
-    "            return None, None\n"
-    "        return df, 'txt'\n"
+    "        return rec_start_from_header(hdr)\n"
     "    except Exception:\n"
-    "        return None, None\n"
-    "\n\n"
+    "        return None"
 )
-replace_in_cell(shared, OLD_EVENTS, NEW_EVENTS, "event loader")
+replace_in_cell(shared, OLD_STARTDT, NEW_STARTDT, "start-datetime reader")
 
 # ===========================================================================
 print("\n=== Cell 4: paths UI ===")
@@ -257,58 +196,34 @@ replace_in_cell(ui_paths,
     "curry_files = [f for f in sorted(curry_folder.rglob('*')) if f.suffix == '.cdt' and not f.name.startswith('._')]",
     "cell4 discovery #2")
 
-# 4c. Event CSV detection block -> Curry .txt event export detection
-OLD_EVT_DETECT = (
-    "        # ---- Event CSV suffix auto-detection (most frequent suffix; shortest on ties) ----\n"
-    "        all_csv = [f for f in edf_folder.rglob('*') if f.suffix.lower() == '.csv']\n"
-    "        csv_counts = {}\n"
+# 4c. Event detection: the EDF source now has TWO passthrough blocks (TXT export + CSV) plus two
+# suffix widgets, both suitable for Curry as-is (TXT default _ScoredEvents_Export.txt, CSV default
+# _event_xml.csv — some Curry datasets also ship a CSV). Only the outer loop variable is migrated
+# (edf -> cdt) so each block scans the .cdt stems; the file scans (edf_folder.rglob) and file
+# lists (edf_files) are handled by the global renames below.
+replace_in_cell(ui_paths,
+    "        for edf in edf_files:\n"
+    "            for t in all_txt_evt:\n"
+    "                if os.path.normcase(t.name).startswith(os.path.normcase(edf.stem)):\n"
+    "                    suf = t.name[len(edf.stem):]\n",
+    "        for cdt in curry_files:\n"
+    "            for t in all_txt_evt:\n"
+    "                if os.path.normcase(t.name).startswith(os.path.normcase(cdt.stem)):\n"
+    "                    suf = t.name[len(cdt.stem):]\n",
+    "cell4 TXT detection loop var")
+replace_in_cell(ui_paths,
     "        for edf in edf_files:\n"
     "            for c in all_csv:\n"
     "                if os.path.normcase(c.name).startswith(os.path.normcase(edf.stem)):\n"
-    "                    suf = c.name[len(edf.stem):]\n"
-    "                    csv_counts[suf] = csv_counts.get(suf, 0) + 1\n"
-    "        if csv_counts:\n"
-    "            best_csv, best_csv_n = min(csv_counts.items(), key=lambda x: (-x[1], len(x[0])))\n"
-    "            csv_suffix.value = best_csv\n"
-    "            cparts = [f'<b>{s}</b>&nbsp;(×{c})' for s, c in sorted(csv_counts.items(), key=lambda x: -x[1])]\n"
-    "            ccolor = '#2e7d32' if best_csv_n == n_total else '#e67e00'\n"
-    "            csv_suffix_info.value = (\n"
-    "                f'<small style=\"color:{ccolor};\">Event CSV detected: &nbsp;{\"&nbsp;·&nbsp;\".join(cparts)}'\n"
-    "                f'&nbsp;— {best_csv_n}/{n_total} files matching</small>'\n"
-    "            )\n"
-    "        else:\n"
-    "            csv_suffix_info.value = (\n"
-    "                '<small style=\"color:#888;\">No event CSV detected next to the EDF files — '\n"
-    "                'the XML fallback (*.edf.XML) will be used if present.</small>'\n"
-    "            )\n"
-)
-NEW_EVT_DETECT = (
-    "        # ---- Event export suffix auto-detection (Curry: *_ScoredEvents_Export.txt) ----\n"
-    "        # Scan .txt files whose name contains 'event' so hypnogram .txt files are not counted.\n"
-    "        all_evt = [f for f in curry_folder.rglob('*')\n"
-    "                   if f.suffix.lower() == '.txt' and 'event' in f.name.lower()]\n"
-    "        evt_counts = {}\n"
+    "                    suf = c.name[len(edf.stem):]\n",
     "        for cdt in curry_files:\n"
-    "            for c in all_evt:\n"
+    "            for c in all_csv:\n"
     "                if os.path.normcase(c.name).startswith(os.path.normcase(cdt.stem)):\n"
-    "                    suf = c.name[len(cdt.stem):]\n"
-    "                    evt_counts[suf] = evt_counts.get(suf, 0) + 1\n"
-    "        if evt_counts:\n"
-    "            best_evt, best_evt_n = min(evt_counts.items(), key=lambda x: (-x[1], len(x[0])))\n"
-    "            csv_suffix.value = best_evt\n"
-    "            cparts = [f'<b>{s}</b>&nbsp;(×{c})' for s, c in sorted(evt_counts.items(), key=lambda x: -x[1])]\n"
-    "            ccolor = '#2e7d32' if best_evt_n == n_total else '#e67e00'\n"
-    "            csv_suffix_info.value = (\n"
-    "                f'<small style=\"color:{ccolor};\">Event export detected: &nbsp;{\"&nbsp;·&nbsp;\".join(cparts)}'\n"
-    "                f'&nbsp;— {best_evt_n}/{n_total} files matching</small>'\n"
-    "            )\n"
-    "        else:\n"
-    "            csv_suffix_info.value = (\n"
-    "                '<small style=\"color:#888;\">No event export detected next to the .cdt files — '\n"
-    "                'event-based rejection will be unavailable.</small>'\n"
-    "            )\n"
-)
-replace_in_cell(ui_paths, OLD_EVT_DETECT, NEW_EVT_DETECT, "cell4 event detection")
+    "                    suf = c.name[len(cdt.stem):]\n",
+    "cell4 CSV detection loop var")
+# Both event-detection else branches say "next to the EDF files" -> ".cdt files".
+replace_all_cells("next to the EDF files", "next to the .cdt files",
+                  "event detection EDF-files text", required=False)
 
 # 4d. Hypno suffix detection: migrate loop var names only.
 # The event-export exclusion is NOT done here any more: the EDF source now excludes 'event'
@@ -345,15 +260,8 @@ replace_in_cell(ui_paths,
     "fc_config.title = '<b>remap_reref_persubject.json</b> (from select&amp;remap_channels_curry) :'",
     "cell4 fc_config title")
 
-# 4f. csv_suffix widget default + label (lives in the paths UI cell)
-replace_in_cell(ui_paths,
-    "csv_suffix = widgets.Text(\n"
-    "    value='_event_xml.csv',\n"
-    "    description='Event CSV suffix:',",
-    "csv_suffix = widgets.Text(\n"
-    "    value='_ScoredEvents_Export.txt',\n"
-    "    description='Event export suffix:',",
-    "csv_suffix widget")
+# 4f. Suffix widgets pass through unchanged: the EDF 'Event TXT suffix' (_ScoredEvents_Export.txt)
+# and 'Event CSV suffix' (_event_xml.csv) defaults both suit Curry, so the twin mirrors both fields.
 
 # ===========================================================================
 print("\n=== Cell 6: params UI (event counter) ===")

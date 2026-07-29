@@ -51,8 +51,14 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   **within ±`tol` s** (editable `Match tol (s)`, default 1, 0=strict; same-label pass then any-label pass)
   classifying them as matched / cooccur-difflabel (paired in time, different name — cross-language
   discovery aid, or two distinct events within tol) / only-in-one-source. French
-  labels get `FRENCH_EVENT_RULES`/`suggest_canonical` (shared verbatim with the Curry twin). **Tool 8 is
-  unchanged** (CSV-first/XML-fallback). Re-run `tools_curry/_make_tool4_curry.py` after editing the EDF Voila.
+  labels get `FRENCH_EVENT_RULES`/`suggest_canonical` (shared verbatim with the Curry twin). **Tool 6 joins
+  the same TXT-first / CSV / XML `load_events`** but returns a DataFrame and — because it flags epochs by
+  event **onset**, not just names — **reads the EDF start datetime to convert `.txt` clock times to real
+  `Start` seconds** (two suffix widgets: Event TXT + Event CSV). Its Curry twin mirrors the whole chain,
+  swapping only `read_edf_start_datetime` for a `.cdt`-header read — so `_make_tool6_curry.py`'s match
+  strings (`OLD_STARTDT`, the cell-4 detection loop vars) must track any edit to tool 6's event section;
+  re-run the generator. **Tool 8 is unchanged** (CSV-first/XML-fallback). Re-run
+  `tools_curry/_make_tool4_curry.py` after editing the EDF Voila.
   Labels harmonized to canonical via `config_param/event_remap.json`. → SPEC *Cross-cutting → Event sourcing* + §4.
 - **Custom (non-AASM) sleep stages**: declared once in `config_param/custom_stages.json` (written only by
   `3_remap_hypno`, read by tools 5/6/7). Three duplicated helpers (`load_custom_stages`,
@@ -88,8 +94,10 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   additions (event rejection, notch, resample, configurable 1/f fit range) keep event/feature-free runs
   **byte-compatible**. Writes the `{file_id}_preprocessing_params.json` sidecar (thresholds actually used
   + `1f_fit_range_hz` + `methods_run`), read back by tool 7. Notch (`cb_notch`, MNE default FIR method,
-  50 Hz), resampling (also in tool 5, `cb_resample`), and the 1/f fit range (default 2–45 Hz) are all
-  optional and **off/neutral by default**. `compute_rejection_masks` reads the signal **one channel at a
+  50 Hz) now **defaults ON** (a power-line notch is the norm; untick to reproduce the byte-identical no-notch
+  output — its `methods_run` entry keeps tool 7 consistent); resampling (also in tool 5, `cb_resample`) and
+  the 1/f fit range (default 2–45 Hz) stay optional and **off/neutral by default**. `compute_rejection_masks`
+  reads the signal **one channel at a
   time** from `epochs` (+ `del raw` after epoching) to bound memory on dense montages; formulas unchanged so
   every output is **byte-identical** to the former full-array version, and the code is format-agnostic (EDF
   source, passes through to the Curry twin). Keep the formulas in sync with tool 7's `qc_rejected_epochs_lib.py`.

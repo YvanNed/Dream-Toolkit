@@ -224,9 +224,20 @@ instead of restating them; only tool-specific deltas are kept inline.
   For the `.txt` the harmonization scan needs **only the names**, so Start/Duration are left `NaN` (no EDF
   header read); the recording-start datetime (`read_edf_start_datetime`, EDF header offsets 168/176) is read
   **only** by the 1bis consistency check to convert the text-export clock times to seconds. The **Curry twin**
-  keeps the single `.txt` source via `curry_io.load_events_curry` (no 1bis). **Tool 8** is unchanged:
-  CSV-first / XML-fallback, returning a `Name/Start/Duration` **DataFrame** plus the `source` tag (its
-  overlay/navigator code consumes a DataFrame).
+  keeps the single `.txt` source via `curry_io.load_events_curry` (no 1bis).
+  **Tool 6 (`6_preprocessing*`)** uses the **same TXT-first / CSV / XML-fallback** `load_events()`, but
+  returning a `Name/Start/Duration` **DataFrame** (its `compute_event_epoch_mask` consumes a DataFrame).
+  Crucially — unlike tool 4's harmonization scan, which needs only the event *names* — tool 6 flags an
+  epoch by the event **onset (`Start`)**, so its `.txt` branch **reads the recording-start datetime
+  (`read_edf_start_datetime`, EDF header offsets 168/176) and converts the export's clock times to real
+  seconds** (`_events_df_from_txt`). A `.txt` present without a readable start datetime is skipped in favour
+  of the CSV/XML companions. Two editable, auto-detected suffix fields (**Event TXT suffix** +
+  **Event CSV suffix**); `load_events(edf, txt_suffix, csv_suffix)` returns `(DataFrame, source∈{txt,csv,xml})`.
+  The **Curry twin** mirrors the same chain (`_make_tool6_curry.py` keeps `_events_df_from_txt/csv/xml` +
+  the dispatcher unchanged and swaps only `read_edf_start_datetime` for a `.cdt`-header read via
+  `curry_header`/`rec_start_from_header`), so a Curry dataset shipping a `_event_xml.csv` is picked up too.
+  **Tool 8** is unchanged: CSV-first / XML-fallback, returning a `Name/Start/Duration` **DataFrame** plus
+  the `source` tag (its overlay/navigator code consumes a DataFrame).
 - **Proactive error handling**: per-item `try/except` with a **fatal** (add to a `failed` list and
   `continue`) vs **non-fatal** (`⚠` warning, continue) distinction; in Voila, every button callback and
   per-item loop is wrapped so a single failure never crashes the run or freezes the UI, and errors are
@@ -645,7 +656,7 @@ The two tools then differ only in what follows:
 **Preprocessing steps** (applied in this order, each optional via widget):
 1. **Resampling** — `raw.resample(target_freq, npad='auto')`. Target frequency chosen by user; applied **before** filtering. `raw.resample` already anti-aliases (FFT method), so resampling first introduces no aliasing; the order is chosen because filtering the already-downsampled signal runs on far fewer samples (faster) — not to prevent aliasing (both steps are linear, so the order does not change the result). Step is skipped if checkbox is unchecked.
 2. **Re-referencing** — applied as specified in JSON config per participant: `'average'` → common average reference; `[list]` → subtract listed channel(s) then drop them; empty → no re-referencing.
-3. **Notch filter** *(optional, off by default)* — removes power-line noise via `raw.notch_filter(freqs=notch_freq_val)` using **MNE's default method** (FIR; `method=` is left unset). Single editable frequency (`cb_notch` / `txt_notch_freq`, default **50 Hz**). Applied **after re-referencing, before the bandpass** ("notch then band-pass" convention). **Fatal** on failure (like the bandpass step). Off by default keeps outputs byte-identical.
+3. **Notch filter** *(optional, **ON by default**)* — removes power-line noise via `raw.notch_filter(freqs=notch_freq_val)` using **MNE's default method** (FIR; `method=` is left unset). Single editable frequency (`cb_notch` / `txt_notch_freq`, default **50 Hz**). Applied **after re-referencing, before the bandpass** ("notch then band-pass" convention). **Fatal** on failure (like the bandpass step). Defaults ON because a power-line notch is the norm for most databases; untick `cb_notch` to reproduce the former byte-identical no-notch output. The frequency box's initial visibility follows `cb_notch.value` (checkbox-revealed-widgets rule), so the pre-ticked box shows correctly.
 4. **Bandpass filter** — FIR zero-double-pass Hamming window, defaults `l_freq=0.1 Hz, h_freq=50 Hz`. Applied via `raw.filter(..., method='fir', phase='zero-double', fir_window='hamming', fir_design='firwin')`.
 
 **Epoching (configurable epoch length)**: epochs are created with `mne.make_fixed_length_epochs(raw, duration=epoch_sec)`. `epoch_sec` is user-selectable via a Section-2 **`Epoch length`** dropdown (`dd_epoch_len`) offering the **divisors of 30 ≥ 5 s** — `30 (classic, default) / 15 / 10 / 6 / 5` — so the classic 30 s scored epoch re-cuts into a whole number of sub-epochs and the 4 s Welch window used by the 1/f fit still fits. The hypnogram is scored at 30 s (one label per 30 s epoch): the 30 s length validation/trim against the recording is **unchanged**, then each 30 s label is **expanded** to fill its sub-epochs — `hypno_sub = np.repeat(expert_hypno, epoch_factor)` with `epoch_factor = 30 // epoch_sec` — so each sub-epoch simply inherits its parent 30 s stage (no re-scoring, no interpolation). All flagging/summary/plot code keys on `hypno_epochs`/`n_epochs` generically, so it adapts automatically; the Welch window is `n_per_seg = int(min(4, epoch_sec) * sf)` (byte-identical to `4·sf` for every allowed size). Amplitude p-p thresholds stay the **same absolute µV** across sizes (artefact p-p does not scale with window length). Default 30 s keeps every output byte-identical to the pre-feature tool. Sleep stage assigned to each epoch from the (expanded) hypnogram; epochs at the tail beyond the hypnogram length are discarded.
@@ -941,7 +952,10 @@ The recurring deltas:
   histograms/PSD/time-series/hypnospectrogram. Same `reports_quality_overview/` outputs (minus the bounds
   column). Memory note: EEG channels are picked before `load_data()` to avoid holding the full multi-GB file.
 - **6 — Preprocessing + epoch rejection**: Curry load block (recipe step 3); event-based rejection reads the
-  text export via the `load_events` wrapper. All rejection methods, per-stage summaries, `_all-epo.fif`,
+  scored events via the **shared TXT-first / CSV / XML** `load_events` chain (the twin swaps only
+  `read_edf_start_datetime` for a `.cdt`-header read; the `_events_df_from_txt/csv/xml` parsers + dispatcher
+  and the two suffix widgets pass through, so a Curry `_event_xml.csv` is picked up too). All rejection
+  methods, per-stage summaries, `_all-epo.fif`,
   `_epoch_rejection.tsv`, `_rejection_summary.tsv`, and the `_preprocessing_params.json` sidecar are
   identical to tool 6, so **tool 7 (QC of rejected epochs) works on Curry outputs unchanged**.
   - **Per-channel rejection (memory) — shared EDF + Curry**: `compute_rejection_masks` receives the
