@@ -46,14 +46,14 @@ except Exception:
 mne.set_log_level('ERROR')
 
 # ---- Rejection-method registry (single source of truth, kept in sync with tool 6) ----
-METHOD_ORDER  = ['amplitude', 'flat', 'gradient', '1f_error', '1f_r2', 'event']
+METHOD_ORDER  = ['amplitude', 'gradient', 'flat', '1f_r2', '1f_error', 'event']
 METHOD_CODE   = {m: i + 1 for i, m in enumerate(METHOD_ORDER)}   # 1..6  (0 = none)
 MULTIPLE_CODE = len(METHOD_ORDER) + 1                            # 7 = multiple
-METHOD_LABEL  = {'amplitude': 'Amplitude', 'flat': 'Flat', 'gradient': 'Gradient',
-                 '1f_error': '1/f error', '1f_r2': '1/f R²', 'event': 'Event'}
+METHOD_LABEL  = {'amplitude': 'Amplitude', 'gradient': 'Gradient', 'flat': 'Flat',
+                 '1f_r2': '1/f R²', '1f_error': '1/f error', 'event': 'Event'}
 # Heatmap / per-method colours (index = method code; identical to tool 6's plot_rejection_heatmap).
-HEATMAP_COLORS = ['#1c0a3b', '#c0392b', '#2980b9', '#e67e22', '#f1c40f', '#27ae60', '#e84393', '#7b0000']
-HEATMAP_LABELS = ['none', 'amplitude', 'flat', 'gradient', '1/f error', '1/f R2', 'event', 'multiple']
+HEATMAP_COLORS = ['#1c0a3b', '#c0392b', '#e67e22', '#2980b9', '#27ae60', '#f1c40f', '#e84393', '#7b0000']
+HEATMAP_LABELS = ['none', 'amplitude', 'gradient', 'flat', '1/f R2', '1/f error', 'event', 'multiple']
 # Per-method overlay colour keyed by METHOD_ORDER label.
 METHOD_COLOR   = {m: HEATMAP_COLORS[METHOD_CODE[m]] for m in METHOD_ORDER}
 
