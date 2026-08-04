@@ -95,8 +95,11 @@ print("\n=== Cell 1: imports ===")
 # NB: the EDF tool-6 import block is wrapped in a try/except ImportError, so these lines are
 # indented 4 spaces; the injected curry imports are kept inside the try so they are guarded too.
 replace_in_cell(imports,
-    "    from specparam import SpectralModel\nexcept ImportError as e:",
     "    from specparam import SpectralModel\n"
+    "    from statsmodels.nonparametric.smoothers_lowess import lowess\n"
+    "except ImportError as e:",
+    "    from specparam import SpectralModel\n"
+    "    from statsmodels.nonparametric.smoothers_lowess import lowess\n"
     "    import sys as _sys\n"
     "    # curry shared modules — found whether Voila is launched from the repo root or tools_curry/\n"
     "    _here = os.getcwd()\n"

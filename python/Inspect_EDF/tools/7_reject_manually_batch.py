@@ -174,7 +174,7 @@ def main():
             P = L.load_participant(p['fif'])
             thr, info = L.load_params(p['folder'], fid, custom_stages_fallback=custom)
             fit_fmin, fit_fmax = info['fit_range']
-            freqs, psds = L.compute_psds(P['epochs'], fmax=fit_fmax)
+            freqs, psds = L.compute_psds(P['epochs'], fmax=fit_fmax, smoothing=info.get('psd_smoothing'))
             if args.no_1f:
                 ptp = np.ptp(P['data_uV'], axis=-1).max(axis=1)
                 grad = np.max(np.abs(np.diff(P['data_uV'], axis=-1)), axis=-1).max(axis=1)

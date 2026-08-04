@@ -96,7 +96,14 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   + `1f_fit_range_hz` + `methods_run`), read back by tool 7. Notch (`cb_notch`, MNE default FIR method,
   50 Hz) now **defaults ON** (a power-line notch is the norm; untick to reproduce the byte-identical no-notch
   output — its `methods_run` entry keeps tool 7 consistent); resampling (also in tool 5, `cb_resample`) and
-  the 1/f fit range (default 2–45 Hz) stay optional and **off/neutral by default**. `compute_rejection_masks`
+  the 1/f fit range (default 2–45 Hz) stay optional and **off/neutral by default**. **PSD smoothing before
+  the 1/f fit** (`cb_ssmatch` + optional `cb_ss_median`, two-stage median→LOWESS on the linear Welch PSD,
+  oscip parity) is built in and **defaults ON** (the one *not* byte-neutral default — untick to reproduce the
+  pre-smoothing output; reprocess to homogenise), recorded in the additive `psd_smoothing` sidecar block and
+  **honoured by tool 7** when it recomputes PSDs (`smooth_psd_median`/`smooth_psd_lowess` duplicated in tool 6
+  + `qc_rejected_epochs_lib.py` — keep in sync; 7bis untouched, it never recomputes a PSD). In the 1/f box the
+  **fit parameters** (fit range + smoothing) are grouped one indent shallower than the **thresholds**, and all
+  methods' thresholds share that deeper indent so they stay aligned (Variant A; layout-only). `compute_rejection_masks`
   reads the signal **one channel at a
   time** from `epochs` (+ `del raw` after epoching) to bound memory on dense montages; formulas unchanged so
   every output is **byte-identical** to the former full-array version, and the code is format-agnostic (EDF
@@ -132,7 +139,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   reject decision is authoritative from `epochs.metadata`; per-channel attribution is **recomputed** with
   tool-6 formulas + persisted thresholds. Analysis + plotting live in a **shared module
   `qc_rejected_epochs_lib.py`** — a deliberate exception to the "duplicate helpers" rule; the copied bits
-  (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, 1/f fit) must stay in sync with tool 6.
+  (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, **PSD smoothing `smooth_psd_median`/`smooth_psd_lowess`**,
+  1/f fit) must stay in sync with tool 6. `compute_psds(…, smoothing=info['psd_smoothing'])` re-applies the
+  tool-6 smoothing so the recomputed plots/attribution match the flags (`smoothing=None` → byte-identical).
   An **optional "Show EOG/EMG context" toggle** (default off) stacks the EOG-L/EOG-R/EMG traces under the
   per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
   aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op. **Data/reports

@@ -31,8 +31,7 @@ Inspect_EDF/
 │   ├── 4_remap_events_edf.ipynb                 # Event label harmonization (Jupyter)
 │   ├── 4_remap_events_edf_voila.ipynb           # Event label harmonization (Voila GUI)
 │   ├── 5_quality_overview_voila.ipynb           # Quality overview (Voila GUI)
-│   ├── 6_preprocessing_voila.ipynb             # Preprocessing + epoch rejection (Voila GUI)
-│   ├── 6_preprocessing_voila_SSmatch.ipynb     # Tool-6 variant: optional LOWESS PSD smoothing before the 1/f fit (oscip-match)
+│   ├── 6_preprocessing_voila.ipynb             # Preprocessing + epoch rejection, incl. optional PSD smoothing before the 1/f fit (Voila GUI)
 │   ├── 7_reject_manually_voila.ipynb           # Manually reject flagged epochs — Phase 2b (Voila GUI)
 │   ├── 7_reject_manually_batch.py              # Manually reject flagged epochs — database-level batch report
 │   ├── qc_rejected_epochs_lib.py                # Shared analysis/plotting for tool 7 (notebook + batch)
@@ -48,11 +47,9 @@ Inspect_EDF/
 └── tools_curry/                             # Experimental Curry 9 (.cdt) port — see "Curry 9 support" below
     ├── curry_header.py                        # Header-only .cdt.dpo parser (Curry analogue of the EDF header parser)
     ├── curry_io.py                            # Curry signal / hypnogram / events (text export) loaders
-    ├── {1,2,3,4,5,6}_*_curry_voila.ipynb      # Curry twins of tools 1–6 (Voila)
-    ├── 6_preprocessing_curry_voila_SSmatch.ipynb    # Curry twin of the tool-6 SSmatch variant (PSD smoothing)
+    ├── {1,2,3,4,5,6}_*_curry_voila.ipynb      # Curry twins of tools 1–6 (Voila; tool 6 incl. the PSD smoothing)
     ├── 7bis_reject_automatically_curry_voila.ipynb  # Curry twin of tool 7bis (verbatim copy — 7bis is format-agnostic)
-    ├── _make_tool{2,3,4,5,6,7bis}_curry.py    # Re-runnable generators (regenerate a twin from its EDF source)
-    └── _make_tool6_curry_SSmatch.py           # Generator for the tool-6 SSmatch (PSD-smoothing) Curry twin
+    └── _make_tool{2,3,4,5,6,7bis}_curry.py    # Re-runnable generators (regenerate a twin from its EDF source)
 ```
 
 **Sibling directory** `../Check_EDF/` contains exploratory notebooks used during development (not production tools).
@@ -93,7 +90,7 @@ Defined in `environment.yml`. Key packages:
 - **chardet 5.2** — encoding detection for EDF headers
 - **edfio** — EDF read/write (used directly for export with per-channel physical range control)
 - **specparam** — aperiodic/periodic spectral decomposition (1/f fitting)
-- **statsmodels 0.14** — LOWESS smoother (`smoothers_lowess.lowess`), used by the tool-6 `SSmatch` variant to smooth the Welch PSD before the 1/f fit (see tool 6)
+- **statsmodels 0.14** — LOWESS smoother (`smoothers_lowess.lowess`), used by tool 6 (and `qc_rejected_epochs_lib.py`) for the optional PSD smoothing before the 1/f fit (see tool 6)
 
 ## How to run the tools
 
@@ -699,11 +696,12 @@ max** (`fmax_psd = min(fit_fmax_val, sf/2 - 0.5)`, was hardcoded 30 Hz), and the
 tool 7's recomputed per-channel attribution matches tool 6's. Wired across tool 6 (EDF + Curry),
 `qc_rejected_epochs_lib.py`, and the tool-7 batch + Voila.
 
-**PSD smoothing before the 1/f fit — the `SSmatch` variant** (`6_preprocessing_voila_SSmatch.ipynb`, +
-Curry twin `6_preprocessing_curry_voila_SSmatch.ipynb`): a **standalone copy** of tool 6 that adds an
+**PSD smoothing before the 1/f fit (built into tool 6, ON by default)**: tool 6 applies an
 **optional two-stage smoothing of the Welch PSD before the specparam fit** (a running **median** then a
 **LOWESS mean**), reproducing `oscip.smooth_spectrum_median` + `oscip.smooth_spectrum` from the Snipes
-MATLAB pipeline (`episl-preprocessing` / `eeg-oscillations` / `sleep-prep`). *Motivation*: the Welch PSD is
+MATLAB pipeline (`episl-preprocessing` / `eeg-oscillations` / `sleep-prep`). Formerly a standalone
+`SSmatch` twin; after it was validated on real data it was **folded into the canonical tool 6** (EDF +
+Curry twin) and the twin deleted. *Motivation*: the Welch PSD is
 averaged over `1 + floor((epoch_sec − 4)/2)` 4 s segments — **14** at 30 s but only **~2** at 6 s — so on
 short epochs the PSD is very noisy, the specparam fit degrades (high MAE, low R²), and the
 `1f_error`/`1f_r2` methods reject nearly every epoch. The colleague's pipeline (`calculate_spectral_power.m`
@@ -724,30 +722,46 @@ round(span_hz/freq_res)`:
 
 Both are non-fatal per spectrum and applied to `psds_data_uV2` **immediately after the Welch PSD is
 computed, before `compute_rejection_masks`**, so both 1/f masks see the smoothed spectrum;
-`compute_rejection_masks` is otherwise unchanged. *UI*: a master checkbox `cb_ssmatch` (**ON by default** in
-this variant) gating all smoothing + a `txt_ss_span` LOWESS-span box (default 2.0); a sub-checkbox
+`compute_rejection_masks` is otherwise unchanged. *UI*: a master checkbox `cb_ssmatch` (**ON by default**)
+gating all smoothing + a `txt_ss_span` LOWESS-span box (default 2.0); a sub-checkbox
 `cb_ss_median` (**ON**) + `txt_ss_median_span` (default 3.0) for the median pre-step — all revealed per the
-checkbox-revealed-widgets rule and placed under the 1/f controls in `f1_box`. *Sidecar*: an additive block
+checkbox-revealed-widgets rule and placed in the **fit-parameters group** of `f1_box` (see the *1/f box
+indentation* note below). **⚠ Not byte-neutral by default**: because smoothing is now ON by default, a plain
+tool-6 run no longer matches the pre-smoothing output — untick `cb_ssmatch` to reproduce the old
+byte-identical numbers, and reprocess a dataset once to homogenise. *Sidecar*: an additive block
 `psd_smoothing: {enabled, method: 'median+lowess'|'lowess', median_span_hz, lowess_span_hz}` in
-`{file_id}_preprocessing_params.json` (omission-safe — absent in the plain tool-6 sidecar), plus a
+`{file_id}_preprocessing_params.json` (omission-safe — absent in older sidecars), plus a
 report-table row. **Note** — the colleague's `specparam_artefact_detection.m` additionally rejects on
 aperiodic-**exponent** range `[0.5, 4]`, **offset** range `[-1, 5]`, exponent-variance outliers and
-exponent↔offset correlation-residual outliers (z>10), and uses a stricter **R² ≥ 0.95**; the SSmatch
-variant matches only the *smoothing* (MAE 0.15 / R² kept editable), not those extra decision criteria —
-out of scope here. *Tool-7 consistency
-(deliberate current choice)*: tool 7 and `qc_rejected_epochs_lib.py` are **left unchanged** — the per-epoch
-reject **decision** comes from the `.fif` metadata (authoritative, so the correct epochs stay rejected),
-but tool 7's **recomputed per-channel attribution** uses the *un-smoothed* PSD, so a borderline epoch's
-channel attribution may differ slightly; revisit (teach the shared lib to honour `psd_smoothing`) only if
-the smoothed method becomes the default pipeline. *Sync*: the smoothing is format-agnostic and passes
-through the Curry generator **except** the cell-1 import anchor (the added `lowess` import shifted it),
-which `_make_tool6_curry_SSmatch.py` patches — edit the EDF SSmatch notebook, then **re-run that
-generator** (not the plain tool-6 one). Validated on synthetic short-epoch PSDs: a 2-segment "6 s" spectrum
+exponent↔offset correlation-residual outliers (z>10), and uses a stricter **R² ≥ 0.95**; tool 6
+matches only the *smoothing* (MAE 0.15 / R² kept editable), not those extra decision criteria —
+out of scope here. *Tool-7 consistency*: the per-epoch reject **decision** comes from the `.fif` metadata
+(authoritative), and tool 7's **recomputed per-channel attribution / report PSDs now honour the smoothing**
+— `qc_rejected_epochs_lib.py` carries the same two helpers (kept in sync with tool 6), `load_params` reads
+the `psd_smoothing` block into `info['psd_smoothing']`, and `compute_psds(epochs, fmax, smoothing=…)`
+smooths the recomputed PSD (median-then-LOWESS) before the fit. All four tool-7 call sites (batch +
+Voila cells 5/7) pass `info.get('psd_smoothing')`; `smoothing=None` (older sidecars) is byte-identical.
+**Tool 7bis is untouched** — it reads only the flag TSV, never recomputes a PSD. *Sync*: the smoothing is
+format-agnostic and passes through `_make_tool6_curry.py` **except** the cell-1 import anchor (the added
+`lowess` import shifted it), which the generator patches — edit the EDF notebook, then **re-run
+`_make_tool6_curry.py`**. Validated on synthetic short-epoch PSDs: a 2-segment "6 s" spectrum
 with injected narrow spikes went MAE 0.24 / R² 0.73 → **rejected** raw, to MAE 0.07 / R² 0.97 (LOWESS only)
 and MAE 0.06 / R² 0.98 (**median 3 + LOWESS 2**) → **kept** — the median pre-step further cleans the spikes;
 a 14-segment "30 s" spectrum barely changed. **Performance**: the smoothing cost is ~2 ms/spectrum, but a
 clean spectrum makes specparam converge far faster (the dominant cost), so the whole 1/f step runs **~3×
 faster** on short epochs than fitting the raw noisy PSD.
+
+**Flagging-method indentation (Variant A)**: each grey **description sits at the same indent as the widgets
+it introduces**, so its "belonging" reads at a glance. Two indent levels: a shallower **fit-param** level
+(`_indent_fit`, 14 px) and a deeper **threshold** level (`_indent_thresh`, 44 px). The amplitude/flat/gradient
+descriptions sit **with their thresholds** at 44 px; inside the *1/f fit quality* box, `f1_desc` + the fit
+range (`txt_1f_fmin`/`txt_1f_fmax`) and `ss_desc` + the smoothing controls sit at 14 px, while `f1_metric_desc`
++ the **R²/error thresholds** (`txt_1f_r2`/`txt_1f_error`) sit at 44 px — so all methods' thresholds stay
+aligned and the 1/f fit parameters stand out as a shallower group. Each outer method box keeps its **own**
+layout (only its `display` is toggled), and the shared `_indent_fit`/`_indent_thresh` `Layout` objects are
+never mutated. The description text is wrapped in a block `<div style="line-height:1.2">` (not a bare inline
+`<small>`) so its line spacing is actually controllable — an inline `line-height` can't shrink a line box
+below the widget container's own strut. Layout-only — no effect on any numeric output.
 
 **Custom (non-AASM) stages** (see *Cross-cutting procedures*): an editable `Custom stages` field (Section 1, auto-filled from `config_param/custom_stages.json`) extends the per-stage logic. Each custom stage gets its **own amplitude-threshold widget** (default 250 µV, generated dynamically when the field changes) feeding `ptp_thresholds`; the per-participant summary, `global_rejection_by_stage.tsv`, the heatmap hypnogram strip and the **"Count affected epochs"** estimate all iterate `['W','N1','N2','N3','R'] + custom_stages`. Custom-stage epochs are still rejected by the other (stage-independent) methods regardless.
 
@@ -759,7 +773,7 @@ faster** on short epochs than fitting the raw noisy PSD.
 
 **Outputs per participant** — the `.fif` + its params sidecar + the optional context companion under `<output_folder>/derivatives/raw_epo/<edf_subtree>/` (a **sibling of `clean_epo_manual/`** written by tool 7 and **`clean_epo_auto/`** written by tool 7bis, so the three epoch stages sit side by side under `derivatives/`); the per-file TSV/HTML reports under `<output_folder>/reports_preprocessing/<edf_subtree>/` — **both mirror the EDF subfolder tree** (as `5_quality_overview` does for `reports_quality_overview/<edf_subtree>/`; an EDF sitting in the data-folder root has `<edf_subtree> == '.'` so its reports collapse back to the flat root, keeping subfolder-less datasets byte-identical to the pre-mirror tool). The skip-checks and the global-table rebuild therefore search **recursively** (`reports_dir.rglob(...)`), so a report written in a subfolder is still found. When a file previously processed by the old **flat** layout is reprocessed into its subfolder, tool 6 first deletes any stale **root-level** copies of that file_id's three report files (only when `<edf_subtree> != '.'`) so the globbed globals never double-count it:
 - `{file_id}_all-epo.fif` — all epochs with `epochs.metadata` DataFrame (columns: `epoch_idx`, `stage`, `reject_flag`, `reject_method`, `flag_amplitude`, `flag_flat`, `flag_gradient`, `flag_1f_error`, `flag_1f_r2`, plus `flag_event` **when event flagging ran**). The `flag_<method>` columns are **per-epoch "any channel" booleans** (the naive epoch-level decision, read by tool 7); the full per-(epoch, channel) mask **is** now persisted separately, in `{file_id}_epoch_channel_rejection.tsv` (below). The per-epoch/per-stage TSVs and `global_rejection_by_stage.tsv` gain the matching `flag_event` / `event` entries the same way — additively, so event-free runs stay byte-compatible with earlier outputs.
-- `{file_id}_preprocessing_params.json` — the resampling / notch / bandpass filter settings (the notch as an additive `notch: {applied, freq_hz}` key, provenance only) + the additive `epoch_length_s` (the selected epoch length; **30 assumed when absent**, so older sidecars stay compatible) + the per-stage rejection thresholds actually used (amplitude p-p per stage, flat, gradient, 1/f MAE/R²) + `methods_run` (the `SSmatch` variant adds an optional additive `psd_smoothing` block, see above). Read back by **tool 7** (QC of rejected epochs) to draw threshold reference lines, recompute per-channel margins, and label the epoch length (`qc_rejected_epochs_lib.load_params → info['epoch_length_s']`). Written non-fatally.
+- `{file_id}_preprocessing_params.json` — the resampling / notch / bandpass filter settings (the notch as an additive `notch: {applied, freq_hz}` key, provenance only) + the additive `epoch_length_s` (the selected epoch length; **30 assumed when absent**, so older sidecars stay compatible) + the per-stage rejection thresholds actually used (amplitude p-p per stage, flat, gradient, 1/f MAE/R²) + `methods_run` + the optional additive `psd_smoothing` block (see above; omitted-safe on older sidecars). Read back by **tool 7** (QC of rejected epochs) to draw threshold reference lines, recompute per-channel margins, label the epoch length (`qc_rejected_epochs_lib.load_params → info['epoch_length_s']`), and honour the PSD smoothing when recomputing PSDs (`info['psd_smoothing']`). Written non-fatally.
 
   *Migration note*: earlier tool-6 versions wrote the `.fif`/sidecar/context directly under `derivatives/<edf_subtree>/`. When reprocessing such a file, tool 6 deletes the stale same-id copies at that old location so tools 7/7bis (which discover participants by recursively globbing `*_all-epo.fif`) never see the id twice. Tools 7/7bis strip a leading `raw_epo/` component when mirroring the subtree into `clean_epo_*/`, so a pre-`raw_epo` layout still maps to the same `clean_epo_*/<subtree>/`.
 - `{file_id}_context-epo.fif` — **optional** EOG/EMG/ECG "context" companion (block `[H]`), written **only** when the participant's `sub_config` carries a tool-2 `context_channels` block. Tool 6 reads just those declared channels from the raw EDF **with `include=` at read time** (exactly like the EEG read — otherwise MNE upsamples every channel in the file to its file-wide max rate, which raised a `bad allocation` on mixed-rate montages), renames them to role labels (`EOG-L`/`EOG-R`/`EMG`/`ECG`), sets MNE channel types, then **unifies the sampling rate to the EEG working rate** (`epochs.info['sfreq']` — native, or the explicit resample target: a single `.fif` requires one rate for all channels, so EOG/EMG/ECG at different native rates are brought to the EEG's rate; display companion only), **display-filters per role** (AASM-like: EOG band-pass 0.3–35 Hz, EMG high-pass 10 Hz, ECG band-pass 0.5–40 Hz — so the tool-7 epoch montage is readable), and epochs them **identically to the EEG** (`make_fixed_length_epochs`, duration 30 s from t=0 → same epoch count regardless of sfreq, so 1:1 index alignment with `{file_id}_all-epo.fif`). Non-fatal: when no context is declared no companion is written and all other outputs stay byte-identical. Read on demand by **tool 7**'s per-epoch view (`load_context_epochs`).
@@ -1012,12 +1026,11 @@ The recurring deltas:
   methods, per-stage summaries, `_all-epo.fif`,
   `_epoch_rejection.tsv`, `_rejection_summary.tsv`, and the `_preprocessing_params.json` sidecar are
   identical to tool 6, so **tool 7 (QC of rejected epochs) works on Curry outputs unchanged**.
-  - **SSmatch variant (PSD smoothing) — its own generator**: the tool-6 `SSmatch` copy (optional LOWESS PSD
-    smoothing before the 1/f fit, see §6) has a Curry twin `6_preprocessing_curry_voila_SSmatch.ipynb`
-    generated by a **dedicated** `_make_tool6_curry_SSmatch.py` — a copy of `_make_tool6_curry.py` that only
-    re-points SRC/DST, retitles, and patches the cell-1 import anchor (the added `lowess` import shifted it).
-    The smoothing itself is format-agnostic and passes through unchanged. Re-run **this** generator (not the
-    plain tool-6 one) after editing the EDF SSmatch notebook.
+  - **PSD smoothing (built into tool 6, see §6)**: format-agnostic and passes through `_make_tool6_curry.py`
+    unchanged **except** the cell-1 import anchor — the added `lowess` import shifted the specparam anchor
+    the generator string-matches, so the generator now includes it in the anchor. Re-run the generator after
+    editing the EDF notebook. (The former dedicated `_make_tool6_curry_SSmatch.py` and the standalone SSmatch
+    twins were deleted when the feature was folded in.)
   - **Per-channel rejection (memory) — shared EDF + Curry**: `compute_rejection_masks` receives the
     `epochs` object and reads the signal **one channel at a time** for the time-domain methods
     (`epochs.get_data(picks=[ci])[:, 0, :] * 1e6`) instead of materialising a full `epochs.get_data() * 1e6`
