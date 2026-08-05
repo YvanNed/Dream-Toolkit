@@ -33,6 +33,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.patches import Rectangle
 
 import mne
 from scipy.signal import spectrogram as sp_spectrogram
@@ -292,7 +293,7 @@ def compute_psds(epochs, fmax=45.0, smoothing=None):
     fmax_psd = min(fmax, sf / 2 - 0.5)
     psds_obj = epochs.compute_psd(method='welch', fmin=0.5, fmax=fmax_psd,
                                   n_fft=n_per_seg, n_overlap=n_overlap, n_per_seg=n_per_seg,
-                                  verbose=False)
+                                  window='hann', verbose=False)   # match tool 6 (MNE defaults to 'hamming')
     freqs, psds_uV2 = psds_obj.freqs, psds_obj.get_data() * 1e12
     if smoothing and smoothing.get('enabled'):
         try:
@@ -594,7 +595,16 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None):
         ax.plot(tt, cur[i] + off, color=col, lw=0.8, zorder=3)
         if grad > thresholds['gradient_uV_per_sample']:
             j = int(np.argmax(np.abs(np.diff(cur[i]))))
-            ax.plot(tt[j], cur[i][j] + off, 'o', color=METHOD_COLOR['gradient'], ms=5, zorder=4)
+            # Frame the steepest sample-to-sample jump (between samples j and j+1) with a hollow box
+            # so the trace amplitude stays visible (a filled dot used to hide it), and redraw the jump
+            # edge in red inside the box to highlight it.
+            y_lo, y_hi = sorted([cur[i][j] + off, cur[i][j + 1] + off])
+            pad_x = 5.0 / sf                       # ~5 samples of horizontal breathing room
+            pad_y = 0.08 * spacing                 # clears the trace vertically
+            ax.add_patch(Rectangle((tt[j] - pad_x, y_lo - pad_y),
+                                   (tt[j + 1] - tt[j]) + 2 * pad_x, (y_hi - y_lo) + 2 * pad_y,
+                                   fill=False, edgecolor=METHOD_COLOR['gradient'], lw=1.2, zorder=4))
+            ax.plot(tt[j:j + 2], cur[i][j:j + 2] + off, color='red', lw=1.4, zorder=5)
         ax.text(-0.008, off, cn, ha='right', va='center', fontsize=8,
                 color=('k' if m is None else METHOD_COLOR[m]),
                 transform=ax.get_yaxis_transform())
