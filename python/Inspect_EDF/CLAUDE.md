@@ -60,6 +60,13 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   re-run the generator. **Tool 8 is unchanged** (CSV-first/XML-fallback). Re-run
   `tools_curry/_make_tool4_curry.py` after editing the EDF Voila.
   Labels harmonized to canonical via `config_param/event_remap.json`. → SPEC *Cross-cutting → Event sourcing* + §4.
+- **Per-event-type persistence (tool 6 → 7bis/7)**: when event flagging runs on a file that has events, tool 6
+  writes two **optional/additive** sidecars beside `_epoch_channel_rejection.tsv` — `{id}_event_epoch_flags.tsv`
+  (per-epoch `evt_<type>` flags, for 7bis event sub-selection) and `{id}_event_counts.tsv` (raw `n_events` per
+  type, for 7bis's per-event participant-exclusion threshold) — **and** adds the same `evt_<type>` columns to
+  the `.fif` epoch metadata (so tool 7's inspector names the culprit event). All three derive from
+  `event_type_masks` (`build_event_epoch_flags`/`build_event_counts`); **no events → nothing written, outputs
+  byte-identical**. Format-agnostic → pass through the Curry generator (re-run `_make_tool6_curry.py`).
 - **Custom (non-AASM) sleep stages**: declared once in `config_param/custom_stages.json` (written only by
   `3_remap_hypno`, read by tools 5/6/7). Three duplicated helpers (`load_custom_stages`,
   `parse_custom_field`, `custom_stage_style`); tools 5/7 use a custom `plot_hypnospectrogram()` because
@@ -144,7 +151,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   tool-6 smoothing so the recomputed plots/attribution match the flags (`smoothing=None` → byte-identical).
   An **optional "Show EOG/EMG context" toggle** (default off) stacks the EOG-L/EOG-R/EMG traces under the
   per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
-  aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op. **Data/reports
+  aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op. The navigator
+  header names the **event type(s)** that flagged the epoch, read from the `.fif` `evt_<type>` metadata
+  columns (no reports-folder access; present only when tool-6 event flagging ran). **Data/reports
   split** (both folders precomputed at load: `S['out_folder']` / `S['reports_folder']`): `_clean-epo.fif` →
   **`derivatives/clean_epo_manual/<subtree>/`**; reviewed TSVs + `qc2b_report.html` → **`reports_rejection_manual/`**
   (`deriv_root.parent/…`, beside `reports_preprocessing/`).
@@ -156,7 +165,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (`auto_reject_decision`): drop a channel flagged in
   > `channel_pct` of in-scope epochs, then reject an in-scope epoch flagged in > `epoch_pct` of the *remaining
   good* channels (both default 20 %, editable; computed over the **stages of interest** only). Reads tool-6
-  outputs **read-only**. **Section 1 = two explicit folder pickers (raw-epochs + reports) + a Scan button**
+  outputs **read-only**. **Section 2 selectable flagging methods + event sub-selection**: `build_pair_matrix`
+  recomposes the (epoch×channel) matrix from the ticked `flag_<method>` columns (all on = the stored
+  `reject_any`, byte-identical default); ticking `event` reveals per-canonical-type rows (checkbox +
+  `exclude if > N events` threshold + a mean/median-per-file hint) fed by the tool-6 `_event_epoch_flags.tsv`
+  (per-type epoch flags; absent → fall back to `flag_event`) and `_event_counts.tsv` (raw counts). A ticked
+  type over its threshold **excludes the whole participant** (no clean-epo; row/report marked `excluded`).
+  Provenance columns `methods_used`/`event_types_used`/`excluded`/`exclude_reason` (+ `.fif`
+  `auto_reject_methods`/`_event_types`); run tally gains `excluded`. Still format-agnostic → **Curry twin stays a
+  verbatim copy** (re-run `_make_tool7bis_curry.py`). **Section 1 = two explicit folder pickers (raw-epochs + reports) + a Scan button**
   (+ an optional data-folder chooser that pre-points them) — *not* one root scanned recursively, so
   renamed/versioned tool-6 runs (`raw_epo_v2`, `reports_preprocessing_v2`) stay apart. **Data/reports split**:
   `{file_id}_clean-epo.fif` (selected stages, dropped channels removed) → **`clean_epo_auto/`** (`raw_root.parent/…`,
