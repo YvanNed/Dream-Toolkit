@@ -43,17 +43,25 @@ try:
 except Exception:
     HAS_SPECPARAM = False
 
+# Optional PSD smoothing before the 1/f fit (honours tool 6's psd_smoothing sidecar block).
+try:
+    from statsmodels.nonparametric.smoothers_lowess import lowess
+    HAS_LOWESS = True
+except Exception:
+    HAS_LOWESS = False
+    lowess = None
+
 mne.set_log_level('ERROR')
 
 # ---- Rejection-method registry (single source of truth, kept in sync with tool 6) ----
-METHOD_ORDER  = ['amplitude', 'flat', 'gradient', '1f_error', '1f_r2', 'event']
+METHOD_ORDER  = ['amplitude', 'gradient', 'flat', '1f_r2', '1f_error', 'event']
 METHOD_CODE   = {m: i + 1 for i, m in enumerate(METHOD_ORDER)}   # 1..6  (0 = none)
 MULTIPLE_CODE = len(METHOD_ORDER) + 1                            # 7 = multiple
-METHOD_LABEL  = {'amplitude': 'Amplitude', 'flat': 'Flat', 'gradient': 'Gradient',
-                 '1f_error': '1/f error', '1f_r2': '1/f R²', 'event': 'Event'}
+METHOD_LABEL  = {'amplitude': 'Amplitude', 'gradient': 'Gradient', 'flat': 'Flat',
+                 '1f_r2': '1/f R²', '1f_error': '1/f error', 'event': 'Event'}
 # Heatmap / per-method colours (index = method code; identical to tool 6's plot_rejection_heatmap).
-HEATMAP_COLORS = ['#1c0a3b', '#c0392b', '#2980b9', '#e67e22', '#f1c40f', '#27ae60', '#e84393', '#7b0000']
-HEATMAP_LABELS = ['none', 'amplitude', 'flat', 'gradient', '1/f error', '1/f R2', 'event', 'multiple']
+HEATMAP_COLORS = ['#1c0a3b', '#c0392b', '#e67e22', '#2980b9', '#27ae60', '#f1c40f', '#e84393', '#7b0000']
+HEATMAP_LABELS = ['none', 'amplitude', 'gradient', 'flat', '1/f R2', '1/f error', 'event', 'multiple']
 # Per-method overlay colour keyed by METHOD_ORDER label.
 METHOD_COLOR   = {m: HEATMAP_COLORS[METHOD_CODE[m]] for m in METHOD_ORDER}
 
@@ -153,7 +161,8 @@ def load_params(folder, file_id, custom_stages_fallback=()):
     info = {'found': False, 'custom_stages': list(custom_stages_fallback),
             'resample': None, 'filter': None, 'methods_run': None,
             'fit_range': (2.0, 45.0),   # 1/f fit window (Hz); tool-6 default when absent
-            'epoch_length_s': 30}       # scoring epoch length (s); classic 30 s when absent
+            'epoch_length_s': 30,       # scoring epoch length (s); classic 30 s when absent
+            'psd_smoothing': None}      # tool-6 PSD-smoothing block; None when absent (older sidecars)
     if not path.exists():
         return thresholds, info
     try:
@@ -174,6 +183,7 @@ def load_params(folder, file_id, custom_stages_fallback=()):
         info['filter'] = data.get('filter')
         info['methods_run'] = data.get('methods_run')
         info['epoch_length_s'] = int(data.get('epoch_length_s', 30))
+        info['psd_smoothing'] = data.get('psd_smoothing')   # honoured by compute_psds (tool-7 plots)
     except Exception:
         pass
     return thresholds, info
@@ -216,10 +226,65 @@ def load_context_epochs(folder, file_id):
 # ---------------------------------------------------------------------------
 # Spectral analysis (Welch PSD + specparam 1/f fit) — same config as tool 6
 # ---------------------------------------------------------------------------
-def compute_psds(epochs, fmax=45.0):
+# --- PSD smoothing helpers (copied VERBATIM from 6_preprocessing_voila — keep in sync) ---------
+def smooth_psd_median(psds_uV2, freqs, span_hz=3.0):
+    """Running-median smooth of each (epoch, channel) linear PSD along frequency.
+    Reproduces oscip.smooth_spectrum_median (MATLAB movmedian over a span given in Hz): a centred
+    median filter that removes narrow spikes (residual line-noise harmonics, single-bin artefacts)
+    BEFORE the LOWESS mean smoothing. The Hz span is converted to a point count
+    (span_pts = round(span_hz / freq_res)); pandas rolling(center=True, min_periods=1) matches
+    MATLAB's truncated-window edge behaviour. Non-fatal: a failing (epoch, channel) is left as-is."""
+    freqs = np.asarray(freqs)
+    if len(freqs) < 4:
+        return psds_uV2
+    freq_res = float(np.median(np.diff(freqs)))            # 0.25 Hz for a 4 s Welch window
+    span_pts = max(3, int(round(span_hz / freq_res)))      # 3 Hz span -> ~12 points at 0.25 Hz
+    out = np.array(psds_uV2, dtype=float, copy=True)
+    n_ep, n_ch, _ = out.shape
+    for ei in range(n_ep):
+        for ci in range(n_ch):
+            try:
+                out[ei, ci] = pd.Series(out[ei, ci]).rolling(
+                    window=span_pts, center=True, min_periods=1).median().to_numpy()
+            except Exception:
+                pass                                       # keep the raw spectrum for this (ep, ch)
+    return out
+
+
+def smooth_psd_lowess(psds_uV2, freqs, span_hz=2.0):
+    """LOWESS-smooth each (epoch, channel) linear PSD along frequency.
+    Reproduces oscip.smooth_spectrum from the Snipes MATLAB pipeline: MATLAB's non-robust
+    'lowess' (local linear regression, tricube weights) over a span given in Hz, applied to the
+    LINEAR power (matching oscip; specparam logs it internally afterwards). The Hz span is converted
+    to a fraction of points because statsmodels expresses the window as a fraction (frac), whereas
+    MATLAB uses a point count. it=0 = non-robust (matches 'lowess', not 'rlowess').
+    Returns a smoothed copy with the same shape (n_ep, n_ch, n_freqs). Non-fatal: on failure a given
+    (epoch, channel) spectrum is left unsmoothed so the 1/f fit still runs."""
+    freqs = np.asarray(freqs)
+    if len(freqs) < 4:
+        return psds_uV2
+    freq_res = float(np.median(np.diff(freqs)))            # 0.25 Hz for a 4 s Welch window
+    span_pts = max(3, int(round(span_hz / freq_res)))      # 2 Hz span -> 8 points at 0.25 Hz
+    frac = min(1.0, span_pts / len(freqs))                 # statsmodels wants a fraction of points
+    out = np.array(psds_uV2, dtype=float, copy=True)
+    n_ep, n_ch, _ = out.shape
+    for ei in range(n_ep):
+        for ci in range(n_ch):
+            try:
+                out[ei, ci] = lowess(out[ei, ci], freqs, frac=frac, it=0, return_sorted=False)
+            except Exception:
+                pass                                       # keep the raw spectrum for this (ep, ch)
+    return out
+
+
+def compute_psds(epochs, fmax=45.0, smoothing=None):
     """Welch PSD per epoch/channel, identical config to 6_preprocessing_voila.
     `fmax` is the 1/f fit upper bound (default 2–45 Hz range); the PSD spans up to it.
-    Returns (freqs, psds_uV2) with psds shape (n_ep, n_ch, n_freqs) in µV²/Hz."""
+    `smoothing` is the tool-6 `psd_smoothing` sidecar block
+    ({enabled, method, median_span_hz, lowess_span_hz}); when enabled the PSD is smoothed
+    (median then LOWESS, same order/params as tool 6) BEFORE return, so tool 7's recomputed
+    plots and per-channel 1/f attribution match what tool 6 flagged. Default None -> no smoothing
+    (byte-identical to before). Returns (freqs, psds_uV2), psds shape (n_ep, n_ch, n_freqs), µV²/Hz."""
     sf = float(epochs.info['sfreq'])
     epoch_len_s = len(epochs.times) / sf                  # supports non-30 s epochs
     n_per_seg = int(min(4, epoch_len_s) * sf)              # 4 s Welch window, capped to the epoch length
@@ -228,7 +293,15 @@ def compute_psds(epochs, fmax=45.0):
     psds_obj = epochs.compute_psd(method='welch', fmin=0.5, fmax=fmax_psd,
                                   n_fft=n_per_seg, n_overlap=n_overlap, n_per_seg=n_per_seg,
                                   verbose=False)
-    return psds_obj.freqs, psds_obj.get_data() * 1e12
+    freqs, psds_uV2 = psds_obj.freqs, psds_obj.get_data() * 1e12
+    if smoothing and smoothing.get('enabled'):
+        try:
+            if smoothing.get('method') == 'median+lowess' and smoothing.get('median_span_hz'):
+                psds_uV2 = smooth_psd_median(psds_uV2, freqs, span_hz=float(smoothing['median_span_hz']))
+            psds_uV2 = smooth_psd_lowess(psds_uV2, freqs, span_hz=float(smoothing.get('lowess_span_hz', 2.0)))
+        except Exception:
+            pass   # non-fatal: fall back to the raw PSD if smoothing fails
+    return freqs, psds_uV2
 
 
 def fit_1f(freqs, psd_uV2, fmin=2.0):
