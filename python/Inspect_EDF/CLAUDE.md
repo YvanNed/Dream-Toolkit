@@ -67,6 +67,22 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   the `.fif` epoch metadata (so tool 7's inspector names the culprit event). All three derive from
   `event_type_masks` (`build_event_epoch_flags`/`build_event_counts`); **no events → nothing written, outputs
   byte-identical**. Format-agnostic → pass through the Curry generator (re-run `_make_tool6_curry.py`).
+- **Rejection-method palette = single source in `qc_rejected_epochs_lib.HEATMAP_COLORS`** (CVD-validated;
+  index 0 `none` dark, `multiple` cyan; `CTX_COLOR` deliberately outside the six method hues). Duplicated
+  **verbatim** in tool 6's `plot_rejection_heatmap` and in tools 8/8-voila (whose array is shorter, has no
+  `event` and uses a different order → remap per method, never copy-paste). 7bis imports the lib. Six
+  categories can't be told apart by colour alone → always ship a legend / method-coloured labels. Changing
+  it changes rendered PNGs; re-run the Curry generators. → SPEC *Cross-cutting → Rejection-method colour palette*.
+- **Event onsets (tool 6 → tool 7)**: tool 6 persists `{file_id}_event_onsets.tsv` (`type`, `onset_s`,
+  `duration_s`) so tool 7 can mark event onsets *inside* an epoch without reloading the raw. It is a
+  **montage companion** → written **beside the `.fif` in `derivatives/raw_epo/`** (like `_context-epo.fif`),
+  **not** in `reports_preprocessing/` (tool 7 never reads the reports tree). Optional/additive; passes
+  through the Curry generator. → SPEC *Cross-cutting → Event-onset sidecar* + §6.
+- **Per-epoch montage scales are FIXED, never autoscaled** (`DISPLAY_SCALE_UV` = EEG 150 / EOG 300 /
+  EMG 100 / ECG 1000 µV per row, clinical conventions): window-based autoscaling made the same waveform
+  change height between epochs and destroyed visual amplitude criteria. Overflow into the neighbouring row
+  is intended (clinical-viewer behaviour) — never clip or hide amplitude. → SPEC *Cross-cutting → Fixed
+  clinical display scales*.
 - **Custom (non-AASM) sleep stages**: declared once in `config_param/custom_stages.json` (written only by
   `3_remap_hypno`, read by tools 5/6/7). Three duplicated helpers (`load_custom_stages`,
   `parse_custom_field`, `custom_stage_style`); tools 5/7 use a custom `plot_hypnospectrogram()` because
@@ -142,9 +158,16 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   optional data folder + Raw-epochs folder** (like 7bis **minus** the reports picker — tool 7 never reads
   `reports_preprocessing/`); `find_participants` runs on the chosen raw folder so versioned tool-6 runs stay
   apart on the participant dropdown. `data_root` = the selected data folder, else the `derivatives/`
-  ancestor's parent. Per-epoch
-  reject decision is authoritative from `epochs.metadata`; per-channel attribution is **recomputed** with
-  tool-6 formulas + persisted thresholds. Analysis + plotting live in a **shared module
+  ancestor's parent. An **"already processed" badge** (clean-epo **and** a review/decision TSV on disk) is
+  informative only — it blocks nothing.
+  **The decision is RECOMPOSED, not read**: Section 1 checkboxes (stages / methods / event types, all on by
+  default) feed `recompute_reject`, which rebuilds `base_reject` + `reject_method` the way 7bis's
+  `build_pair_matrix` does — all ticked ⇒ **identical to tool 6's `reject_flag`** (keep it that way). It
+  drives the navigator, Section 2 **and** the clean-epo (**out-of-scope stages are excluded from the
+  `.fif`**), and gates the cost (`fit_mask=in_scope`, `do_1f=False` when no 1/f method is ticked).
+  Per-channel attribution is **recomputed** with tool-6 formulas + persisted thresholds. Section 4 also
+  writes a **7bis-style decision record** (`_manualreject_decision.tsv` → `_manualreject_report.html` →
+  `global_manualreject_summary.tsv` **rebuilt by globbing the per-file TSVs**; data before report). Analysis + plotting live in a **shared module
   `qc_rejected_epochs_lib.py`** — a deliberate exception to the "duplicate helpers" rule; the copied bits
   (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, **PSD smoothing `smooth_psd_median`/`smooth_psd_lowess`**,
   1/f fit) must stay in sync with tool 6. `compute_psds(…, smoothing=info['psd_smoothing'])` re-applies the
