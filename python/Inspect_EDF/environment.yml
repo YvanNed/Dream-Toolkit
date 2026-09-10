@@ -21,7 +21,9 @@ dependencies:
   - matplotlib=3.10.*
   - statsmodels=0.14.*
   - scikit-learn=1.7.*
+  - joblib=1.5.*
   - edfio=0.4.*
+  - openpyxl=3.1.*
   - pip
   - pip:
     - specparam

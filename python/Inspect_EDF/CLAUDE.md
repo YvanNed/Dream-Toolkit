@@ -78,6 +78,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   **montage companion** → written **beside the `.fif` in `derivatives/raw_epo/`** (like `_context-epo.fif`),
   **not** in `reports_preprocessing/` (tool 7 never reads the reports tree). Optional/additive; passes
   through the Curry generator. → SPEC *Cross-cutting → Event-onset sidecar* + §6.
+- **High-density montages (32–64 ch) = channel-count-keyed, never format-keyed**: every adaptation lives in
+  `qc_rejected_epochs_lib` and is **inert at or below `HD_CHANNEL_THRESHOLD` (12)**, so the 3–6 channel PSG
+  path stays byte-identical — keep it that way when touching the montage geometry, the detail panel, the
+  channel triage, the flagging heatmap or the 1/f subsample. Two traps: `recompute_reject` must reproduce
+  tool 6's `reject_flag` exactly when every channel is kept and the rule is `any` (methods with no
+  per-channel column are **broadcast** across kept channels — else the 1/f contribution vanishes on the
+  recomputed fallback), and the channel layer must be engaged **only** when the user actually uses it (the
+  fallback flags depend on thresholds that differ from the tool-6 run when no params JSON exists).
+  → SPEC *Cross-cutting → High-density montage support* + §7.
 - **Per-epoch montage scales are FIXED, never autoscaled** (`DISPLAY_SCALE_UV` = EEG 150 / EOG 300 /
   EMG 100 / ECG 1000 µV per row, clinical conventions): window-based autoscaling made the same waveform
   change height between epochs and destroyed visual amplitude criteria. Overflow into the neighbouring row
@@ -206,7 +215,29 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   = clean-epo **and** decision TSV present; global summary rebuilt by globbing the per-file decision TSVs.
   All-channels-/all-epochs-rejected → still get a decision row + report (100 % in the summary), no clean-epo. See SPEC §7bis.
 
+- **Spectral features (`9_spectral_features_voila`)**: first **feature tool** — starts from `clean_epo_*`
+  (tool 7/7bis), never from the raw; tool 6's params sidecar is **provenance only** (auto-located, absence
+  non-fatal). Three invariants: the **PSD smoothing feeds the specparam fit only** (band powers always use
+  the raw PSD); **band integrals are rectangular sums** (`Σ PSD × df`, so tiling bands give relative powers
+  summing to 1); and the **peak model follows specparam's defaults** (`[0.5, 12]`, `min_peak_height 0.1`),
+  *not* tool 6's wider `[0.5, 20]` / `0.3` — this divergence is **deliberate, do not align them** (tool 6
+  uses the fit as an artefact detector, tool 9 as a decomposition; aligning moves 9–12 % of tool 6's
+  (epoch × channel) 1/f flags and forces a full reprocess). Tool 9 is **not** part of tool 6's three-copy
+  `SpectralModel` sync constraint. Outputs split data → `derivatives/features_spectral/`, reports
+  → `reports_features_spectral/`; database tables are globbed from disk and **padded to the channel union**
+  because 7/7bis drop channels per participant. → SPEC §9.
+- **Any tool computing a PSD**: work in **µV²/Hz** and guard logs with `np.where(psd > 0, psd, np.nan)` —
+  **never** `psd + 1e-10` on a V²/Hz array (that is a 100 µV²/Hz floor, above most of the sleep spectrum).
+  With **multitaper**, pass `normalization='full'`: MNE's `'length'` default is not a density (off by
+  `sfreq`, so recordings at different rates stop being comparable). → SPEC *Cross-cutting → PSD units and
+  log guards*.
+
 **Curry twins** (→ SPEC *Curry 9 support*)
+- **Tool 7's twin = 3 replacements** (`_make_tool7_curry.py`): H1, one prose sentence, and the
+  **shared-library import probe** (the EDF notebook probes only `cwd`/`cwd/tools`, which does not resolve
+  from `tools_curry/`). Nothing Curry-specific is injected — the high-density support is inherited from the
+  shared lib. Re-run the generator after editing the EDF notebook; it asserts `3/3` and that no `.edf` /
+  `raw EDF` / `read_raw_edf` string survives.
 - **Generated, not hand-edited**: `tools_curry/_make_tool{5,6}_curry.py` regenerate the Curry notebooks
   from the EDF originals by string replacement. Edit the EDF notebook, then **re-run the generator**. New
   code passes through automatically **unless** it sits inside a block the generator string-matches or
