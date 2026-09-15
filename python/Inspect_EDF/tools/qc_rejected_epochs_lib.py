@@ -84,6 +84,20 @@ DISPLAY_SCALE_UV = {'EEG': 150.0, 'EOG': 300.0, 'EMG': 100.0, 'ECG': 1000.0}
 # rejection-method colour in the montage.
 CTX_COLOR = {'EOG-L': '#0a8f8f', 'EOG-R': '#0a8f8f', 'EMG': '#8a6d1f', 'ECG': '#a0522d'}
 
+# Manual annotations added in tool 7's navigator (an event the scorer missed, e.g. an arousal). Drawn on
+# the montage as a DASHED vertical line in a dark violet kept outside the six method hues and the three
+# context hues, so a manual mark can never be read as a rejection method or a context trace; the dash
+# style + its own legend entry carry the identity, never the colour alone.
+MANUAL_COLOR = '#4b0082'
+# Fallback vocabulary for the annotation dropdown, used when the .fif carries no evt_<type> column and no
+# event_remap.json is reachable. Canonical labels (the tool-4 namespace), so a manual annotation merged
+# back into tool 6 needs no remapping beyond the identity entries augment_remap_for_manual adds.
+MANUAL_EVENT_LABELS = ['arousal', 'apnea', 'hypopnea', 'limb movement', 'desaturation', 'artifact', 'other']
+# Column order of {file_id}_manual_events.tsv. The first three columns are EXACTLY those of tool 6's
+# {file_id}_event_onsets.tsv, so the two tables can be concatenated by any consumer without renaming.
+MANUAL_EVENT_COLUMNS = ['type', 'onset_s', 'duration_s', 'epoch_idx', 'epoch_number', 'clock_time',
+                        'stage', 'comment', 'source', 'created_at']
+
 # ---- High-density montage support (32-64 channel Curry / HD-EEG montages) ----
 # Everything below adapts to the CHANNEL COUNT, never to the file format: a dense EDF montage gets the
 # same treatment and a sparse Curry one keeps the classic layout. At or below HD_CHANNEL_THRESHOLD the
@@ -161,6 +175,47 @@ DEFAULT_THRESHOLDS = {
 # Frequency bands for the per-epoch band-power bars (Hz).
 BANDS = [('delta', 0.5, 4), ('theta', 4, 8), ('alpha', 8, 12), ('sigma', 12, 16), ('beta', 16, 30)]
 
+# Scored epochs are 30 s whatever the analysis epoch length: a sub-30 s tool-6 run cuts each SCORED epoch
+# into sub-epochs (see tool 6, "Epoching"), and the scoring software still numbers the 30 s ones.
+SCORING_EPOCH_S = 30
+
+
+def _hms(seconds):
+    """Seconds -> 'HH:MM:SS' (hours are not wrapped at 24 — this is elapsed time, not a clock)."""
+    s = int(round(float(seconds)))
+    return f'{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}'
+
+
+def epoch_labels(ei, epoch_len_s=SCORING_EPOCH_S, meas_date=None, offset=1):
+    """Display labels for epoch `ei`: (number, elapsed, clock).
+
+    number  : the epoch number as the scoring software shows it. Tool 6 epochs the recording from t = 0
+              of the file with no crop, and Compumedics/Profusion numbers epochs from 1 at that same
+              origin, so the default offset = 1 makes `number` the Compumedics epoch number. The offset is
+              editable in the navigator because a recording re-exported from a longer study (or a setup
+              numbering from somewhere else) breaks that +1. With a sub-30 s epoch length the SCORED epoch
+              is numbered and a '.k' suffix names the sub-epoch inside it (e.g. '124.2').
+    elapsed : 'HH:MM:SS' since the recording start.
+    clock   : 'HH:MM:SS' wall clock, or '' when the .fif carries no meas_date.
+
+    meas_date is used verbatim (never converted): MNE labels the EDF start datetime as UTC, but the value
+    it holds IS the local clock time written in the EDF header."""
+    ei = int(ei)
+    epoch_len_s = float(epoch_len_s) if epoch_len_s else float(SCORING_EPOCH_S)
+    onset = ei * epoch_len_s
+    scored_idx = int(onset // SCORING_EPOCH_S)
+    number = str(scored_idx + int(offset))
+    if epoch_len_s < SCORING_EPOCH_S:
+        per_scored = int(round(SCORING_EPOCH_S / epoch_len_s))
+        number += f'.{ei % per_scored + 1}'
+    clock = ''
+    if meas_date is not None:
+        try:
+            clock = (meas_date + pd.to_timedelta(onset, unit='s')).strftime('%H:%M:%S')
+        except Exception:
+            clock = ''
+    return number, _hms(onset), clock
+
 
 # ---------------------------------------------------------------------------
 # Discovery + loading
@@ -225,7 +280,12 @@ def load_params(folder, file_id, custom_stages_fallback=()):
 def load_participant(fif_path):
     """Read one {file_id}_all-epo.fif into a dict with signal + metadata.
     Returns dict: epochs, data_uV (n_ep, n_ch, n_t), sfreq, ch_names, meta (DataFrame),
-    stages (array of str), reject_flag (bool array), methods_present (list)."""
+    stages (array of str), reject_flag (bool array), methods_present (list), meas_date, epoch_len_s.
+
+    `meas_date` is the recording-start datetime MNE carried over from the EDF/Curry header into the .fif
+    (None when the file has none); it is what lets the navigator show a wall-clock time WITHOUT reloading
+    the raw recording. `epoch_len_s` is read back from the epochs themselves and is only a fallback — the
+    authoritative value is `epoch_length_s` in tool 6's params sidecar (see load_params)."""
     epochs = mne.read_epochs(str(fif_path), preload=True, verbose=False)
     meta = epochs.metadata.reset_index(drop=True).copy()
     data_uV = epochs.get_data() * 1e6                       # (n_ep, n_ch, n_t), µV
@@ -233,10 +293,12 @@ def load_participant(fif_path):
     reject_flag = meta['reject_flag'].astype(bool).values
     methods_present = [m for m in METHOD_ORDER
                        if 'flag_' + m in meta.columns]
+    epoch_len_s = float(data_uV.shape[2]) / float(epochs.info['sfreq'])
     return {
         'epochs': epochs, 'data_uV': data_uV, 'sfreq': float(epochs.info['sfreq']),
         'ch_names': list(epochs.ch_names), 'meta': meta, 'stages': stages,
         'reject_flag': reject_flag, 'methods_present': methods_present,
+        'meas_date': epochs.info.get('meas_date'), 'epoch_len_s': epoch_len_s,
     }
 
 
@@ -271,6 +333,71 @@ def load_event_onsets(folder, file_id):
         return df
     except Exception:
         return None
+
+
+def manual_events_path(folder, file_id):
+    """Path of the manual-annotation table for one recording: {file_id}_manual_events.tsv.
+    `folder` is the folder holding the recording and its scored-event companions (the EDF/.cdt folder),
+    so the annotations live BESIDE the scored events they complete and survive any tool-6 reprocessing."""
+    return Path(folder) / f'{file_id}_manual_events.tsv'
+
+
+def load_manual_events(folder, file_id):
+    """Read {file_id}_manual_events.tsv — the events a reviewer added by hand in tool 7's navigator
+    (e.g. an arousal the scorer missed). Returns a DataFrame with MANUAL_EVENT_COLUMNS, or an EMPTY one
+    when the file is absent/unreadable (non-fatal: the tool simply starts with no annotation)."""
+    path = manual_events_path(folder, file_id)
+    empty = pd.DataFrame(columns=MANUAL_EVENT_COLUMNS)
+    if not path.exists():
+        return empty
+    try:
+        df = pd.read_csv(path, sep='\t')
+        if not {'type', 'onset_s'}.issubset(df.columns):
+            return empty
+        for c in MANUAL_EVENT_COLUMNS:                     # tolerate a table written by an older version
+            if c not in df.columns:
+                df[c] = np.nan
+        return df[MANUAL_EVENT_COLUMNS]
+    except Exception:
+        return empty
+
+
+def save_manual_events(folder, file_id, df):
+    """Write {file_id}_manual_events.tsv (sorted by onset). Called on every add/delete so an annotation
+    is durable the moment it is made. Returns the path on success, None on failure (non-fatal)."""
+    path = manual_events_path(folder, file_id)
+    try:
+        out = df.copy()
+        for c in MANUAL_EVENT_COLUMNS:
+            if c not in out.columns:
+                out[c] = np.nan
+        out = out[MANUAL_EVENT_COLUMNS].sort_values('onset_s', kind='stable')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        out.to_csv(path, sep='\t', index=False)
+        return path
+    except Exception:
+        return None
+
+
+def merge_onsets_for_display(onsets, manual):
+    """Event marks to draw on the montage = tool 6's scored onsets + the manual annotations, minus the
+    duplicates. A duplicate appears as soon as tool 6 is re-run with "Include manual annotations" ticked:
+    the manual event is then also in {file_id}_event_onsets.tsv, and the same mark would be drawn twice.
+    Matched on (type, onset rounded to 0.1 s). Returns (scored_df_or_None, manual_df_or_None)."""
+    if manual is None or not len(manual):
+        return onsets, None
+    if onsets is None or not len(onsets):
+        return onsets, manual
+    try:
+        key = lambda df: set(zip(df['type'].astype(str), df['onset_s'].astype(float).round(1)))
+        dup = key(onsets) & key(manual)
+        if dup:
+            keep = [(str(t), round(float(o), 1)) not in dup
+                    for t, o in zip(manual['type'], manual['onset_s'])]
+            manual = manual[keep]
+    except Exception:
+        pass                                    # a malformed table must never break the montage
+    return onsets, (manual if len(manual) else None)
 
 
 # ---------------------------------------------------------------------------
@@ -1053,7 +1180,7 @@ def select_montage_channels(P, ei, thresholds, mode='all', n_worst=16, neighbour
 
 
 def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, title_method=None,
-                       scales=None, show_channels=None):
+                       scales=None, show_channels=None, number_label=None, manual=None):
     """Stacked montage of epoch `ei` (± `context` epochs), MNE-raw-plot style. EEG channels on top
     (current-epoch trace coloured by its recomputed flagging method, steepest-gradient jump boxed), then
     the optional EOG/EMG/ECG context traces below — **each channel TYPE on its own FIXED amplitude scale**
@@ -1066,7 +1193,11 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
     `title_method`: reject-method label to show (tool 7 passes its recomputed value); None -> tool-6 meta.
     `scales`: optional {type: µV per row} overriding DISPLAY_SCALE_UV (e.g. {'EEG': 200}).
     `show_channels`: optional list of channel INDICES to draw (see select_montage_channels) - the
-        high-density lever; None (default) draws every channel, i.e. the classic behaviour."""
+        high-density lever; None (default) draws every channel, i.e. the classic behaviour.
+    `number_label`: optional '(#124 - 23:23:54)' string appended to the epoch number in the title, so the
+        montage names the epoch the way the scoring software does; None (default) -> classic title.
+    `manual`: optional DataFrame of manual annotations (load_manual_events) drawn as DASHED vertical
+        lines, distinct from the solid scored-event lines; None (default) -> none drawn."""
     data, sf, ch_all = P['data_uV'], P['sfreq'], P['ch_names']
     stages, meta = P['stages'], P['meta']
     n_ep, n_ch_all, n_t = data.shape
@@ -1193,6 +1324,23 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
                         va='top', ha='left', fontsize=7, color=METHOD_COLOR['event'], clip_on=True, zorder=7)
                 drew_event = True
 
+    # manual annotations (tool 7's navigator): same geometry as the scored marks but DASHED and in
+    # MANUAL_COLOR, with the label written slightly lower so it cannot overlap a scored label at the
+    # same time point. Their comment is not drawn (it would clutter the trace) — it is in the list below
+    # the montage and in the TSV.
+    drew_manual = False
+    if manual is not None and len(manual):
+        for _, mvr in manual.iterrows():
+            try:
+                x = float(mvr['onset_s']) - win_start
+            except Exception:
+                continue
+            if 0 <= x <= t[-1]:
+                ax.axvline(x, color=MANUAL_COLOR, lw=1.1, ls='--', alpha=0.9, zorder=6)
+                ax.text(x + 0.2, 0.955, str(mvr['type']), transform=ax.get_xaxis_transform(),
+                        va='top', ha='left', fontsize=7, color=MANUAL_COLOR, clip_on=True, zorder=7)
+                drew_manual = True
+
     for k in range(len(idxs) + 1):
         ax.axvline(k * n_t / sf, color='0.85', lw=0.6, zorder=1)
     ax.set_yticks([]); ax.set_xlabel('Time (s)'); ax.set_xlim(t[0], t[-1])
@@ -1202,7 +1350,8 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
                           for k in ['EEG'] + ctx_types_present if k in type_scale)
     # State the subset explicitly: on a dense montage channels are hidden, and that must never be silent.
     sub_txt = f'showing {n_ch}/{n_ch_all} channels; ' if n_ch < n_ch_all else ''
-    ax.set_title(f'Epoch {ei} — stage {stg} — reject_method={rm}   '
+    num_txt = f' {number_label}' if number_label else ''
+    ax.set_title(f'Epoch {ei}{num_txt} — stage {stg} — reject_method={rm}   '
                  f'({sub_txt}context ±{context}; fixed scales: {scale_txt}; '
                  f'coloured = flagging method)', fontsize=10)
 
@@ -1215,6 +1364,8 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
         handles.append(Line2D([0], [0], color=rep, lw=2, label=f'{typ} (context)'))
     if drew_event:
         handles.append(Line2D([0], [0], color=METHOD_COLOR['event'], lw=1.5, label='event onset'))
+    if drew_manual:
+        handles.append(Line2D([0], [0], color=MANUAL_COLOR, lw=1.5, ls='--', label='manual annotation'))
     ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(1.005, 1.0), fontsize=7, framealpha=0.9)
     fig.subplots_adjust(left=0.17, right=0.84, top=0.93, bottom=0.08)
     return fig
@@ -1477,11 +1628,15 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
     return fig
 
 
-def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=None):
+def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=None, visited=None):
     """Section-4 review strip: hypnogram step-line on top; below, a per-epoch bar coloured by the
     final keep/reject decision, with overridden epochs outlined. Returns a Figure.
     `in_scope` (optional (n_ep,) bool): epochs whose stage is out of the selected scope are drawn GREY
-    (excluded — not written to the clean-epo), not green; default None treats every epoch as in scope."""
+    (excluded — not written to the clean-epo), not green; default None treats every epoch as in scope.
+    `visited` (optional (n_ep,) bool or set of epoch indices): epochs actually displayed in the navigator.
+    The ones NOT visited are hatched, so "flagged and reviewed" is distinguishable from "flagged and never
+    looked at" — an override marks a changed decision, nothing marked a confirmed one. Default None keeps
+    the classic un-hatched strip."""
     stages = P['stages']
     n_ep = len(stages)
     stage_y, stage_colors, ytick_pos, ytick_labels = custom_stage_style(custom_stages)
@@ -1512,6 +1667,23 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     ax.bar(idx[excl], np.ones(int(excl.sum())), width=1.0, color='#bdbdbd', align='edge')
     ax.bar(idx[keep], np.ones(int(keep.sum())), width=1.0, color='#2ecc71', align='edge')
     ax.bar(idx[rej], np.ones(int(rej.sum())), width=1.0, color='#c0392b', align='edge')
+    # Epochs never displayed in the navigator: washed out + hatched over their decision colour, so an
+    # untouched stretch of the night is visible at a glance. Skipped entirely when `visited` is None,
+    # which keeps the figure byte-identical for the batch twin and for older callers.
+    unseen_txt = ''
+    if visited is not None:
+        vis = np.zeros(n_ep, dtype=bool)
+        if isinstance(visited, (set, frozenset, list, tuple)):
+            for e in visited:
+                if 0 <= int(e) < n_ep:
+                    vis[int(e)] = True
+        else:
+            vis = np.asarray(visited, dtype=bool)
+        unseen = insc & ~vis
+        if unseen.any():
+            ax.bar(idx[unseen], np.ones(int(unseen.sum())), width=1.0, color='white', alpha=0.5,
+                   hatch='///', edgecolor='0.55', lw=0.0, align='edge')
+        unseen_txt = f', pale/hatched = not reviewed ({int(unseen.sum())})'
     for ei in sorted(overridden):
         ax.plot([ei + 0.5], [1.15], marker='v', color='k', ms=4)
     ax.set_ylim(0, 1.35)
@@ -1519,7 +1691,8 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     ax.set_xlim(0, n_ep)
     ax.set_xlabel('Epoch index', fontsize=9)
     ax.set_title(f'Final decision — green = keep ({int(keep.sum())}), red = reject ({int(rej.sum())}), '
-                 f'grey = excluded/out-of-scope ({int(excl.sum())}), ▼ = overridden ({len(overridden)})',
+                 f'grey = excluded/out-of-scope ({int(excl.sum())}), ▼ = overridden ({len(overridden)})'
+                 f'{unseen_txt}',
                  fontsize=9)
     for sp in ['top', 'right']:
         ax.spines[sp].set_visible(False)
@@ -1531,13 +1704,17 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
 def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, overridden,
                               stages_sel, methods_sel, event_types_sel, thresholds, epoch_length_s=30,
                               dropped_channels=(), epoch_rule='any', epoch_rule_value=20.0,
-                              flags_source=''):
+                              flags_source='', visited=None, epoch_number_offset=1,
+                              n_manual_annotations=0):
     """One-row durable record of a tool-7 manual review — the analogue of tool 7bis's
     `{file_id}_autoreject_decision.tsv`, and the source rebuilt into the global summary. Counts are over
     the IN-SCOPE epochs (the selected stages, i.e. exactly what the clean-epo contains).
     The channel-triage provenance (`dropped_channels`, `epoch_rule`, …) is written as ADDITIVE columns
     whose values are constant on the classic path (no channel dropped, rule 'any').
-    Returns a one-row DataFrame."""
+    `visited` (epoch indices actually displayed), `epoch_number_offset` and `n_manual_annotations` are
+    likewise ADDITIVE — they say how thorough the review was and how it was numbered, which a rejection
+    percentage alone cannot: 5 % rejected after looking at every flagged epoch is not the same result as
+    5 % rejected without opening one. Returns a one-row DataFrame."""
     base = np.asarray(base_reject, dtype=bool)
     fin = np.asarray(final_reject, dtype=bool)
     insc = np.asarray(in_scope, dtype=bool)
@@ -1545,6 +1722,15 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
     n_in = int(insc.sum())
     n_rej = int((insc & fin).sum())
     amp = thresholds.get('amplitude_ptp_uV', {})
+    # "Seen" is counted over the REVIEW SET (the in-scope epochs the selection flagged) — that is what the
+    # navigator walks, so it is the only denominator for which "all reviewed" is reachable.
+    to_review = insc & base
+    n_to_review = int(to_review.sum())
+    seen = np.zeros(len(stages), dtype=bool)
+    for e in (visited or ()):
+        if 0 <= int(e) < len(stages):
+            seen[int(e)] = True
+    n_seen = int((seen & to_review).sum())
     row = {
         'file_id': file_id,
         'n_epochs': int(len(stages)),
@@ -1557,6 +1743,10 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
         'n_overrides': len(overridden),
         'n_rescued': int((insc & base & ~fin).sum()),
         'n_added': int((insc & ~base & fin).sum()),
+        'n_seen': n_seen,
+        'pct_seen': round(100.0 * n_seen / n_to_review, 2) if n_to_review else np.nan,
+        'n_manual_annotations': int(n_manual_annotations),
+        'epoch_number_offset': int(epoch_number_offset),
         'stages_used': '+'.join(stages_sel),
         'methods_used': '+'.join(methods_sel),
         'event_types_used': '+'.join(event_types_sel) if event_types_sel else '',
@@ -1585,9 +1775,11 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
     return pd.DataFrame([row])
 
 
-def manual_decision_html(file_id, decision_row, stage_table_html=''):
+def manual_decision_html(file_id, decision_row, stage_table_html='', manual_events=None):
     """Human-readable recap of a manual review for the report: headline counts + the parameters used,
-    followed by the per-stage x per-method table. Returns an HTML string."""
+    followed by the per-stage x per-method table and, when the reviewer added any, the list of manual
+    annotations (`manual_events`: the DataFrame from load_manual_events; None/empty -> section omitted).
+    Returns an HTML string."""
     r = decision_row.iloc[0]
     def _cell(label, value):
         return (f'<tr><td style="padding:3px 10px;border:1px solid #ccc;">{label}</td>'
@@ -1599,8 +1791,12 @@ def manual_decision_html(file_id, decision_row, stage_table_html=''):
             + _cell('Rejected', f'{r["n_rejected"]}  ({pct} of in-scope)')
             + _cell('Kept &rarr; clean-epo', r['n_kept'])
             + _cell('Flagged by the selection', r['n_flagged_by_selection'])
+            + _cell('Reviewed in the navigator',
+                    ('—' if pd.isna(r.get('pct_seen', np.nan))
+                     else f'{r["n_seen"]} / {r["n_flagged_by_selection"]}  ({r["pct_seen"]:.0f}%)'))
             + _cell('Manual overrides', f'{r["n_overrides"]} '
                                         f'(rescued {r["n_rescued"]}, newly rejected {r["n_added"]})')
+            + _cell('Manual annotations added', r.get('n_manual_annotations', 0) or '—')
             + _cell('Stages used', r['stages_used'])
             + _cell('Methods used', r['methods_used'])
             + _cell('Event types used', r['event_types_used'] or '—')
@@ -1612,9 +1808,25 @@ def manual_decision_html(file_id, decision_row, stage_table_html=''):
                                    else 'any flagged channel'))
             + _cell('Epoch length', f'{r["epoch_length_s"]} s')
             + _cell('Reviewed at', r['reviewed_at']))
+    annot_html = ''
+    if manual_events is not None and len(manual_events):
+        cells = ''
+        for _, a in manual_events.iterrows():
+            cells += ('<tr>'
+                      + ''.join(f'<td style="padding:3px 10px;border:1px solid #ccc;">{a.get(c, "")}</td>'
+                                for c in ['epoch_idx', 'epoch_number', 'clock_time', 'stage', 'type',
+                                          'onset_s', 'comment'])
+                      + '</tr>')
+        head = ''.join(f'<th style="padding:3px 10px;border:1px solid #ccc;">{h}</th>'
+                       for h in ['epoch', 'n°', 'clock', 'stage', 'type', 'onset (s)', 'comment'])
+        annot_html = ('<h4>Manual annotations added during this review</h4>'
+                      '<p style="font-size:.85em;color:#555;">Saved beside the recording as '
+                      f'<code>{file_id}_manual_events.tsv</code> — the scored-event companions are never '
+                      'modified.</p>'
+                      f'<table style="border-collapse:collapse;font-size:.9em;"><tr>{head}</tr>{cells}</table>')
     return (f'<h3>{file_id} — manual epoch rejection</h3>'
             f'<table style="border-collapse:collapse;font-size:.9em;">{body}</table>'
-            + (stage_table_html or ''))
+            + (stage_table_html or '') + annot_html)
 
 
 def save_report_html(out_path, title, figs, table_html):
