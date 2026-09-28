@@ -1,5 +1,5 @@
 """
-_make_tool5_curry.py — Generate 5_quality_overview_curry_voila.ipynb from the EDF original.
+_make_tool6_curry.py — Generate 6_quality_overview_curry_voila.ipynb from the EDF original.
 
 Changes from EDF version:
 - File discovery: .edf → .cdt (bare suffix)
@@ -12,13 +12,13 @@ Changes from EDF version:
   blow up the p99.9 autoscale and crush the real EEG
 
 Run from Inspect_EDF root:
-    & "$env:LOCALAPPDATA\\miniforge3\\envs\\inspect_edf\\python.exe" tools_curry/_make_tool5_curry.py
+    & "$env:LOCALAPPDATA\\miniforge3\\envs\\inspect_edf\\python.exe" tools_curry/_make_tool6_curry.py
 """
 
 import json, os, sys
 
-SRC = "tools/5_quality_overview_voila.ipynb"
-DST = "tools_curry/5_quality_overview_curry_voila.ipynb"
+SRC = "tools/6_quality_overview_voila.ipynb"
+DST = "tools_curry/6_quality_overview_curry_voila.ipynb"
 
 with open(SRC, encoding="utf-8") as f:
     nb = json.load(f)
@@ -75,7 +75,7 @@ cell3 = code_cells[2]  # UI
 cell4 = code_cells[3]  # main processing
 
 print("=== Cell 0: imports ===")
-# NB: the EDF tool-5 import block is wrapped in a try/except ImportError, so these lines are
+# NB: the EDF tool-6 import block is wrapped in a try/except ImportError, so these lines are
 # indented 4 spaces; the injected curry imports are kept inside the try so they are guarded too.
 replace_in_cell(cell0,
     "    import yasa",
@@ -299,7 +299,7 @@ replace_in_cell(cell3,
 # 3g. Remove thresh_row(thresh_bounds,...) from VBox
 replace_in_cell(cell3,
     ",\n        thresh_row(thresh_bounds,\n"
-    "                   'Fraction at EDF physical-range limits — detects hard saturation (declared range)'),\n"
+    "                   'Fraction at EDF physical-range limits: detects hard saturation (declared range)'),\n"
     "        thresh_row(thresh_peaks,",
     ",\n        thresh_row(thresh_peaks,",
     "cell3 remove thresh_bounds VBox row",
@@ -430,7 +430,7 @@ replace_in_cell(cell4,
     "            # LECTURE. On ne garde ainsi que les canaux du montage : la fréquence native de\n"
     "            # l'EEG est préservée (pas de suréchantillonnage vers un canal hors-montage plus\n"
     "            # rapide comme un ECG 512 Hz), et on évite un AssertionError de lecture partielle\n"
-    "            # du lecteur EDF de MNE. Même motif que 6_preprocessing_voila.\n"
+    "            # du lecteur EDF de MNE. Même motif que 7_preprocessing_voila.\n"
     "            selected_channels",
     "sub_config = config_dict[file_id]\n"
     "            selected_channels",
@@ -528,10 +528,10 @@ for cell in nb["cells"]:
         if "quality" in src.lower() or "overview" in src.lower():
             new_src = src.replace(
                 "EDF Quality Overview",
-                "Quality Overview — Curry 9 (.cdt)"
+                "Quality Overview: Curry 9 (.cdt)"
             ).replace(
                 "quality_overview_voila",
-                "5_quality_overview_curry_voila"
+                "6_quality_overview_curry_voila"
             )
             if new_src != src:
                 set_src(cell, new_src)

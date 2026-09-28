@@ -1,5 +1,5 @@
 """
-_make_tool6_curry.py — Generate 6_preprocessing_curry_voila.ipynb from the EDF original.
+_make_tool7_curry.py — Generate 7_preprocessing_curry_voila.ipynb from the EDF original.
 
 Adaptations from the EDF version:
 - File discovery: .edf -> .cdt (bare suffix)
@@ -11,16 +11,16 @@ Adaptations from the EDF version:
 - Curry shared-module imports (curry_header, curry_io).
 
 Everything else (rejection methods, heatmap, per-stage summaries, skip/merge, custom stages,
-sidecar JSON read by tool 7) is format-agnostic and kept byte-for-byte.
+sidecar JSON read by tool 8) is format-agnostic and kept byte-for-byte.
 
 Run from Inspect_EDF root:
-    & "$env:LOCALAPPDATA\\miniforge3\\envs\\inspect_edf\\python.exe" tools_curry/_make_tool6_curry.py
+    & "$env:LOCALAPPDATA\\miniforge3\\envs\\inspect_edf\\python.exe" tools_curry/_make_tool7_curry.py
 """
 
 import json, os, sys
 
-SRC = "tools/6_preprocessing_voila.ipynb"
-DST = "tools_curry/6_preprocessing_curry_voila.ipynb"
+SRC = "tools/7_preprocessing_voila.ipynb"
+DST = "tools_curry/7_preprocessing_curry_voila.ipynb"
 
 with open(SRC, encoding="utf-8") as f:
     nb = json.load(f)
@@ -81,8 +81,8 @@ run_cell = cells[8]
 
 # ===========================================================================
 print("=== Cell 0: markdown intro ===")
-replace_in_cell(md0, "# Preprocessing — Phase 2",
-                "# Preprocessing — Phase 2 — Curry 9 (.cdt)", "md title")
+replace_in_cell(md0, "# Preprocessing: Phase 2",
+                "# Preprocessing: Phase 2, Curry 9 (.cdt)", "md title")
 replace_in_cell(md0, "Select the **paths** (EDF folder,",
                 "Select the **paths** (.cdt folder,", "md paths line")
 replace_in_cell(md0, "[group sub-folders mirroring the EDF folder structure, if any]",
@@ -92,7 +92,7 @@ replace_in_cell(md0, "[group sub-folders mirroring the EDF folder structure, if 
 print("\n=== Cell 1: imports ===")
 # Keep the xml.etree.ElementTree import: _events_df_from_xml now passes through unchanged, so the
 # Curry twin can also read a *.cdt.XML companion if one exists (mirrors the full TXT/CSV/XML chain).
-# NB: the EDF tool-6 import block is wrapped in a try/except ImportError, so these lines are
+# NB: the EDF tool-7 import block is wrapped in a try/except ImportError, so these lines are
 # indented 4 spaces; the injected curry imports are kept inside the try so they are guarded too.
 replace_in_cell(imports,
     "    from specparam import SpectralModel\n"
@@ -329,7 +329,7 @@ OLD_LOAD = (
     "                raw.rename_channels(remap_adapted)\n"
     "            except Exception as e:\n"
     "                with out_run:\n"
-    "                    print(f'[{file_id}] ⚠ Error renaming channels: {e} — channels not renamed.')\n"
+    "                    print(f'[{file_id}] ⚠ Error renaming channels: {e}, channels not renamed.')\n"
     "\n"
     "            # selected_channels porte les noms *remappés* (UI / quality_summary), même\n"
     "            # namespace que raw après le renommage. On retire les canaux désélectionnés AVANT\n"
@@ -337,7 +337,7 @@ OLD_LOAD = (
     "            present = [ch for ch in selected_channels if ch in raw.ch_names]\n"
     "            if not present:\n"
     "                with out_run:\n"
-    "                    print(f'[{file_id}] No selected channels found after renaming — skipped.')\n"
+    "                    print(f'[{file_id}] No selected channels found after renaming: skipped.')\n"
     "                failed.append({'file_id': file_id, 'reason': 'no channels after rename'})\n"
     "                progress.value = idx + 1\n"
     "                continue\n"
@@ -374,7 +374,7 @@ NEW_LOAD = (
     "                raw.rename_channels({k: v for k, v in sub_config['remap'].items() if k in raw.ch_names})\n"
     "            except Exception as e:\n"
     "                with out_run:\n"
-    "                    print(f'[{file_id}] ⚠ Error renaming channels: {e} — channels not renamed.')\n"
+    "                    print(f'[{file_id}] ⚠ Error renaming channels: {e}, channels not renamed.')\n"
     "\n"
     "            # selected_channels carries the *remapped* names (UI / quality_summary), same\n"
     "            # namespace as raw after renaming. We drop the deselected channels BEFORE\n"
@@ -382,7 +382,7 @@ NEW_LOAD = (
     "            present = [ch for ch in selected_channels if ch in raw.ch_names]\n"
     "            if not present:\n"
     "                with out_run:\n"
-    "                    print(f'[{file_id}] No selected channels found after renaming — skipped.')\n"
+    "                    print(f'[{file_id}] No selected channels found after renaming: skipped.')\n"
     "                failed.append({'file_id': file_id, 'reason': 'no channels after rename'})\n"
     "                progress.value = idx + 1\n"
     "                continue\n"
@@ -420,7 +420,7 @@ replace_in_cell(run_cell,
 # Per-channel rejection (memory) + progress feedback: now implemented in the EDF source
 # (cell 2 per-channel compute_rejection_masks; cell 8 del raw / drop epochs_data_uV /
 # reject call + _rej_progress callback). It is format-agnostic and passes through into the
-# Curry twin unchanged — no transformation needed here. See tools/6_preprocessing_voila.ipynb.
+# Curry twin unchanged — no transformation needed here. See tools/7_preprocessing_voila.ipynb.
 
 # ===========================================================================
 print("\n=== Cell 8: [H] context-channels companion (Curry reader) ===")

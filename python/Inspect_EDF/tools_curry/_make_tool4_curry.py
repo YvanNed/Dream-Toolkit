@@ -88,7 +88,7 @@ NEW_MD = (
     "\n"
     "It returns a JSON file `config_param/event_remap.json` (a flat python dict\n"
     "`{raw_label: canonical_label}`, with `null` for labels you choose to ignore) that downstream\n"
-    "tools (epoch rejection in `6_preprocessing_curry`) can use.\n"
+    "tools (epoch rejection in `7_preprocessing_curry`) can use.\n"
     "\n"
     "---\n"
     "**To use this notebook, interact with the widgets and read the output below. You first have to\n"
@@ -102,9 +102,9 @@ NEW_MD = (
     "5. Verify\n"
     "\n"
     "The events are read from the Curry text export `*_ScoredEvents_Export.txt` next to each `.cdt`.\n"
-    "The raw labels are the export strings (often in French, e.g. `Micro-éveil 1 ARO SPONT`); the\n"
+    "The raw labels are the export strings (often in French, e.g. `Micro-éveil 1 ARO SPONT`). The\n"
     "canonical suggestions below now recognize the common French Compumedics/Curry labels (arousals,\n"
-    "apnea, hypopnea, desaturation, snoring…), so most are pre-filled — unusual labels still need a\n"
+    "apnea, hypopnea, desaturation, snoring…), so most are pre-filled. Unusual labels still need a\n"
     "manual choice.\n"
 )
 set_src(md0, NEW_MD)
@@ -312,7 +312,7 @@ replace_in_cell(code,
     '<p>Pick the folder of your .edf database. Each .edf is expected to have a Compumedics/Profusion\n'
     'event companion next to it. Three sources are supported, in priority order:\n'
     '<br>&#x2022; the <b>text export</b> <code>*_ScoredEvents_Export.txt</code> (read first; suffix in\n'
-    'the <b>TXT suffix</b> field — default <code>_ScoredEvents_Export.txt</code>);\n'
+    'the <b>TXT suffix</b> field: default <code>_ScoredEvents_Export.txt</code>);\n'
     '<br>&#x2022; then the <b>CSV</b> <code>*_event_xml.csv</code> (suffix in the <b>CSV suffix</b> field);\n'
     '<br>&#x2022; then, as a fallback, the <code>&lt;ScoredEvents&gt;</code> of the <code>*.edf.XML</code>.\n'
     '<br>&#x2022; Selecting the folder auto-detects both suffixes and refreshes the info lines below.\n'
@@ -342,11 +342,11 @@ replace_in_cell(code,
     'else the <code>*_event_xml.csv</code>) <b>and</b> the <code>&lt;ScoredEvents&gt;</code> of the\n'
     '<code>*.edf.XML</code>, checks that the two describe the same events. Labels are normalized to the\n'
     '<b>canonical vocabulary</b> (so English XML and French <code>.txt</code> compare equal) and events are\n'
-    'matched by <b>type + start time within ±(Match&nbsp;tolerance) seconds</b> (default 1&nbsp;s — the\n'
+    'matched by <b>type + start time within ±(Match&nbsp;tolerance) seconds</b> (default 1&nbsp;s: the\n'
     '<code>.txt</code> truncates clock times to the second and the two exports can round a start\n'
     'differently; set 0 for strict same-second matching). Events paired within the tolerance but carrying\n'
     '<b>different labels</b> are listed in <code>cooccur_label_pairs</code> as candidate same-events whose\n'
-    'names are not yet harmonized (e.g. a cross-language pair) — <b>inspect those pairs to decide whether\n'
+    'names are not yet harmonized (e.g. a cross-language pair): <b>inspect those pairs to decide whether\n'
     'they are truly one event or two distinct events that merely fall within the tolerance</b>. Events with\n'
     'no counterpart show up as only-in-one-source (e.g. an export that omits snoring). Writes\n'
     '<code>config_param/event_source_mismatch.tsv</code>. Opt-in because it reads both files per EDF.</p>\n'
@@ -421,7 +421,7 @@ replace_in_cell(code,
     '                f\'<small style="color:{color};">Detected:&nbsp;\'\n'
     '                f\'{"&nbsp;·&nbsp;".join(parts)}&nbsp;— \'\n'
     '                f\'{best_count}/{len(edfs)} EDF file(s) matched</small>\')\n'
-    '        # --- Event-CSV suffix auto-detection (mirrors 5_quality_overview hypno-suffix block) ---\n'
+    '        # --- Event-CSV suffix auto-detection (mirrors 6_quality_overview hypno-suffix block) ---\n'
     '        all_csv = [f for f in folder.rglob("*") if f.suffix.lower() == ".csv"]\n'
     '        suffix_counts = {}\n'
     '        for edf in edfs:\n'
