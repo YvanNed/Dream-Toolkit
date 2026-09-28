@@ -1312,8 +1312,8 @@ the expected physiology.
 ### 10. Sleep macrostructure — the classical PSG summary metrics (`10_sleep_macrostructure_voila.ipynb`)
 
 Computes, per recording, the metrics printed on a clinical PSG report — **TIB, sleep onset, SOL, SPT, TST,
-WASO, SE (+ SME), latency to N1/N2/N3/REM, stage duration and % of TST, slow sleep (N2 + N3), AHI with its
-OAI/CAI/MAI/HI sub-indices, PLM index, arousal index**, and optionally **ODI** and **T90** — from the
+WASO, SE (+ SME), latency to N1/N2/N3/REM, stage duration and % of TST, AHI with its
+OAI/CAI/MAI/HI sub-indices, PLM index, arousal index**, and optionally **ODI** and **T90 / T88** — from the
 **complete scored hypnogram** (tool 3), the **scored events** (tool 4's `event_remap.json`) and the **EDF
 header**. Definitions follow `tools/sleep_metrics_formulas.txt`. Voila only (no Jupyter twin, no batch
 `.py`, no Curry twin, **no per-participant HTML report** — the outputs are per-recording TSVs plus one
@@ -1344,7 +1344,7 @@ unchanged.
 `sol = onset·ep`; `spt = (last − onset + 1)·ep`; `tst = n(N1|N2|N3|R in [onset, last])·ep`;
 `waso = n(W in [onset, last])·ep`; `other = n(neither in [onset, last])·ep`; `se = 100·tst/tib`;
 `sme = 100·tst/spt`; `lat_X = (first X in [onset, last])·ep` (NaN when the stage never occurs);
-`X_min = n(X in [onset, last])·ep`, `X_pct = 100·X_min/tst`; `slow_sleep = N2 + N3`. Stage durations are
+`X_min = n(X in [onset, last])·ep`, `X_pct = 100·X_min/tst` (the former `slow_sleep = N2 + N3` metric was removed: too project-specific). Stage durations are
 counted **within SPT**, which equals the whole-night count under the default onset rule; under the
 variants the sleep epochs before onset are excluded and reported (`sleep_before_onset` info check), so
 the four percentages always sum to 100. **No sleep** between lights-off and lights-on → TIB only, every
@@ -1408,7 +1408,12 @@ depth value is counted regardless of the threshold and reported. **T90** (`cb_t9
 channel (auto-detected `spo2|sao2`, editable) is read for the in-bed window; samples ≤ 0 or below the
 `Artefact floor (%)` (default 50) are discarded (`spo2_artifact_pct`, warning above 10 %); `t90_min` =
 time < `SpO2 threshold (%)` (default 90), `t90_pct_tst = 100·t90/TST`, plus `spo2_mean_pct` and
-`spo2_nadir_pct`; a channel stored as a fraction (max ≤ 1) is rescaled to % with a warning.
+`spo2_nadir_pct`; a channel stored as a fraction (max ≤ 1) is rescaled to % with a warning. **T88**
+(`t88_sleep_min`, same read, no extra cost): time with SpO2 **≤ 88 %** (fixed ICSD-3-TR adult threshold,
+independent of the T90 widget) on the valid samples of the **sleep epochs only** (each sample mapped to its
+epoch through `cls['sleep_mask']`; NaN without sleep) — ICSD-3-TR sleep-related hypoxemia (G47.36),
+criterion A = ≥ 5 min, raised as an `icsd_hypoxemia` **info** check (criterion B, not explained by
+hypoventilation / OSA, is clinical). T90 itself is unchanged.
 
 **Consistency checks** (`run_checks` + the checks raised along the way; `status` ∈ ok / info / warning /
 fail): `spt_consistency` (SPT = TST + WASO + other), `se_range` (0–100), `tst_le_spt_le_tib`,
@@ -1441,11 +1446,20 @@ event window), an isolated one to a scoring / file problem.
 
 **Glossary and indicative ranges.** A markdown glossary cell (definition, formula, typical use,
 indicative healthy-adult range per metric) and the `REFERENCE_RANGES` dictionary in the setup cell
-(editable; e.g. SOL < 30 min, SE > 85 %, WASO < 30 min, REM latency 60–120 min, N1 2–5 %, N2 45–55 %,
-N3 13–23 %, REM 20–25 %, AHI < 5 with the 5/15/30 severity bands, PLM index < 15/h, arousal index
-< 15/h, ODI < 5/h, T90 < 10 % of TST, nadir ≥ 88 %). They are **indicative only** (age-, medication-
-and first-night-dependent), used to shade the report figures and to fill the glossary — never as a
-diagnostic cut-off, which the notebook and the report both state.
+(editable; both must say the same thing). Values checked against **Ohayon et al. 2004** (Sleep 27:1255,
+meta-analysis of healthy subjects, values read on the fitted age curves of its Fig. 1, R&K scoring) and the
+**ICSD-3-TR**: SOL < 30 min, TST 360–480 min, WASO < 30 min (young adults; +10 min/decade from 30 y),
+SE > 85 %, REM latency 50–110 min, N1 2–8 %, N2 45–58 %, N3 13–23 % (young adults), REM 18–25 %, AHI < 5
+with the 5/15/30 bands (AASM 1999), PLM index < 15/h (ICSD-3-TR), T88 < 5 min (ICSD-3-TR hypoxemia); the
+notes give the values at older ages. Arousal index < 15/h, ODI < 5/h, SME > 90 %, T90 < 10 % of TST, mean
+SpO2 ≥ 94 % and nadir ≥ 88 % are labelled **convention** (no normative reference; T90 and the nadir are
+explicitly *not* ICSD criteria). **Where each value comes from** lives in `REFERENCE_SOURCES` (metric,
+value, source, remark) + `REFERENCES` (citations) in the setup cell, rendered by `references_html()` both in a
+**collapsible `<details>` section at the end of the notebook** (last cell) and in a *References* section of
+the database report — edit a range in `REFERENCE_RANGES` **and** its row in `REFERENCE_SOURCES` + the
+glossary cell. They are **indicative only** (age-, medication- and first-night-dependent), used to shade
+the report figures and to fill the glossary — never as a diagnostic cut-off, which the notebook and the
+report both state.
 
 **Outputs — data → `<root>/derivatives/features_macrostructure/<subtree>/`** (`<root>` = the output folder,
 default the data folder; `<subtree>` = the EDF folder relative to the data folder):
@@ -1457,10 +1471,10 @@ other_stage_policy, event_count_window, epoch_length_s, n_epochs_hypno, n_epochs
 event_source, n_events_total, n_unmapped_events, n_events_outside_window, has_spo2, odi_threshold_pct,
 odi_rule, spo2_channel, light_channel, recording_start, edf_duration_min, n_warnings`). Metric keys:
 `tib_min, sol_min, spt_min, tst_min, waso_min, other_min, se_pct, sme_pct, lat_n1_min, lat_n2_min,
-lat_n3_min, lat_rem_min, n1_min, n2_min, n3_min, rem_min, n1_pct, n2_pct, n3_pct, rem_pct,
-slow_sleep_min, slow_sleep_pct` [macrostructure]; `n_apnea_obstructive, n_apnea_central, n_apnea_mixed,
+lat_n3_min, lat_rem_min, n1_min, n2_min, n3_min, rem_min, n1_pct, n2_pct, n3_pct, rem_pct`
+[macrostructure]; `n_apnea_obstructive, n_apnea_central, n_apnea_mixed,
 n_hypopnea, oai, cai, mai, hi, ahi` [respiratory]; `n_plm, plm_index` [plm]; `n_arousal, arousal_index`
-[arousal]; `n_desaturation, odi` [odi]; `t90_min, t90_pct_tst, spo2_mean_pct, spo2_nadir_pct,
+[arousal]; `n_desaturation, odi` [odi]; `t90_min, t90_pct_tst, t88_sleep_min, spo2_mean_pct, spo2_nadir_pct,
 spo2_artifact_pct` [spo2] — all declared once in the `METRICS` registry (the single source for the TSV,
 the glossary, the workbook and the report).
 **Outputs — database → `<root>/reports_features_macrostructure/`**: **`global_sleep_metrics.tsv`** (the
@@ -1471,7 +1485,7 @@ at every run and by Section 5), `global_sleep_metrics_checks.tsv`, `sleep_metric
 `sleep_metrics_database_report.html` (summary, time-in-bed overview per recording coloured by lights
 source with the sleep period overlaid, metric distributions with the indicative bands shaded — AHI/ODI
 with the severity bands —, checks summary, participant table, comparison section when run, glossary,
-**Where to look**), `sleep_metrics_failed.tsv` (always rewritten, header only when nothing failed) and
+**References**, **Where to look**), `sleep_metrics_failed.tsv` (always rewritten, header only when nothing failed) and
 `comparison_with_reference.tsv` (`file_id, metric, ours, reference, ref_column, diff, tol, status` with
 `status` ∈ match / mismatch / missing_ours / missing_reference / missing_both / not_in_reference_table).
 The notebook's closing **Outputs — where to look** cell and the report's section of the same name
