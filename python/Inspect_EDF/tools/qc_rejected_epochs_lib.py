@@ -37,7 +37,8 @@ from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
 
 import mne
-from scipy.signal import spectrogram as sp_spectrogram
+from scipy.signal import spectrogram as sp_spectrogram   # only used by the commented-out epoch
+                                                        # spectrogram panel (plot_epoch_detail)
 
 try:
     from specparam import SpectralModel
@@ -1407,9 +1408,14 @@ def _draw_channel_topomap(ax, P, values, title, cmap='viridis', mask=None):
 
 def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin=2.0,
                       clean_mask=None, table_rows=None, topomap=None):
-    """2×2 detail panel for epoch `ei`: per-channel PSD (top-left) with the per-channel metric table right
-    beside it (top-right); mean band power + 50 Hz ratio and the epoch spectrogram on the bottom row
-    (the spectrogram's channel selector sits under the figure in the navigator).
+    """Detail panel for epoch `ei`: per-channel PSD (left) with the per-channel metric table right beside
+    it (right), plus the two topomaps on a high-density montage.
+
+    The former bottom row — mean band power + 50 Hz ratio, and the epoch spectrogram — is COMMENTED OUT:
+    neither helped decide on a single epoch (the band bars only restate what the PSD already shows, and the
+    spectrogram needed its own channel selector to tell what the montage tells faster). The code is kept in
+    place, commented, so it can be restored in one edit; `spectro_ch_idx` is therefore currently unused but
+    kept in the signature so every caller keeps working.
 
     PSD panel (same units/scale as the Section-2 overlay — semilogy, µV²/Hz, linear frequency axis, so
     non-experts read both plots the same way):
@@ -1428,7 +1434,7 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
     `topomap` (optional bool): draw the spatial panels (peak-to-peak + 1/f MAE). None (default) = auto:
         on when the epochs carry electrode positions AND the montage is dense. Curry keeps a real
         DigMontage through tool 6; position-less EDF simply never gets the panel."""
-    from scipy.signal import welch as _welch
+    from scipy.signal import welch as _welch   # only used by the commented-out 50 Hz-ratio block
     data, sf, ch = P['data_uV'], P['sfreq'], P['ch_names']
     stg = P['stages'][ei]
     n_ch = len(ch)
@@ -1450,24 +1456,24 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
             return '1f_error'
         return None
 
-    # Layout: PSD (top-left) with the metric table right beside it (top-right); mean band power and the
-    # epoch spectrogram on the bottom row. The spectrogram's channel selector sits under the figure in the UI.
-    # A third column carries the two topomaps when positions are available (high-density montages).
+    # Layout: ONE row - PSD (left) + the metric table beside it (right); the extra columns carry the two
+    # topomaps when positions are available (high-density montages). The former bottom row (mean band
+    # power + epoch spectrogram) is commented out - see the docstring. To restore it: go back to a 2-row
+    # gridspec (height_ratios=[1.15, 1.0], hspace=0.35, figsize height 8), uncomment ax_band/ax_spec here
+    # and blocks (c)/(d) below, and put the topomaps back on gs[0, 2] / gs[1, 2].
     if topomap:
-        fig = plt.figure(figsize=(16.5, 8))
-        gs = fig.add_gridspec(2, 3, width_ratios=[1.35, 1.0, 0.75], height_ratios=[1.15, 1.0],
-                              wspace=0.25, hspace=0.35)
+        fig = plt.figure(figsize=(18, 4.8))
+        gs = fig.add_gridspec(1, 4, width_ratios=[1.35, 1.0, 0.62, 0.62], wspace=0.25)
         ax_topo_ptp = fig.add_subplot(gs[0, 2])
-        ax_topo_mae = fig.add_subplot(gs[1, 2])
+        ax_topo_mae = fig.add_subplot(gs[0, 3])
     else:
-        fig = plt.figure(figsize=(13, 8))
-        gs = fig.add_gridspec(2, 2, width_ratios=[1.35, 1.0], height_ratios=[1.15, 1.0],
-                              wspace=0.2, hspace=0.35)
+        fig = plt.figure(figsize=(13, 4.8))
+        gs = fig.add_gridspec(1, 2, width_ratios=[1.35, 1.0], wspace=0.2)
         ax_topo_ptp = ax_topo_mae = None
     ax_psd = fig.add_subplot(gs[0, 0])
     ax_table = fig.add_subplot(gs[0, 1])
-    ax_band = fig.add_subplot(gs[1, 0])
-    ax_spec = fig.add_subplot(gs[1, 1])
+    # ax_band = fig.add_subplot(gs[1, 0])   # mean band power   - commented out (see the docstring)
+    # ax_spec = fig.add_subplot(gs[1, 1])   # epoch spectrogram - commented out (see the docstring)
 
     # (a) PSD — clean stage reference in the background, flagged channels highlighted
     ax = ax_psd
@@ -1581,42 +1587,46 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
                   else f'\n{len(show_rows)}/{n_ch} channels shown ({len(breached)} flagged)')
     ax.set_title(f'Per-channel metrics (stage {stg}) — red = over threshold{subset_txt}', fontsize=9)
 
-    # (c) mean band power + 50 Hz ratio (worst channel — line noise is per channel, so report the
-    #     worst one by name instead of tying this panel to the spectrogram's channel selector)
-    ax = ax_band
-    bp = band_powers(freqs, psds_uV2[ei].mean(axis=0))
-    ax.bar([b[0] for b in BANDS], [bp[b[0]] for b in BANDS], color='#807dba')
-    ax.set_ylabel('Band power (µV²)')
-    ax.set_yscale('log')
-    ax.set_title('Mean band power (across channels)', fontsize=9)
-    if sf / 2 > 52:
-        worst_ratio, worst_ch = np.nan, ''
-        for c in range(n_ch):
-            f2, p2 = _welch(data[ei, c], fs=sf, nperseg=min(int(4 * sf), data.shape[-1]))
-            def _bp(lo, hi):
-                m = (f2 >= lo) & (f2 < hi)
-                return float(np.trapz(p2[m], f2[m])) if m.sum() > 1 else np.nan
-            nb = _bp(40, 47)
-            r = _bp(48, 52) / nb if nb and nb > 0 else np.nan
-            if not np.isnan(r) and (np.isnan(worst_ratio) or r > worst_ratio):
-                worst_ratio, worst_ch = r, ch[c]
-        txt = (f'50 Hz / 40–47 Hz = {worst_ratio:.2f}  (worst: {worst_ch})'
-               if not np.isnan(worst_ratio) else '50 Hz ratio n/a')
-        ax.text(0.98, 0.96, txt, transform=ax.transAxes, ha='right', va='top', fontsize=8)
-    else:
-        ax.text(0.98, 0.96, '50 Hz ratio n/a (Nyquist ≤ 52 Hz)',
-                transform=ax.transAxes, ha='right', va='top', fontsize=8)
-
-    # (d) epoch spectrogram of the selected channel — separates a brief transient artefact (vertical
-    #     smear) from a sustained contamination (horizontal band, e.g. line noise).
-    ax = ax_spec
-    f3, t3, Sxx = sp_spectrogram(data[ei, spectro_ch_idx], fs=sf,
-                                 nperseg=int(1.5 * sf), noverlap=int(0.75 * sf))
-    fm = f3 <= 40
-    ax.pcolormesh(t3, f3[fm], 10 * np.log10(Sxx[fm] + 1e-12), shading='auto', cmap='viridis')
-    ax.set_ylabel('Frequency (Hz)')
-    ax.set_xlabel('Time (s)')
-    ax.set_title(f'Epoch spectrogram — {ch[spectro_ch_idx]}', fontsize=9)
+    # --- COMMENTED OUT: the two bottom panels of the old 2x2 detail figure ---------------------
+    # Neither helped decide on ONE epoch: the band bars restate what the PSD above already shows,
+    # and the spectrogram needed its own channel selector to say what the montage says faster.
+    # Kept verbatim so it can be restored (see the layout note above for the gridspec to put back).
+    # # (c) mean band power + 50 Hz ratio (worst channel — line noise is per channel, so report the
+    # #     worst one by name instead of tying this panel to the spectrogram's channel selector)
+    # ax = ax_band
+    # bp = band_powers(freqs, psds_uV2[ei].mean(axis=0))
+    # ax.bar([b[0] for b in BANDS], [bp[b[0]] for b in BANDS], color='#807dba')
+    # ax.set_ylabel('Band power (µV²)')
+    # ax.set_yscale('log')
+    # ax.set_title('Mean band power (across channels)', fontsize=9)
+    # if sf / 2 > 52:
+    #     worst_ratio, worst_ch = np.nan, ''
+    #     for c in range(n_ch):
+    #         f2, p2 = _welch(data[ei, c], fs=sf, nperseg=min(int(4 * sf), data.shape[-1]))
+    #         def _bp(lo, hi):
+    #             m = (f2 >= lo) & (f2 < hi)
+    #             return float(np.trapz(p2[m], f2[m])) if m.sum() > 1 else np.nan
+    #         nb = _bp(40, 47)
+    #         r = _bp(48, 52) / nb if nb and nb > 0 else np.nan
+    #         if not np.isnan(r) and (np.isnan(worst_ratio) or r > worst_ratio):
+    #             worst_ratio, worst_ch = r, ch[c]
+    #     txt = (f'50 Hz / 40–47 Hz = {worst_ratio:.2f}  (worst: {worst_ch})'
+    #            if not np.isnan(worst_ratio) else '50 Hz ratio n/a')
+    #     ax.text(0.98, 0.96, txt, transform=ax.transAxes, ha='right', va='top', fontsize=8)
+    # else:
+    #     ax.text(0.98, 0.96, '50 Hz ratio n/a (Nyquist ≤ 52 Hz)',
+    #             transform=ax.transAxes, ha='right', va='top', fontsize=8)
+#
+    # # (d) epoch spectrogram of the selected channel — separates a brief transient artefact (vertical
+    # #     smear) from a sustained contamination (horizontal band, e.g. line noise).
+    # ax = ax_spec
+    # f3, t3, Sxx = sp_spectrogram(data[ei, spectro_ch_idx], fs=sf,
+    #                              nperseg=int(1.5 * sf), noverlap=int(0.75 * sf))
+    # fm = f3 <= 40
+    # ax.pcolormesh(t3, f3[fm], 10 * np.log10(Sxx[fm] + 1e-12), shading='auto', cmap='viridis')
+    # ax.set_ylabel('Frequency (Hz)')
+    # ax.set_xlabel('Time (s)')
+    # ax.set_title(f'Epoch spectrogram — {ch[spectro_ch_idx]}', fontsize=9)
 
     # (e) spatial view — only a high-density montage with real electrode positions can show this, and
     #     it answers the question that dominates at 32-64 channels: ONE bad electrode (a hot spot) or

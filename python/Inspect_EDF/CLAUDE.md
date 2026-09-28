@@ -196,7 +196,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (loud when the decision was *changed*), a `reviewed n/N` HTML strip and the Section-4 strip
   (`plot_review_strip(..., visited=)`, `None` ⇒ byte-identical), persisted as the additive `seen` column +
   `n_seen`/`pct_seen` and re-read at load.
-  An **optional "Show EOG/EMG context" toggle** (default off) stacks the EOG-L/EOG-R/EMG traces under the
+  An **optional "Show EOG/EMG context" toggle** (**default ON**; a no-op when tool 6 wrote no companion) stacks the EOG-L/EOG-R/EMG traces under the
   per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
   aligned by epoch index) — still no raw-EDF reload; absent companion → toggle is a no-op. The navigator
   header names the **event type(s)** that flagged the epoch, read from the `.fif` `evt_<type>` metadata
