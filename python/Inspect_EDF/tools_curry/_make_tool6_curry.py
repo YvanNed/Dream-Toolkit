@@ -1,26 +1,24 @@
 """
-_make_tool6_curry.py — Generate 6_preprocessing_curry_voila.ipynb from the EDF original.
+_make_tool5_curry.py — Generate 5_quality_overview_curry_voila.ipynb from the EDF original.
 
-Adaptations from the EDF version:
-- File discovery: .edf -> .cdt (bare suffix)
-- Signal loading: mne.io.read_raw_edf(include=...) -> mne.io.read_raw_curry + pick + load_data
-- Remove MNE suffix-duplicate helpers (drop_suffix_duplicates, adapt_remap_dict_to_suffixes)
-  — Curry has a single global sampling rate and no -0/-1 duplicate channels.
-- Events: Compumedics CSV/XML companions -> Curry French text export (*_ScoredEvents_Export.txt),
-  parsed via curry_io.load_events_curry using the .cdt.dpo recording-start datetime.
-- Curry shared-module imports (curry_header, curry_io).
-
-Everything else (rejection methods, heatmap, per-stage summaries, skip/merge, custom stages,
-sidecar JSON read by tool 7) is format-agnostic and kept byte-for-byte.
+Changes from EDF version:
+- File discovery: .edf → .cdt (bare suffix)
+- Signal loading: mne.io.read_raw_edf → mne.io.read_raw_curry with pick + load_data
+- No EDF physical bounds: remove bounds_pct metric, get_phys_bounds_uV, thresh_bounds widget
+- No MNE suffix-duplicate helpers: remove drop_suffix_duplicates, adapt_remap_dict_to_suffixes
+- Curry shared-module imports added (curry_header, curry_io)
+- Time-series / histogram amplitude axes capped at a wide physiological ceiling
+  (DISPLAY_YLIM_UV = 500 uV): DC-coupled data has no export clipping, so drift can
+  blow up the p99.9 autoscale and crush the real EEG
 
 Run from Inspect_EDF root:
-    & "$env:LOCALAPPDATA\\miniforge3\\envs\\inspect_edf\\python.exe" tools_curry/_make_tool6_curry.py
+    & "$env:LOCALAPPDATA\\miniforge3\\envs\\inspect_edf\\python.exe" tools_curry/_make_tool5_curry.py
 """
 
 import json, os, sys
 
-SRC = "tools/6_preprocessing_voila.ipynb"
-DST = "tools_curry/6_preprocessing_curry_voila.ipynb"
+SRC = "tools/5_quality_overview_voila.ipynb"
+DST = "tools_curry/5_quality_overview_curry_voila.ipynb"
 
 with open(SRC, encoding="utf-8") as f:
     nb = json.load(f)
@@ -41,66 +39,47 @@ def set_src(cell, text):
         cell["source"] = text
 
 
-def replace_in_cell(cell, old, new, label):
+def replace_in_cell(cell, old, new, label, allow_missing=False):
     src = get_src(cell)
     if old not in src:
-        errors.append(label)
-        print(f"  X NOT FOUND: {label}")
+        if not allow_missing:
+            errors.append(label)
+            print(f"  ⚠ NOT FOUND: {label}")
         return False
     count = src.count(old)
     if count > 1:
-        print(f"  ! MULTIPLE ({count}) matches: {label} — replacing all")
+        print(f"  ⚠ MULTIPLE ({count}) matches: {label} — replacing all")
     set_src(cell, src.replace(old, new))
-    print(f"  ok {label}")
+    print(f"  ✓ {label}")
     return True
 
 
-def replace_all_cells(old, new, label, required=True):
+def replace_all_cells(old, new, label):
     found = False
     for cell in nb["cells"]:
         src = get_src(cell)
         if old in src:
             set_src(cell, src.replace(old, new))
             found = True
-    if not found and required:
+    if not found:
         errors.append(label)
-        print(f"  X NOT FOUND in any cell: {label}")
+        print(f"  ⚠ NOT FOUND in any cell: {label}")
     else:
-        print(f"  ok {label}")
+        print(f"  ✓ {label}")
 
 
-cells = nb["cells"]
-# Index map (from inspection): 0=md, 1=imports, 2=shared fns, 3=md, 4=paths UI,
-# 5=md, 6=params UI, 7=md, 8=run
-md0     = cells[0]
-imports = cells[1]
-shared  = cells[2]
-ui_paths = cells[4]
-ui_param = cells[6]
-run_cell = cells[8]
+code_cells = [c for c in nb["cells"] if c["cell_type"] == "code"]
+cell0 = code_cells[0]  # imports
+cell1 = code_cells[1]  # shared functions
+cell3 = code_cells[2]  # UI
+cell4 = code_cells[3]  # main processing
 
-# ===========================================================================
-print("=== Cell 0: markdown intro ===")
-replace_in_cell(md0, "# Preprocessing — Phase 2",
-                "# Preprocessing — Phase 2 — Curry 9 (.cdt)", "md title")
-replace_in_cell(md0, "Select the **paths** (EDF folder,",
-                "Select the **paths** (.cdt folder,", "md paths line")
-replace_in_cell(md0, "[group sub-folders mirroring the EDF folder structure, if any]",
-                "[group sub-folders mirroring the .cdt folder structure, if any]", "md output structure")
-
-# ===========================================================================
-print("\n=== Cell 1: imports ===")
-# Keep the xml.etree.ElementTree import: _events_df_from_xml now passes through unchanged, so the
-# Curry twin can also read a *.cdt.XML companion if one exists (mirrors the full TXT/CSV/XML chain).
-# NB: the EDF tool-6 import block is wrapped in a try/except ImportError, so these lines are
+print("=== Cell 0: imports ===")
+# NB: the EDF tool-5 import block is wrapped in a try/except ImportError, so these lines are
 # indented 4 spaces; the injected curry imports are kept inside the try so they are guarded too.
-replace_in_cell(imports,
-    "    from specparam import SpectralModel\n"
-    "    from statsmodels.nonparametric.smoothers_lowess import lowess\n"
-    "except ImportError as e:",
-    "    from specparam import SpectralModel\n"
-    "    from statsmodels.nonparametric.smoothers_lowess import lowess\n"
-    "    import sys as _sys\n"
+replace_in_cell(cell0,
+    "    import yasa",
+    "    import yasa\n    import sys as _sys\n"
     "    # curry shared modules — found whether Voila is launched from the repo root or tools_curry/\n"
     "    _here = os.getcwd()\n"
     "    for _cand in (_here, os.path.join(_here, 'tools_curry'),\n"
@@ -111,15 +90,14 @@ replace_in_cell(imports,
     "                _sys.path.insert(0, _cand)\n"
     "            break\n"
     "    from curry_header import read_curry_header\n"
-    "    from curry_io import rec_start_from_header\n"
-    "except ImportError as e:",
-    "curry imports")
+    "    from curry_io import read_curry_signal, load_hypnogram_curry",
+    "cell0 curry imports",
+)
 
-# ===========================================================================
-print("\n=== Cell 2: shared functions ===")
+print("\n=== Cell 1: shared functions ===")
 
-# 2a. Remove MNE suffix-duplicate helpers (both functions + trailing blanks)
-replace_in_cell(shared,
+# 1a. Remove drop_suffix_duplicates
+replace_in_cell(cell1,
     "def drop_suffix_duplicates(raw):\n"
     "    \"\"\"Keep only the -0 variant when MNE creates -0/-1 duplicates for repeated channel names.\"\"\"\n"
     "    groups = {}\n"
@@ -134,7 +112,13 @@ replace_in_cell(shared,
     "    if to_drop:\n"
     "        raw.drop_channels(to_drop)\n"
     "    return raw, to_drop\n"
-    "\n\n"
+    "\n\n",
+    "",
+    "remove drop_suffix_duplicates",
+)
+
+# 1b. Remove adapt_remap_dict_to_suffixes
+replace_in_cell(cell1,
     "def adapt_remap_dict_to_suffixes(raw, remap_dict):\n"
     "    \"\"\"Handle MNE's -0 suffix when the remap config uses the base channel name.\"\"\"\n"
     "    ch_set = set(raw.ch_names)\n"
@@ -147,339 +131,426 @@ replace_in_cell(shared,
     "    return new_remap\n"
     "\n\n",
     "",
-    "remove suffix helpers")
-
-# 2b. Swap ONLY the recording-start reader: EDF fixed-header offsets -> Curry .cdt header.
-# The rest of the event section (event_companion_paths, _events_df_from_txt/csv/xml, and the
-# load_events TXT->CSV->XML dispatcher) is format-agnostic and passes through unchanged, so the
-# Curry twin mirrors the same TXT-first / CSV / XML fallback chain. The function name is kept so
-# the passed-through load_events dispatcher (which calls read_edf_start_datetime) still resolves.
-OLD_STARTDT = (
-    "def read_edf_start_datetime(edf_path):\n"
-    "    \"\"\"Read the EDF recording-start datetime from the fixed header (offset 168 = date\n"
-    "    'dd.mm.yy', 176 = time 'hh.mm.ss'), applying the EDF 2-digit-year clipping\n"
-    "    (00-84 -> 20xx, 85-99 -> 19xx). Header-only read; returns a datetime or None on failure.\"\"\"\n"
-    "    try:\n"
-    "        with open(edf_path, 'rb') as f:\n"
-    "            f.seek(168)\n"
-    "            date_str = f.read(8).decode('ascii', 'replace').strip()   # dd.mm.yy\n"
-    "            time_str = f.read(8).decode('ascii', 'replace').strip()   # hh.mm.ss\n"
-    "        dd, mm, yy = (int(x) for x in date_str.split('.'))\n"
-    "        hh, mi, ss = (int(x) for x in time_str.split('.'))\n"
-    "        year = 2000 + yy if yy <= 84 else 1900 + yy\n"
-    "        return datetime.datetime(year, mm, dd, hh, mi, ss)\n"
-    "    except Exception:\n"
-    "        return None"
+    "remove adapt_remap_dict_to_suffixes",
 )
-NEW_STARTDT = (
-    "def read_edf_start_datetime(cdt_path):\n"
-    "    \"\"\"Curry recording-start datetime, read from the .cdt header (curry_header) rather than the\n"
-    "    EDF fixed header. Returns a datetime or None on failure. (Name kept for the shared\n"
-    "    load_events dispatcher, which converts the .txt clock times to seconds using it.)\"\"\"\n"
-    "    try:\n"
-    "        hdr = read_curry_header(str(cdt_path))\n"
-    "        return rec_start_from_header(hdr)\n"
-    "    except Exception:\n"
-    "        return None"
+
+# 1c. Remove get_phys_bounds_uV
+replace_in_cell(cell1,
+    "def get_phys_bounds_uV(extras, ch_idx):\n"
+    "    \"\"\"\n"
+    "    Reconstruct physical_min/max (in uV) from MNE _raw_extras.\n"
+    "    MNE 1.9 stores physical_max but not physical_min explicitly, and it keeps\n"
+    "    physical_max / offset in the channel's *native* EDF physical unit (uV, mV,\n"
+    "    V...), not in uV. extras['units'] is the multiplier from that native unit to\n"
+    "    volts (1e-6 for uV, 1e-3 for mV, 1.0 for V), so multiplying by units * 1e6\n"
+    "    brings the bounds into uV, matching raw.get_data() * 1e6. Without this, a\n"
+    "    channel declared in mV (e.g. Compumedics EOG/EMG/ECG, physical_max=1.0 mV)\n"
+    "    is compared against a 1.0 uV bound -- 1000x too small -- flagging ~100% of\n"
+    "    samples as 'at EDF bounds'.\n"
+    "    For symmetric 16-bit EDF: physical_min = -physical_max + 2*offset.\n"
+    "    Returns (phys_min_uV, phys_max_uV).\n"
+    "    \"\"\"\n"
+    "    to_uV = float(extras['units'][ch_idx]) * 1e6\n"
+    "    phys_max = float(extras['physical_max'][ch_idx]) * to_uV\n"
+    "    offset = float(extras['offsets'][ch_idx]) * to_uV\n"
+    "    return -phys_max + 2 * offset, phys_max\n"
+    "\n\n",
+    "",
+    "remove get_phys_bounds_uV",
 )
-replace_in_cell(shared, OLD_STARTDT, NEW_STARTDT, "start-datetime reader")
 
-# ===========================================================================
-print("\n=== Cell 4: paths UI ===")
+# 1d. compute_signal_metrics: remove phys bounds parameters
+replace_in_cell(cell1,
+    "def compute_signal_metrics(sig_uV, phys_min_uV, phys_max_uV):\n"
+    "    \"\"\"Compute all quality metrics for one EEG channel (unfiltered signal, in uV).\"\"\"",
+    "def compute_signal_metrics(sig_uV):\n"
+    "    \"\"\"Compute all quality metrics for one EEG channel (unfiltered signal, in uV).\"\"\"",
+    "compute_signal_metrics signature",
+)
 
-# 4a. First discovery line (in _detect_hypno_suffixes; note the double space after edf_files)
-replace_in_cell(ui_paths,
-    "edf_files  = [f for f in sorted(edf_folder.rglob('*')) if f.suffix.lower() == '.edf' and not f.name.startswith('._')]",
-    "curry_files  = [f for f in sorted(curry_folder.rglob('*')) if f.suffix == '.cdt' and not f.name.startswith('._')]",
-    "cell4 discovery #1")
+# 1e. Remove bounds_pct computation block
+replace_in_cell(cell1,
+    "    # EDF physical bounds: fraction of samples at/near the header declared limits.\n"
+    "    # Detects saturation at the EDF dynamic range boundary (hard clipping).\n"
+    "    if not (np.isnan(phys_min_uV) or np.isnan(phys_max_uV)):\n"
+    "        bounds_pct = float(\n"
+    "            ((sig_uV <= phys_min_uV + 0.5) | (sig_uV >= phys_max_uV - 0.5)).mean()\n"
+    "        ) * 100\n"
+    "    else:\n"
+    "        bounds_pct = 0.0\n"
+    "\n"
+    "    # Histogram + Savitzky-Golay",
+    "    # Histogram + Savitzky-Golay",
+    "remove bounds_pct computation",
+)
 
-# 4b. Second discovery line (in _update_existing_reports_info; single space)
-replace_in_cell(ui_paths,
-    "edf_files = [f for f in sorted(edf_folder.rglob('*')) if f.suffix.lower() == '.edf' and not f.name.startswith('._')]",
-    "curry_files = [f for f in sorted(curry_folder.rglob('*')) if f.suffix == '.cdt' and not f.name.startswith('._')]",
-    "cell4 discovery #2")
+# 1f. Remove bounds_pct from return dict
+replace_in_cell(cell1,
+    "        'bounds_pct': bounds_pct,\n",
+    "",
+    "remove bounds_pct from return dict",
+)
 
-# 4c. Event detection: the EDF source now has TWO passthrough blocks (TXT export + CSV) plus two
-# suffix widgets, both suitable for Curry as-is (TXT default _ScoredEvents_Export.txt, CSV default
-# _event_xml.csv — some Curry datasets also ship a CSV). Only the outer loop variable is migrated
-# (edf -> cdt) so each block scans the .cdt stems; the file scans (edf_folder.rglob) and file
-# lists (edf_files) are handled by the global renames below.
-replace_in_cell(ui_paths,
-    "        for edf in edf_files:\n"
-    "            for t in all_txt_evt:\n"
-    "                if os.path.normcase(t.name).startswith(os.path.normcase(edf.stem)):\n"
-    "                    suf = t.name[len(edf.stem):]\n",
-    "        for cdt in curry_files:\n"
-    "            for t in all_txt_evt:\n"
-    "                if os.path.normcase(t.name).startswith(os.path.normcase(cdt.stem)):\n"
-    "                    suf = t.name[len(cdt.stem):]\n",
-    "cell4 TXT detection loop var")
-replace_in_cell(ui_paths,
-    "        for edf in edf_files:\n"
-    "            for c in all_csv:\n"
-    "                if os.path.normcase(c.name).startswith(os.path.normcase(edf.stem)):\n"
-    "                    suf = c.name[len(edf.stem):]\n",
-    "        for cdt in curry_files:\n"
-    "            for c in all_csv:\n"
-    "                if os.path.normcase(c.name).startswith(os.path.normcase(cdt.stem)):\n"
-    "                    suf = c.name[len(cdt.stem):]\n",
-    "cell4 CSV detection loop var")
-# Both event-detection else branches say "next to the EDF files" -> ".cdt files".
-replace_all_cells("next to the EDF files", "next to the .cdt files",
-                  "event detection EDF-files text", required=False)
+# 1g. Remove bounds_pct check from flag_channel
+replace_in_cell(cell1,
+    "    if metrics['bounds_pct'] > thresholds['bounds_pct']:\n"
+    "        reasons.append(f\"bounds_pct={metrics['bounds_pct']:.2f}% > {thresholds['bounds_pct']}%\")\n",
+    "",
+    "remove bounds_pct flag_channel check",
+)
 
-# 4d. Hypno suffix detection: migrate loop var names only.
-# The event-export exclusion is NOT done here any more: the EDF source now excludes 'event'
-# suffixes from the AUTO-SELECTION itself (and keeps every .txt in the displayed list), so it
-# passes through to the twin. Filtering all_txt here would additionally hide the event export
-# from the displayed candidate list, which we want visible. See SPEC, Hypnogram-suffix
-# auto-detection.
-replace_in_cell(ui_paths,
-    "        all_txt = [f for f in edf_folder.rglob('*') if f.suffix.lower() == '.txt']\n"
-    "        suffix_counts = {}\n"
-    "        for edf in edf_files:\n"
-    "            for txt in all_txt:\n"
-    "                if os.path.normcase(txt.name).startswith(os.path.normcase(edf.stem)):\n"
-    "                    suffix = txt.name[len(edf.stem):]\n"
-    "                    suffix_counts[suffix] = suffix_counts.get(suffix, 0) + 1\n",
-    "        all_txt = [f for f in curry_folder.rglob('*') if f.suffix.lower() == '.txt']\n"
-    "        suffix_counts = {}\n"
-    "        for cdt in curry_files:\n"
-    "            for txt in all_txt:\n"
-    "                if os.path.normcase(txt.name).startswith(os.path.normcase(cdt.stem)):\n"
-    "                    suffix = txt.name[len(cdt.stem):]\n"
-    "                    suffix_counts[suffix] = suffix_counts.get(suffix, 0) + 1\n",
-    "cell4 hypno detection")
+# 1h. Remove bounds_pct from OVERVIEW_KEY_METRICS (shared by generate_dataset_overview and the
+# per-participant "All electrodes" figures; 4-space indent — the literal KEY_METRICS/LABELS blocks
+# were lifted to these module-level constants).
+replace_in_cell(cell1,
+    "    \"std_uV\", \"flat_pct\", \"bounds_pct\", \"hist_extreme_pct\",",
+    "    \"std_uV\", \"flat_pct\", \"hist_extreme_pct\",",
+    "OVERVIEW_KEY_METRICS remove bounds_pct",
+)
 
-# 4d2. Docstring mentioning "EDF folder"
-replace_in_cell(ui_paths,
-    '"""Auto-detect hypnogram .txt suffixes in the EDF folder and populate the widget."""',
-    '"""Auto-detect hypnogram .txt suffixes in the .cdt folder and populate the widget."""',
-    "cell4 docstring")
+# 1i. Remove bounds_pct from ALL_NUMERIC
+replace_in_cell(cell1,
+    "        \"flat_pct\", \"bounds_pct\", \"hist_extreme_pct\",",
+    "        \"flat_pct\", \"hist_extreme_pct\",",
+    "ALL_NUMERIC remove bounds_pct",
+)
 
-# 4e. fc_config title (from select&remap_channels_edf -> curry)
-replace_in_cell(ui_paths,
-    "fc_config.title = '<b>remap_reref_persubject.json</b> (from select&amp;remap_channels_edf) :'",
-    "fc_config.title = '<b>remap_reref_persubject.json</b> (from select&amp;remap_channels_curry) :'",
-    "cell4 fc_config title")
+# 1j. Remove bounds_pct from OVERVIEW_METRIC_LABELS (4-space indent — lifted to a module constant)
+replace_in_cell(cell1,
+    "    \"bounds_pct\": \"At EDF bounds (%)\",\n",
+    "",
+    "OVERVIEW_METRIC_LABELS remove bounds_pct",
+)
 
-# 4f. Suffix widgets pass through unchanged: the EDF 'Event TXT suffix' (_ScoredEvents_Export.txt)
-# and 'Event CSV suffix' (_event_xml.csv) defaults both suit Curry, so the twin mirrors both fields.
+# 1k. Remove bounds_pct from STAGE_METRICS (inside generate_dataset_overview)
+replace_in_cell(cell1,
+    "STAGE_METRICS = [\"mean_uV\", \"std_uV\", \"flat_pct\", \"bounds_pct\", \"hist_extreme_pct\", \"p99_abs_uV\", \"p999_abs_uV\"]",
+    "STAGE_METRICS = [\"mean_uV\", \"std_uV\", \"flat_pct\", \"hist_extreme_pct\", \"p99_abs_uV\", \"p999_abs_uV\"]",
+    "STAGE_METRICS remove bounds_pct",
+)
 
-# ===========================================================================
-print("\n=== Cell 6: params UI (event counter) ===")
+# 1l. Update comment referencing bounds_pct in flag_channel
+replace_in_cell(cell1,
+    "    # the declared EDF physical range, undetectable via bounds_pct alone).",
+    "    # the declared EDF physical range.",
+    "comment bounds_pct alone",
+)
 
-# 6a. Discovery line in _count_affected_epochs
-replace_in_cell(ui_param,
-    "edf_cand = [f for f in edf_folder.rglob('*')\n"
-    "                        if os.path.normcase(f.stem) == os.path.normcase(fid) and f.suffix.lower() == '.edf']",
-    "cdt_cand = [f for f in curry_folder.rglob('*')\n"
-    "                        if os.path.normcase(f.stem) == os.path.normcase(fid) and f.suffix == '.cdt']",
-    "cell6 discovery")
+print("\n=== Cell 3: UI ===")
 
-# 6b. "Select the EDF data folder" message
-replace_in_cell(ui_param,
-    "print('Select the EDF data folder in Section 1 first.')",
-    "print('Select the .cdt data folder in Section 1 first.')",
-    "cell6 EDF msg")
+# 3a. File discovery: .edf → .cdt
+replace_in_cell(cell3,
+    "edf_files = [f for f in sorted(data_folder.rglob('*')) if f.suffix.lower() == '.edf' and not f.name.startswith('._')]\n"
+    "    n_total = len(edf_files)\n"
+    "    if n_total == 0:\n"
+    "        existing_reports_info.value = '<small style=\"color:#888;\">No EDF files found in selected folder (recursive scan).</small>'\n",
+    "cdt_files = [f for f in sorted(data_folder.rglob('*')) if f.suffix == '.cdt' and not f.name.startswith('._')]\n"
+    "    n_total = len(cdt_files)\n"
+    "    if n_total == 0:\n"
+    "        existing_reports_info.value = '<small style=\"color:#888;\">No .cdt files found in selected folder (recursive scan).</small>'\n",
+    "cell3 cdt discovery",
+)
 
-# ===========================================================================
-print("\n=== Cell 8: run ===")
+# 3b. (removed) The n_existing report count is now a plain `for f in edf_files` loop that
+# also checks the per-file _quality_metrics.tsv; the global edf_files → cdt_files rename below
+# translates it, so no targeted replacement is needed here.
 
-# 8a-pre. Ground-truth recording discovery in on_load_participants (.edf -> .cdt)
-replace_in_cell(run_cell,
-    "    rec_paths = [f for f in sorted(edf_folder.rglob('*'))\n"
-    "                 if f.suffix.lower() == '.edf' and not f.name.startswith('._')]",
-    "    rec_paths = [f for f in sorted(curry_folder.rglob('*'))\n"
-    "                 if f.suffix == '.cdt' and not f.name.startswith('._')]",
-    "cell8 on_load recording discovery")
+# 3c. Hypno suffix detection loop
+replace_in_cell(cell3,
+    "    for edf in edf_files:\n"
+    "        for txt in all_txt:\n"
+    "            if os.path.normcase(txt.name).startswith(os.path.normcase(edf.stem)):\n"
+    "                suffix = txt.name[len(edf.stem):]\n"
+    "                suffix_counts[suffix] = suffix_counts.get(suffix, 0) + 1",
+    "    for cdt in cdt_files:\n"
+    "        for txt in all_txt:\n"
+    "            if os.path.normcase(txt.name).startswith(os.path.normcase(cdt.stem)):\n"
+    "                suffix = txt.name[len(cdt.stem):]\n"
+    "                suffix_counts[suffix] = suffix_counts.get(suffix, 0) + 1",
+    "cell3 hypno suffix loop",
+)
 
-# 8a. Discovery line
-replace_in_cell(run_cell,
-    "edf_candidates = [f for f in edf_folder.rglob('*') if os.path.normcase(f.stem) == os.path.normcase(file_id) and f.suffix.lower() == '.edf']",
-    "cdt_candidates = [f for f in curry_folder.rglob('*') if os.path.normcase(f.stem) == os.path.normcase(file_id) and f.suffix == '.cdt']",
-    "cell8 discovery")
+# 3d. EDF files matched text
+replace_in_cell(cell3,
+    "f'&nbsp;— {best_count}/{n_total} EDF files matched</small>'",
+    "f'&nbsp;— {best_count}/{n_total} .cdt files matched</small>'",
+    "cell3 EDF files matched text",
+)
 
-# 8b. Load + rename block
-OLD_LOAD = (
-    "            # [load] preload=False : on ne lit que l'en-tête pour l'instant.\n"
-    "            # include= utilise les noms d'ORIGINE du JSON (remap.keys()). Passer include= à la\n"
-    "            # LECTURE (et non un pick paresseux après coup) est important : (a) ça exclut\n"
-    "            # d'emblée les canaux hors-montage à fréquence plus élevée (ex. ECG 512 Hz), ce qui\n"
-    "            # évite un AssertionError du lecteur EDF de MNE sur la lecture partielle ET préserve\n"
-    "            # la fréquence native de l'EEG ; (b) ça évite tout dictionnaire de remap inversé.\n"
+# 3e. fc_config title
+replace_in_cell(cell3,
+    "fc_config.title = '<b>Select remap/reref config JSON</b> (from select&amp;remap_channels_edf):'",
+    "fc_config.title = '<b>Select remap/reref config JSON</b> (from select&amp;remap_channels_curry):'",
+    "cell3 fc_config title",
+)
+
+# 3f. Remove thresh_bounds widget (between thresh_flat and thresh_peaks)
+replace_in_cell(cell3,
+    ")\nthresh_bounds = widgets.BoundedFloatText(\n"
+    "    value=1.0, min=0.0, max=100.0, step=0.1,\n"
+    "    description='bounds_pct (%) >',\n"
+    "    style={'description_width': '160px'},\n"
+    "    layout=widgets.Layout(width='300px')\n"
+    ")\nthresh_peaks = widgets.BoundedIntText(",
+    ")\nthresh_peaks = widgets.BoundedIntText(",
+    "cell3 remove thresh_bounds widget",
+)
+
+# 3g. Remove thresh_row(thresh_bounds,...) from VBox
+replace_in_cell(cell3,
+    ",\n        thresh_row(thresh_bounds,\n"
+    "                   'Fraction at EDF physical-range limits — detects hard saturation (declared range)'),\n"
+    "        thresh_row(thresh_peaks,",
+    ",\n        thresh_row(thresh_peaks,",
+    "cell3 remove thresh_bounds VBox row",
+)
+
+print("\n=== Cell 4: main processing ===")
+
+# 4a. edf_files discovery and progress setup
+replace_in_cell(cell4,
+    "edf_files = [f for f in sorted(data_folder.rglob('*')) if f.suffix.lower() == '.edf' and not f.name.startswith('._')]\n"
+    "        if not edf_files:\n"
+    "            with out:\n"
+    "                print(f'No EDF files found in {data_folder}')\n"
+    "            return\n"
+    "\n"
+    "        progress.max = len(edf_files)\n"
+    "        progress.value = 0\n",
+    "cdt_files = [f for f in sorted(data_folder.rglob('*')) if f.suffix == '.cdt' and not f.name.startswith('._')]\n"
+    "        if not cdt_files:\n"
+    "            with out:\n"
+    "                print(f'No .cdt files found in {data_folder}')\n"
+    "            return\n"
+    "\n"
+    "        progress.max = len(cdt_files)\n"
+    "        progress.value = 0\n",
+    "cell4 cdt discovery",
+)
+
+# 4b. Remove bounds_pct from thresholds dict
+replace_in_cell(cell4,
+    "thresholds = {\n"
+    "            'flat_pct': thresh_flat.value,\n"
+    "            'bounds_pct': thresh_bounds.value,\n"
+    "            'n_peaks': thresh_peaks.value,\n",
+    "thresholds = {\n"
+    "            'flat_pct': thresh_flat.value,\n"
+    "            'n_peaks': thresh_peaks.value,\n",
+    "cell4 remove bounds_pct from thresholds",
+)
+
+# 4c. Remove 'At EDF bounds (%)' from interpretations.update
+replace_in_cell(cell4,
+    "            'At EDF bounds (%)': f'flag if&nbsp;&gt;&nbsp;{thresholds[\"bounds_pct\"]:g}%&nbsp;&mdash; threshold defined manually in the notebook ; typical threshold is ??',\n",
+    "",
+    "cell4 remove At EDF bounds interpretations",
+)
+
+# 4d. Replace EDF loading block + phys bounds + drop suffix + rename
+replace_in_cell(cell4,
+    "# --- Load EDF ---\n"
     "            try:\n"
     "                raw = mne.io.read_raw_edf(\n"
-    "                    str(edf_path), preload=False, encoding='latin-1',\n"
-    "                    include=list(sub_config.get('remap', {}).keys()), verbose=False\n"
+    "                    str(edf_path), preload=True, encoding='latin-1',\n"
+    "                    include=selected_channels, verbose=False\n"
     "                )\n"
     "            except Exception as e:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] Error loading EDF: {e}')\n"
+    "                with out:\n"
+    "                    print(f'ERROR loading {file_id}: {e}')\n"
     "                failed.append({'file_id': file_id, 'reason': f'EDF loading: {e}'})\n"
-    "                progress.value = idx + 1\n"
     "                continue\n"
     "\n"
+    "            # --- Save physical bounds before channel manipulation ---\n"
+    "            extras = raw._raw_extras[0]\n"
+    "            phys_bounds_by_name = {}\n"
+    "            for idx, ch in enumerate(raw.ch_names):\n"
+    "                base = ch.rsplit('-', 1)[0] if (ch.endswith('-0') or ch.endswith('-1')) else ch\n"
+    "                phys_bounds_by_name[base] = get_phys_bounds_uV(extras, idx)\n"
+    "\n"
+    "            # --- Drop suffix duplicates, build remap, rename ---\n"
     "            raw, _ = drop_suffix_duplicates(raw)\n"
-    "\n"
-    "            # [B] Renommage canaux origine -> remappé — non-fatal en soi, mais la sélection\n"
-    "            # qui suit en dépend (cf. garde-fou 'present' juste après).\n"
+    "            remap_adapted = adapt_remap_dict_to_suffixes(raw, sub_config['remap'])\n"
+    "            final_to_orig = {}\n"
+    "            for orig, new in remap_adapted.items():\n"
+    "                base = orig.rsplit('-', 1)[0] if (orig.endswith('-0') or orig.endswith('-1')) else orig\n"
+    "                final_to_orig[new] = base\n"
+    "            raw.rename_channels(remap_adapted)\n"
+    "            sf = raw.info['sfreq']\n",
+    "# --- Load Curry signal (pick selected channels before loading to limit memory use) ---\n"
     "            try:\n"
-    "                remap_adapted = adapt_remap_dict_to_suffixes(raw, sub_config['remap'])\n"
-    "                raw.rename_channels(remap_adapted)\n"
+    "                raw = mne.io.read_raw_curry(str(edf_path), preload=False, verbose='ERROR')\n"
+    "                _present = [ch for ch in selected_channels if ch in raw.ch_names]\n"
+    "                raw.pick(_present)\n"
+    "                raw.load_data()\n"
     "            except Exception as e:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] ⚠ Error renaming channels: {e} — channels not renamed.')\n"
-    "\n"
-    "            # selected_channels porte les noms *remappés* (UI / quality_summary), même\n"
-    "            # namespace que raw après le renommage. On retire les canaux désélectionnés AVANT\n"
-    "            # load_data() pour ne lire sur disque que les canaux finalement gardés.\n"
-    "            present = [ch for ch in selected_channels if ch in raw.ch_names]\n"
-    "            if not present:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] No selected channels found after renaming — skipped.')\n"
-    "                failed.append({'file_id': file_id, 'reason': 'no channels after rename'})\n"
-    "                progress.value = idx + 1\n"
-    "                continue\n"
-    "            to_drop = [ch for ch in raw.ch_names if ch not in present]\n"
-    "            if to_drop:\n"
-    "                raw.drop_channels(to_drop)\n"
-    "            try:\n"
-    "                raw.load_data()   # ne lit sur disque que les canaux gardés\n"
-    "            except Exception as e:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] Error reading EDF data: {e}')\n"
-    "                failed.append({'file_id': file_id, 'reason': f'EDF data loading: {e}'})\n"
-    "                progress.value = idx + 1\n"
-    "                continue\n"
-)
-NEW_LOAD = (
-    "            # [load] Read the Curry header lazily (preload=False). All Curry channels share a\n"
-    "            # single sampling rate, so the EDF include=-at-read trick is unnecessary: we pick the\n"
-    "            # montage channels (original names from remap.keys()) then load only those from disk.\n"
-    "            try:\n"
-    "                raw = mne.io.read_raw_curry(str(cdt_path), preload=False, verbose='ERROR')\n"
-    "                _montage = [ch for ch in sub_config.get('remap', {}).keys() if ch in raw.ch_names]\n"
-    "                raw.pick(_montage)\n"
-    "            except Exception as e:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] Error loading Curry file: {e}')\n"
+    "                with out:\n"
+    "                    print(f'ERROR loading {file_id}: {e}')\n"
     "                failed.append({'file_id': file_id, 'reason': f'Curry loading: {e}'})\n"
-    "                progress.value = idx + 1\n"
     "                continue\n"
     "\n"
-    "            # [B] Rename original channel names -> remapped names — non-fatal in itself, but the\n"
-    "            # selection just below depends on it (cf. the 'present' guard).\n"
-    "            try:\n"
-    "                raw.rename_channels({k: v for k, v in sub_config['remap'].items() if k in raw.ch_names})\n"
-    "            except Exception as e:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] ⚠ Error renaming channels: {e} — channels not renamed.')\n"
-    "\n"
-    "            # selected_channels carries the *remapped* names (UI / quality_summary), same\n"
-    "            # namespace as raw after renaming. We drop the deselected channels BEFORE\n"
-    "            # load_data() so only the kept channels are read from disk.\n"
-    "            present = [ch for ch in selected_channels if ch in raw.ch_names]\n"
-    "            if not present:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] No selected channels found after renaming — skipped.')\n"
-    "                failed.append({'file_id': file_id, 'reason': 'no channels after rename'})\n"
-    "                progress.value = idx + 1\n"
-    "                continue\n"
-    "            to_drop = [ch for ch in raw.ch_names if ch not in present]\n"
-    "            if to_drop:\n"
-    "                raw.drop_channels(to_drop)\n"
-    "            try:\n"
-    "                raw.load_data()   # reads only the kept channels from disk\n"
-    "            except Exception as e:\n"
-    "                with out_run:\n"
-    "                    print(f'[{file_id}] Error reading Curry data: {e}')\n"
-    "                failed.append({'file_id': file_id, 'reason': f'Curry data loading: {e}'})\n"
-    "                progress.value = idx + 1\n"
-    "                continue\n"
+    "            raw.rename_channels({k: v for k, v in sub_config['remap'].items() if k in raw.ch_names})\n"
+    "            sf = raw.info['sfreq']\n",
+    "cell4 replace load block",
 )
-replace_in_cell(run_cell, OLD_LOAD, NEW_LOAD, "cell8 load block")
 
-# 8b2. Validation ERROR message listing required paths (user-facing)
-replace_in_cell(run_cell,
-    "print('ERROR: Please select the required paths (EDF folder, JSON config, output). '",
-    "print('ERROR: Please select the required paths (.cdt folder, JSON config, output). '",
-    "cell8 validation msg")
+# --- Curry-only: the high-pass control/apply now lives natively in the EDF notebook (inherited
+# here). DC-coupled Curry data benefits from it, so flip its default ON and adjust the label.
+# The default high-pass value is also lowered (0.1 Hz) since Curry has no hardware high-pass. ---
+replace_in_cell(cell3,
+    "    value=False, description='Activate high-pass',\n",
+    "    value=True, description='Activate high-pass (DC-coupled Curry data)',\n",
+    "cell3 high-pass default (DC-coupled ON)")
 
-# 8c. "EDF not found" -> ".cdt not found" (print + reason)
-replace_in_cell(run_cell,
-    "print(f'[{file_id}] EDF not found in {edf_folder}')",
-    "print(f'[{file_id}] .cdt not found in {curry_folder}')",
-    "cell8 not-found print")
-replace_in_cell(run_cell,
-    "failed.append({'file_id': file_id, 'reason': 'EDF not found'})",
-    "failed.append({'file_id': file_id, 'reason': '.cdt not found'})",
-    "cell8 not-found reason")
+replace_in_cell(cell3,
+    "hp_freq = widgets.BoundedFloatText(\n"
+    "    value=0.5, min=0.01, max=5.0, step=0.05,\n",
+    "hp_freq = widgets.BoundedFloatText(\n"
+    "    value=0.1, min=0.01, max=5.0, step=0.05,\n",
+    "cell3 high-pass default freq (Curry)")
 
-# ===========================================================================
-# Per-channel rejection (memory) + progress feedback: now implemented in the EDF source
-# (cell 2 per-channel compute_rejection_masks; cell 8 del raw / drop epochs_data_uV /
-# reject call + _rej_progress callback). It is format-agnostic and passes through into the
-# Curry twin unchanged — no transformation needed here. See tools/6_preprocessing_voila.ipynb.
+# 3h. Acquisition scan: the EDF byte parser (read_edf_sf_highpass) does not apply to .cdt, so read
+# the Curry header via MNE instead. Curry is DC-coupled → no acquisition high-pass (none/DC).
+# (read_edf_sf_highpass stays defined but unused in the Curry twin — harmless.)
+replace_in_cell(cell3,
+    "                _sf, _hp = read_edf_sf_highpass(_edf, _keep or None)\n",
+    "                _r = mne.io.read_raw_curry(str(_edf), preload=False, verbose='ERROR')\n"
+    "                _sf, _hp = f\"{_r.info['sfreq']:.0f} Hz\", 'none/DC'\n",
+    "cell3 acq scan reader (Curry)")
 
-# ===========================================================================
-print("\n=== Cell 8: [H] context-channels companion (Curry reader) ===")
-# The [H] block reads the declared EOG/EMG/ECG context channels to persist a *_context-epo.fif.
-# For Curry, swap the EDF reader for read_raw_curry and drop the (removed) suffix-dedup helper.
-# Run BEFORE the global edf_path -> cdt_path rename so these OLD strings still match.
-replace_in_cell(run_cell,
-    "                    # Read only the declared context channels (include=), exactly like the EEG read:\n"
-    "                    # otherwise MNE upsamples every channel in the file to its max rate (e.g. a fast\n"
-    "                    # ECG), which was raising 'bad allocation' on mixed-rate montages.\n"
-    "                    ctx_probe = mne.io.read_raw_edf(str(edf_path), preload=False, encoding='latin-1',\n"
-    "                                                    include=list(orig_to_role.keys()), verbose=False)\n"
-    "                    ctx_probe, _ = drop_suffix_duplicates(ctx_probe)\n",
-    "                    ctx_probe = mne.io.read_raw_curry(str(edf_path), preload=False, verbose='ERROR')\n",
-    "cell8 [H] context reader")
+replace_in_cell(cell3,
+    "            '<small style=\"color:#555;\">Selected channels (EDF header): '\n",
+    "            '<small style=\"color:#555;\">Selected channels (Curry header): '\n",
+    "cell3 acq scan label (Curry)")
 
-# ===========================================================================
-print("\n=== Global identifier renames (ordered, longest-first) ===")
-# Order matters: replace the longer identifiers before their prefixes.
-for old, new in [
-    ("edf_candidates", "cdt_candidates"),   # before edf_cand
-    ("edf_rel_str",    "cdt_rel_str"),      # before edf_rel
-    ("edf_folder",     "curry_folder"),
-    ("edf_files",      "curry_files"),
-    ("edf_cand",       "cdt_cand"),
-    ("edf_path",       "cdt_path"),
-    ("edf_rel",        "cdt_rel"),
-    ("fc_edf",         "fc_curry"),
-]:
-    replace_all_cells(old, new, f"{old} -> {new}", required=False)
+# 4e. Remove EDF-specific comment before selected_channels
+replace_in_cell(cell4,
+    "sub_config = config_dict[file_id]\n"
+    "            # include= utilise les noms d'ORIGINE de l'EDF (les clés du remap), évalué à la\n"
+    "            # LECTURE. On ne garde ainsi que les canaux du montage : la fréquence native de\n"
+    "            # l'EEG est préservée (pas de suréchantillonnage vers un canal hors-montage plus\n"
+    "            # rapide comme un ECG 512 Hz), et on évite un AssertionError de lecture partielle\n"
+    "            # du lecteur EDF de MNE. Même motif que 6_preprocessing_voila.\n"
+    "            selected_channels",
+    "sub_config = config_dict[file_id]\n"
+    "            selected_channels",
+    "cell4 remove EDF comment",
+)
 
-# Remaining user-facing "No EDF files found" text (2 spots in cell 4)
-replace_all_cells("No EDF files found in selected folder",
-                  "No .cdt files found in selected folder",
-                  "No EDF files text", required=False)
+# 4f. Remove phys_bounds lookup + update compute_signal_metrics call (main channel loop)
+replace_in_cell(cell4,
+    "                orig_base = final_to_orig.get(ch, ch)\n"
+    "                phys_min, phys_max = phys_bounds_by_name.get(orig_base, (np.nan, np.nan))\n"
+    "                m = compute_signal_metrics(sig_uV, phys_min, phys_max)\n",
+    "                m = compute_signal_metrics(sig_uV)\n",
+    "cell4 remove phys_bounds call",
+)
 
-# ===========================================================================
+# 4f2. Update compute_signal_metrics call in per-stage loop
+replace_in_cell(cell4,
+    "                        sm = compute_signal_metrics(stage_sig, phys_min, phys_max)\n",
+    "                        sm = compute_signal_metrics(stage_sig)\n",
+    "cell4 remove phys_bounds from stage call",
+)
+
+# 4g. Remove bounds_pct from rows_summary
+replace_in_cell(cell4,
+    "                    'p999_abs_uV': m['p999_abs_uV'],\n"
+    "                    'flat_pct': m['flat_pct'],\n"
+    "                    'bounds_pct': m['bounds_pct'],\n"
+    "                    'hist_extreme_pct': m['hist_extreme_pct'],\n",
+    "                    'p999_abs_uV': m['p999_abs_uV'],\n"
+    "                    'flat_pct': m['flat_pct'],\n"
+    "                    'hist_extreme_pct': m['hist_extreme_pct'],\n",
+    "cell4 remove bounds_pct from rows_summary",
+)
+
+# 4h. Remove bounds_pct from rows_stage_summary
+replace_in_cell(cell4,
+    "                            'flat_pct': sm['flat_pct'],\n"
+    "                            'bounds_pct': sm['bounds_pct'],\n"
+    "                            'hist_extreme_pct': sm['hist_extreme_pct'],\n",
+    "                            'flat_pct': sm['flat_pct'],\n"
+    "                            'hist_extreme_pct': sm['hist_extreme_pct'],\n",
+    "cell4 remove bounds_pct from rows_stage_summary",
+)
+
+# 4i. Remove 'At EDF bounds (%)' from metrics table in report
+replace_in_cell(cell4,
+    "                        ('At EDF bounds (%)', f\"{m['bounds_pct']:.3f}%\"),\n"
+    "                    ",
+    "                    ",
+    "cell4 remove At EDF bounds from metrics table",
+)
+
+# 4j. progress.value at end of loop
+replace_in_cell(cell4,
+    "        progress.value = len(edf_files)\n",
+    "        progress.value = len(cdt_files)\n",
+    "cell4 progress.value end",
+)
+
+# 4k. Curry-only: cap the shared time-series / histogram amplitude limit at a wide
+# physiological ceiling. DC-coupled Curry data (no export clipping) can carry large
+# drift/artifacts that blow up the p99.9 autoscale and crush the real EEG; capping keeps
+# ~all physiological signal visible while clean low-amplitude channels still zoom in below.
+replace_in_cell(cell4,
+    "            _p999 = [m['p999_abs_uV'] for m in ch_metrics.values()]\n"
+    "            y_lim_ts = float(max(_p999)) if _p999 else 1.0\n",
+    "            # DC-coupled data carries no export clipping, so drift/artifacts can push the\n"
+    "            # p99.9 autoscale far past physiological range and crush the real EEG. Cap the\n"
+    "            # shared time-series / histogram amplitude limit at a wide physiological ceiling\n"
+    "            # (uV); clean low-amplitude channels still auto-zoom below the cap.\n"
+    "            DISPLAY_YLIM_UV = 500.0\n"
+    "            _p999 = [m['p999_abs_uV'] for m in ch_metrics.values()]\n"
+    "            y_lim_ts = min(float(max(_p999)), DISPLAY_YLIM_UV) if _p999 else 1.0\n",
+    "cell4 cap time-series y-limit at physiological ceiling",
+)
+
+print("\n=== Global replacements ===")
+
+# Global: edf_path → cdt_path (only in code cells, cell 4 effectively)
+replace_all_cells("edf_path", "cdt_path", "edf_path → cdt_path")
+
+# Global: edf_files → cdt_files (cells 3 and 4 residual after targeted replacements)
+replace_all_cells("edf_files", "cdt_files", "edf_files → cdt_files")
+
+# Global: edf_relative → cdt_relative (variable naming consistency)
+replace_all_cells("edf_relative", "cdt_relative", "edf_relative → cdt_relative")
+
+# Global: edf_reports_dir → cdt_reports_dir
+replace_all_cells("edf_reports_dir", "cdt_reports_dir", "edf_reports_dir → cdt_reports_dir")
+
+# Update markdown title cell
+for cell in nb["cells"]:
+    if cell["cell_type"] == "markdown":
+        src = get_src(cell)
+        if "quality" in src.lower() or "overview" in src.lower():
+            new_src = src.replace(
+                "EDF Quality Overview",
+                "Quality Overview — Curry 9 (.cdt)"
+            ).replace(
+                "quality_overview_voila",
+                "5_quality_overview_curry_voila"
+            )
+            if new_src != src:
+                set_src(cell, new_src)
+                print("  ✓ markdown title updated")
+
+# ---------------------------------------------------------------------------
+# Validate and write
+# ---------------------------------------------------------------------------
 print("\n=== Validation ===")
 try:
     out_str = json.dumps(nb, ensure_ascii=False, indent=1)
     json.loads(out_str)
     print(f"JSON valid. n_cells={len(nb['cells'])}")
 except Exception as e:
-    print(f"X JSON invalid after edits: {e}")
+    print(f"✗ JSON invalid after edits: {e}")
     sys.exit(1)
 
-# Compile every code cell as a syntax gate
-import ast
-for i, cell in enumerate(nb["cells"]):
-    if cell["cell_type"] == "code":
-        src = get_src(cell)
-        try:
-            ast.parse(src)
-        except SyntaxError as e:
-            print(f"X SyntaxError in code cell {i}: {e}")
-            errors.append(f"syntax cell {i}")
-
 if errors:
-    print(f"\n! {len(errors)} issue(s): {errors}")
+    print(f"\n⚠ {len(errors)} pattern(s) not found: {errors}")
 
 with open(DST, "w", encoding="utf-8") as f:
     json.dump(nb, f, ensure_ascii=False, indent=1)
