@@ -141,6 +141,10 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   Unmapped labels **not counted** + warned. Copies tool 7's event chain (its XML parser gains an additive
   `Desaturation` column). Skip marker = `{file_id}_sleep_metrics.tsv` (checks TSV written first). Globals
   globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc.
+- **Participant selection (`5bis_select_participants_voila`)**: reads only tool 5's `global_sleep_metrics.tsv`,
+  writes a decision record (`participant_selection.tsv`, keyed on `file_id` + `excluded`) beside it. No tool
+  reads it yet. `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **verbatim copies of tool 5's**: edit
+  both notebooks together. The unicorn GIF on Validate is deliberate (`SHOW_UNICORN`). → SPEC §5bis.
 - **Preprocessing (`7_preprocessing`)**: `METHOD_ORDER` is the single source of truth so optional
   additions (event rejection, notch, resample, configurable 1/f fit range) keep event/feature-free runs
   **byte-compatible**. Writes the `{file_id}_preprocessing_params.json` sidecar (thresholds actually used
