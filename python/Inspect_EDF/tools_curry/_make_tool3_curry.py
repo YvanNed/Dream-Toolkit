@@ -16,7 +16,7 @@ replacements = [
         "if f.suffix == '.cdt' and not f.name.startswith('._')"
     ),
     # The message "No EDF files" → Curry.
-    # NB: unlike _make_tool{5,6}_curry.py, this script string-replaces the RAW notebook JSON
+    # NB: unlike _make_tool{6,7}_curry.py, this script string-replaces the RAW notebook JSON
     # (see the open() below), where a newline is the two characters \n and a quote is \" — so a
     # pattern must never contain a real newline or a bare ". Keep every pattern here a plain,
     # escape-free substring. Occurs once in the source.
@@ -31,7 +31,7 @@ replacements = [
     # Title markdown
     (
         "# Remap hypnogram labels",
-        "# Remap hypnogram labels — Curry 9 (.cdt)"
+        "# Remap hypnogram labels: Curry 9 (.cdt)"
     ),
     # Match message "EDF files matched" → ".cdt files matched"
     (

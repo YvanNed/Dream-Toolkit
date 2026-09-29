@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 """
-Tool 7 (batch twin) — Section-2 QC report of rejected epochs, per participant AND database-level.
+Tool 8 (batch twin) — Section-2 QC report of rejected epochs, per participant AND database-level.
 
-Runs the same per-stage analysis as 7_reject_manually_voila.ipynb over a whole derivatives
+Runs the same per-stage analysis as 8_reject_manually_voila.ipynb over a whole derivatives
 tree (no interaction), then aggregates a database-level view. Reuses qc_rejected_epochs_lib so the
 plots stay identical to the notebook. The interactive per-epoch navigator / override / clean-epo save
-are notebook-only; this batch produces reports only and never modifies tool-6 outputs.
+are notebook-only; this batch produces reports only and never modifies tool-7 outputs.
 
 Usage
 -----
-    python 7_reject_manually_batch.py <derivatives_root> [--no-1f] [--limit N] [--out DIR]
+    python 8_reject_manually_batch.py <derivatives_root> [--no-1f] [--limit N] [--out DIR]
 
-    <derivatives_root>  folder holding the tool-6 *_all-epo.fif files (searched recursively)
+    <derivatives_root>  folder holding the tool-7 *_all-epo.fif files (searched recursively)
     --no-1f             skip specparam 1/f fitting (much faster; MAE/R² columns left blank)
     --limit N           process only the first N participants (quick test)
     --out DIR           output folder (default: <derivatives_root>/qc2b_reports)
@@ -39,7 +39,7 @@ import qc_rejected_epochs_lib as L
 
 
 def _default_thresholds():
-    """A thresholds dict (tool-6 defaults) shaped like load_params()'s output, for the DB reference lines."""
+    """A thresholds dict (tool-7 defaults) shaped like load_params()'s output, for the DB reference lines."""
     d = L.DEFAULT_THRESHOLDS
     return {
         'amplitude_ptp_uV': dict(d['amplitude_ptp_uV']),

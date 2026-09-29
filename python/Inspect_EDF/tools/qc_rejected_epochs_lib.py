@@ -1,26 +1,26 @@
 """
-Shared analysis + report helpers for Tool 7 — Interactive QC of rejected epochs (Phase 2b).
+Shared analysis + report helpers for Tool 8 — Interactive QC of rejected epochs (Phase 2b).
 
 Consumed by:
-  - 7_reject_manually_voila.ipynb  (interactive, per-participant QC + manual override)
-  - 7_reject_manually_batch.py      (database-level Section-2 report, no interaction)
+  - 8_reject_manually_voila.ipynb  (interactive, per-participant QC + manual override)
+  - 8_reject_manually_batch.py      (database-level Section-2 report, no interaction)
 
-Reads the outputs written by 6_preprocessing_voila for one participant:
+Reads the outputs written by 7_preprocessing_voila for one participant:
   - {file_id}_all-epo.fif                    all epochs + per-epoch rejection metadata (MNE)
   - {file_id}_preprocessing_params.json      per-stage thresholds + preprocessing params (optional)
 
 Design notes
 ------------
 * The per-EPOCH rejection decision is authoritative from epochs.metadata (reject_flag,
-  reject_method, flag_<method>). Tool 6 does NOT persist a per-(epoch, channel) mask, so the
+  reject_method, flag_<method>). Tool 7 does NOT persist a per-(epoch, channel) mask, so the
   per-CHANNEL attribution shown here (which channel drove the flag, margins) is RECOMPUTED from
   the signal with the same formulas + the persisted thresholds. This stays faithful because the
   formulas and thresholds are shared; only the display attribution is reconstructed.
 * EEG only: whatever channels the .fif contains are used as-is (that is exactly the channel set
-  tool 6 flagged over). The raw EDF is never reloaded. The optional EOG/EMG/ECG "context" traces
-  shown under the per-epoch montage are NOT read from the raw EDF either: tool 6 persists them as a
+  tool 7 flagged over). The raw EDF is never reloaded. The optional EOG/EMG/ECG "context" traces
+  shown under the per-epoch montage are NOT read from the raw EDF either: tool 7 persists them as a
   {file_id}_context-epo.fif companion (epoched identically), which this module loads on demand.
-* Kept in sync with 6_preprocessing_voila: METHOD_ORDER / colours / custom-stage helpers /
+* Kept in sync with 7_preprocessing_voila: METHOD_ORDER / colours / custom-stage helpers /
   Welch-PSD config / specparam 1/f fit.
 """
 import os
@@ -37,7 +37,8 @@ from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
 
 import mne
-from scipy.signal import spectrogram as sp_spectrogram
+from scipy.signal import spectrogram as sp_spectrogram   # only used by the commented-out epoch
+                                                        # spectrogram panel (plot_epoch_detail)
 
 try:
     from specparam import SpectralModel
@@ -45,7 +46,7 @@ try:
 except Exception:
     HAS_SPECPARAM = False
 
-# Optional PSD smoothing before the 1/f fit (honours tool 6's psd_smoothing sidecar block).
+# Optional PSD smoothing before the 1/f fit (honours tool 7's psd_smoothing sidecar block).
 try:
     from statsmodels.nonparametric.smoothers_lowess import lowess
     HAS_LOWESS = True
@@ -55,14 +56,14 @@ except Exception:
 
 mne.set_log_level('ERROR')
 
-# ---- Rejection-method registry (single source of truth, kept in sync with tool 6) ----
+# ---- Rejection-method registry (single source of truth, kept in sync with tool 7) ----
 METHOD_ORDER  = ['amplitude', 'gradient', 'flat', '1f_r2', '1f_error', 'event']
 METHOD_CODE   = {m: i + 1 for i, m in enumerate(METHOD_ORDER)}   # 1..6  (0 = none)
 MULTIPLE_CODE = len(METHOD_ORDER) + 1                            # 7 = multiple
 METHOD_LABEL  = {'amplitude': 'Amplitude', 'gradient': 'Gradient', 'flat': 'Flat',
                  '1f_r2': '1/f R²', '1f_error': '1/f error', 'event': 'Event'}
-# Heatmap / per-method colours (index = method code; SINGLE SOURCE, duplicated verbatim in tool 6's
-# plot_rejection_heatmap and tools 8/8-voila — keep in sync). CVD-validated qualitative palette
+# Heatmap / per-method colours (index = method code; SINGLE SOURCE, duplicated verbatim in tool 7's
+# plot_rejection_heatmap and tools 0/0-voila — keep in sync). CVD-validated qualitative palette
 # (dataviz skill: 6 method hues chosen to maximise colour-blind separation, worst adjacent protan/deutan
 # ΔE ~7; index 0 'none' stays dark so heatmap marks pop; 'multiple' = cyan, distinct from all 6 methods
 # and from black). Identity is never colour-alone: every plot carries a legend / colour-coded labels.
@@ -76,13 +77,27 @@ METHOD_COLOR   = {m: HEATMAP_COLORS[METHOD_CODE[m]] for m in METHOD_ORDER}
 # a 75 µV slow wave always draws the same height, which is what makes visual scoring criteria usable.
 # Values follow clinical PSG display conventions (AASM ~7 µV/mm on a ~2 cm row for EEG/EOG, high-gain
 # chin EMG, 1 mV for ECG); traces larger than their row overflow into the neighbouring one, exactly as in
-# a clinical viewer — the amplitude is never clipped or hidden. Editable per run in the tool-7 navigator.
+# a clinical viewer — the amplitude is never clipped or hidden. Editable per run in the tool-8 navigator.
 DISPLAY_SCALE_UV = {'EEG': 150.0, 'EOG': 300.0, 'EMG': 100.0, 'ECG': 1000.0}
 
-# Context-channel (EOG/EMG/ECG) trace colours for the per-epoch montage (role labels written by tool 6).
+# Context-channel (EOG/EMG/ECG) trace colours for the per-epoch montage (role labels written by tool 7).
 # Kept OUTSIDE the six method hues (teal / olive / sienna) so a context trace never impersonates a
 # rejection-method colour in the montage.
 CTX_COLOR = {'EOG-L': '#0a8f8f', 'EOG-R': '#0a8f8f', 'EMG': '#8a6d1f', 'ECG': '#a0522d'}
+
+# Manual annotations added in tool 8's navigator (an event the scorer missed, e.g. an arousal). Drawn on
+# the montage as a DASHED vertical line in a dark violet kept outside the six method hues and the three
+# context hues, so a manual mark can never be read as a rejection method or a context trace; the dash
+# style + its own legend entry carry the identity, never the colour alone.
+MANUAL_COLOR = '#4b0082'
+# Fallback vocabulary for the annotation dropdown, used when the .fif carries no evt_<type> column and no
+# event_remap.json is reachable. Canonical labels (the tool-4 namespace), so a manual annotation merged
+# back into tool 7 needs no remapping beyond the identity entries augment_remap_for_manual adds.
+MANUAL_EVENT_LABELS = ['arousal', 'apnea', 'hypopnea', 'limb movement', 'desaturation', 'artifact', 'other']
+# Column order of {file_id}_manual_events.tsv. The first three columns are EXACTLY those of tool 7's
+# {file_id}_event_onsets.tsv, so the two tables can be concatenated by any consumer without renaming.
+MANUAL_EVENT_COLUMNS = ['type', 'onset_s', 'duration_s', 'epoch_idx', 'epoch_number', 'clock_time',
+                        'stage', 'comment', 'source', 'created_at']
 
 # ---- High-density montage support (32-64 channel Curry / HD-EEG montages) ----
 # Everything below adapts to the CHANNEL COUNT, never to the file format: a dense EDF montage gets the
@@ -103,7 +118,7 @@ DEFAULT_TABLE_ROWS   = 8        # per-channel metric table: flagged channels + t
 
 AASM_STAGES = ['W', 'N1', 'N2', 'N3', 'R']
 
-# ---- Custom (non-AASM) sleep stages (duplicated from tool 6, kept in sync) ----
+# ---- Custom (non-AASM) sleep stages (duplicated from tool 7, kept in sync) ----
 BASE_STAGE_COLORS   = {'W': '#969696', 'N1': '#9e9ac8', 'N2': '#807dba', 'N3': '#6a51a3', 'R': '#c994c7'}
 CUSTOM_STAGE_PALETTE = ['#8dd3c7', '#ffffb3', '#bebada', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9']
 
@@ -149,7 +164,7 @@ def custom_stage_style(custom_stages):
     return stage_y, stage_colors, ytick_pos, ytick_labels
 
 
-# ---- Default thresholds (tool-6 defaults; fallback when the params JSON is absent) ----
+# ---- Default thresholds (tool-7 defaults; fallback when the params JSON is absent) ----
 DEFAULT_THRESHOLDS = {
     'amplitude_ptp_uV': {'W': 300.0, 'N1': 250.0, 'N2': 200.0, 'N3': 200.0, 'R': 250.0},
     'flat_ptp_uV': 1.0,
@@ -160,6 +175,47 @@ DEFAULT_THRESHOLDS = {
 
 # Frequency bands for the per-epoch band-power bars (Hz).
 BANDS = [('delta', 0.5, 4), ('theta', 4, 8), ('alpha', 8, 12), ('sigma', 12, 16), ('beta', 16, 30)]
+
+# Scored epochs are 30 s whatever the analysis epoch length: a sub-30 s tool-7 run cuts each SCORED epoch
+# into sub-epochs (see tool 7, "Epoching"), and the scoring software still numbers the 30 s ones.
+SCORING_EPOCH_S = 30
+
+
+def _hms(seconds):
+    """Seconds -> 'HH:MM:SS' (hours are not wrapped at 24 — this is elapsed time, not a clock)."""
+    s = int(round(float(seconds)))
+    return f'{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}'
+
+
+def epoch_labels(ei, epoch_len_s=SCORING_EPOCH_S, meas_date=None, offset=1):
+    """Display labels for epoch `ei`: (number, elapsed, clock).
+
+    number  : the epoch number as the scoring software shows it. Tool 7 epochs the recording from t = 0
+              of the file with no crop, and Compumedics/Profusion numbers epochs from 1 at that same
+              origin, so the default offset = 1 makes `number` the Compumedics epoch number. The offset is
+              editable in the navigator because a recording re-exported from a longer study (or a setup
+              numbering from somewhere else) breaks that +1. With a sub-30 s epoch length the SCORED epoch
+              is numbered and a '.k' suffix names the sub-epoch inside it (e.g. '124.2').
+    elapsed : 'HH:MM:SS' since the recording start.
+    clock   : 'HH:MM:SS' wall clock, or '' when the .fif carries no meas_date.
+
+    meas_date is used verbatim (never converted): MNE labels the EDF start datetime as UTC, but the value
+    it holds IS the local clock time written in the EDF header."""
+    ei = int(ei)
+    epoch_len_s = float(epoch_len_s) if epoch_len_s else float(SCORING_EPOCH_S)
+    onset = ei * epoch_len_s
+    scored_idx = int(onset // SCORING_EPOCH_S)
+    number = str(scored_idx + int(offset))
+    if epoch_len_s < SCORING_EPOCH_S:
+        per_scored = int(round(SCORING_EPOCH_S / epoch_len_s))
+        number += f'.{ei % per_scored + 1}'
+    clock = ''
+    if meas_date is not None:
+        try:
+            clock = (meas_date + pd.to_timedelta(onset, unit='s')).strftime('%H:%M:%S')
+        except Exception:
+            clock = ''
+    return number, _hms(onset), clock
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +249,9 @@ def load_params(folder, file_id, custom_stages_fallback=()):
     }
     info = {'found': False, 'custom_stages': list(custom_stages_fallback),
             'resample': None, 'filter': None, 'methods_run': None,
-            'fit_range': (2.0, 45.0),   # 1/f fit window (Hz); tool-6 default when absent
+            'fit_range': (2.0, 45.0),   # 1/f fit window (Hz); tool-7 default when absent
             'epoch_length_s': 30,       # scoring epoch length (s); classic 30 s when absent
-            'psd_smoothing': None}      # tool-6 PSD-smoothing block; None when absent (older sidecars)
+            'psd_smoothing': None}      # tool-7 PSD-smoothing block; None when absent (older sidecars)
     if not path.exists():
         return thresholds, info
     try:
@@ -216,7 +272,7 @@ def load_params(folder, file_id, custom_stages_fallback=()):
         info['filter'] = data.get('filter')
         info['methods_run'] = data.get('methods_run')
         info['epoch_length_s'] = int(data.get('epoch_length_s', 30))
-        info['psd_smoothing'] = data.get('psd_smoothing')   # honoured by compute_psds (tool-7 plots)
+        info['psd_smoothing'] = data.get('psd_smoothing')   # honoured by compute_psds (tool-8 plots)
     except Exception:
         pass
     return thresholds, info
@@ -225,7 +281,12 @@ def load_params(folder, file_id, custom_stages_fallback=()):
 def load_participant(fif_path):
     """Read one {file_id}_all-epo.fif into a dict with signal + metadata.
     Returns dict: epochs, data_uV (n_ep, n_ch, n_t), sfreq, ch_names, meta (DataFrame),
-    stages (array of str), reject_flag (bool array), methods_present (list)."""
+    stages (array of str), reject_flag (bool array), methods_present (list), meas_date, epoch_len_s.
+
+    `meas_date` is the recording-start datetime MNE carried over from the EDF/Curry header into the .fif
+    (None when the file has none); it is what lets the navigator show a wall-clock time WITHOUT reloading
+    the raw recording. `epoch_len_s` is read back from the epochs themselves and is only a fallback — the
+    authoritative value is `epoch_length_s` in tool 7's params sidecar (see load_params)."""
     epochs = mne.read_epochs(str(fif_path), preload=True, verbose=False)
     meta = epochs.metadata.reset_index(drop=True).copy()
     data_uV = epochs.get_data() * 1e6                       # (n_ep, n_ch, n_t), µV
@@ -233,15 +294,17 @@ def load_participant(fif_path):
     reject_flag = meta['reject_flag'].astype(bool).values
     methods_present = [m for m in METHOD_ORDER
                        if 'flag_' + m in meta.columns]
+    epoch_len_s = float(data_uV.shape[2]) / float(epochs.info['sfreq'])
     return {
         'epochs': epochs, 'data_uV': data_uV, 'sfreq': float(epochs.info['sfreq']),
         'ch_names': list(epochs.ch_names), 'meta': meta, 'stages': stages,
         'reject_flag': reject_flag, 'methods_present': methods_present,
+        'meas_date': epochs.info.get('meas_date'), 'epoch_len_s': epoch_len_s,
     }
 
 
 def load_context_epochs(folder, file_id):
-    """Load the optional {file_id}_context-epo.fif companion written by tool 6 — the EOG/EMG/ECG
+    """Load the optional {file_id}_context-epo.fif companion written by tool 7 — the EOG/EMG/ECG
     "context" channels epoched identically to the EEG (same epoch length, same count), so they align 1:1
     with the EEG epochs by index. Returns {'data_uV' (n_ep, n_ch, n_t) µV, 'sfreq', 'labels'} or
     None if the companion is absent/unreadable (non-fatal: the per-epoch view just omits context)."""
@@ -257,9 +320,9 @@ def load_context_epochs(folder, file_id):
 
 
 def load_event_onsets(folder, file_id):
-    """Load the optional {file_id}_event_onsets.tsv written by tool 6 — one row per scored event
+    """Load the optional {file_id}_event_onsets.tsv written by tool 7 — one row per scored event
     (columns type, onset_s, duration_s; onset in seconds from recording start). Returns a DataFrame or
-    None if absent/unreadable (non-fatal: the montage just omits event markers). Lets tool 7 draw event
+    None if absent/unreadable (non-fatal: the montage just omits event markers). Lets tool 8 draw event
     onset lines on the per-epoch montage WITHOUT reloading the raw recording."""
     path = Path(folder) / f'{file_id}_event_onsets.tsv'
     if not path.exists():
@@ -273,10 +336,75 @@ def load_event_onsets(folder, file_id):
         return None
 
 
+def manual_events_path(folder, file_id):
+    """Path of the manual-annotation table for one recording: {file_id}_manual_events.tsv.
+    `folder` is the folder holding the recording and its scored-event companions (the EDF/.cdt folder),
+    so the annotations live BESIDE the scored events they complete and survive any tool-7 reprocessing."""
+    return Path(folder) / f'{file_id}_manual_events.tsv'
+
+
+def load_manual_events(folder, file_id):
+    """Read {file_id}_manual_events.tsv — the events a reviewer added by hand in tool 8's navigator
+    (e.g. an arousal the scorer missed). Returns a DataFrame with MANUAL_EVENT_COLUMNS, or an EMPTY one
+    when the file is absent/unreadable (non-fatal: the tool simply starts with no annotation)."""
+    path = manual_events_path(folder, file_id)
+    empty = pd.DataFrame(columns=MANUAL_EVENT_COLUMNS)
+    if not path.exists():
+        return empty
+    try:
+        df = pd.read_csv(path, sep='\t')
+        if not {'type', 'onset_s'}.issubset(df.columns):
+            return empty
+        for c in MANUAL_EVENT_COLUMNS:                     # tolerate a table written by an older version
+            if c not in df.columns:
+                df[c] = np.nan
+        return df[MANUAL_EVENT_COLUMNS]
+    except Exception:
+        return empty
+
+
+def save_manual_events(folder, file_id, df):
+    """Write {file_id}_manual_events.tsv (sorted by onset). Called on every add/delete so an annotation
+    is durable the moment it is made. Returns the path on success, None on failure (non-fatal)."""
+    path = manual_events_path(folder, file_id)
+    try:
+        out = df.copy()
+        for c in MANUAL_EVENT_COLUMNS:
+            if c not in out.columns:
+                out[c] = np.nan
+        out = out[MANUAL_EVENT_COLUMNS].sort_values('onset_s', kind='stable')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        out.to_csv(path, sep='\t', index=False)
+        return path
+    except Exception:
+        return None
+
+
+def merge_onsets_for_display(onsets, manual):
+    """Event marks to draw on the montage = tool 7's scored onsets + the manual annotations, minus the
+    duplicates. A duplicate appears as soon as tool 7 is re-run with "Include manual annotations" ticked:
+    the manual event is then also in {file_id}_event_onsets.tsv, and the same mark would be drawn twice.
+    Matched on (type, onset rounded to 0.1 s). Returns (scored_df_or_None, manual_df_or_None)."""
+    if manual is None or not len(manual):
+        return onsets, None
+    if onsets is None or not len(onsets):
+        return onsets, manual
+    try:
+        key = lambda df: set(zip(df['type'].astype(str), df['onset_s'].astype(float).round(1)))
+        dup = key(onsets) & key(manual)
+        if dup:
+            keep = [(str(t), round(float(o), 1)) not in dup
+                    for t, o in zip(manual['type'], manual['onset_s'])]
+            manual = manual[keep]
+    except Exception:
+        pass                                    # a malformed table must never break the montage
+    return onsets, (manual if len(manual) else None)
+
+
 # ---------------------------------------------------------------------------
-# Spectral analysis (Welch PSD + specparam 1/f fit) — same config as tool 6
+# Spectral analysis (Welch PSD + specparam 1/f fit) — same config as tool 7
 # ---------------------------------------------------------------------------
-# --- PSD smoothing helpers (copied VERBATIM from 6_preprocessing_voila — keep in sync) ---------
+# --- PSD smoothing helpers (copied VERBATIM from 7_preprocessing_voila — keep in sync) ---------
 def smooth_psd_median(psds_uV2, freqs, span_hz=3.0):
     """Running-median smooth of each (epoch, channel) linear PSD along frequency.
     Reproduces oscip.smooth_spectrum_median (MATLAB movmedian over a span given in Hz): a centred
@@ -328,12 +456,12 @@ def smooth_psd_lowess(psds_uV2, freqs, span_hz=2.0):
 
 
 def compute_psds(epochs, fmax=45.0, smoothing=None):
-    """Welch PSD per epoch/channel, identical config to 6_preprocessing_voila.
+    """Welch PSD per epoch/channel, identical config to 7_preprocessing_voila.
     `fmax` is the 1/f fit upper bound (default 2–45 Hz range); the PSD spans up to it.
-    `smoothing` is the tool-6 `psd_smoothing` sidecar block
+    `smoothing` is the tool-7 `psd_smoothing` sidecar block
     ({enabled, method, median_span_hz, lowess_span_hz}); when enabled the PSD is smoothed
-    (median then LOWESS, same order/params as tool 6) BEFORE return, so tool 7's recomputed
-    plots and per-channel 1/f attribution match what tool 6 flagged. Default None -> no smoothing
+    (median then LOWESS, same order/params as tool 7) BEFORE return, so tool 8's recomputed
+    plots and per-channel 1/f attribution match what tool 7 flagged. Default None -> no smoothing
     (byte-identical to before). Returns (freqs, psds_uV2), psds shape (n_ep, n_ch, n_freqs), µV²/Hz."""
     sf = float(epochs.info['sfreq'])
     epoch_len_s = len(epochs.times) / sf                  # supports non-30 s epochs
@@ -342,7 +470,7 @@ def compute_psds(epochs, fmax=45.0, smoothing=None):
     fmax_psd = min(fmax, sf / 2 - 0.5)
     psds_obj = epochs.compute_psd(method='welch', fmin=0.5, fmax=fmax_psd,
                                   n_fft=n_per_seg, n_overlap=n_overlap, n_per_seg=n_per_seg,
-                                  window='hann', verbose=False)   # match tool 6 (MNE defaults to 'hamming')
+                                  window='hann', verbose=False)   # match tool 7 (MNE defaults to 'hamming')
     freqs, psds_uV2 = psds_obj.freqs, psds_obj.get_data() * 1e12
     if smoothing and smoothing.get('enabled'):
         try:
@@ -355,7 +483,7 @@ def compute_psds(epochs, fmax=45.0, smoothing=None):
 
 
 def fit_1f(freqs, psd_uV2, fmin=2.0):
-    """specparam aperiodic fit (fixed mode, freqs >= fmin) — same model as tool 6.
+    """specparam aperiodic fit (fixed mode, freqs >= fmin) — same model as tool 7.
     `fmin` is the 1/f fit lower bound (default 2 Hz); the upper bound is set by `compute_psds`.
     Returns (mae, r2, offset, exponent, model) or (nan, nan, nan, nan, None) on failure."""
     if not HAS_SPECPARAM:
@@ -406,9 +534,9 @@ def compute_epoch_metrics(data_uV, freqs, psds_uV2, progress=None, fmin=2.0,
     (epoch, channel); the per-epoch value is the worst channel (max MAE, min R²).
 
     `progress(done, total)` is called periodically so a UI can show advancement.
-    `fit_mask` (optional bool (n_ep,)): fit 1/f ONLY on those epochs (others left NaN) — tool 7 passes
+    `fit_mask` (optional bool (n_ep,)): fit 1/f ONLY on those epochs (others left NaN) — tool 8 passes
     the in-scope-stage mask so a stage sub-selection skips the slow fit on out-of-scope epochs.
-    `do_1f=False` skips the 1/f fit entirely (tool 7 when no 1/f method is selected). ptp/gradient are
+    `do_1f=False` skips the 1/f fit entirely (tool 8 when no 1/f method is selected). ptp/gradient are
     always computed (cheap, vectorised).
 
     HIGH-DENSITY levers (cost is per epoch x channel: a 32-channel night is ~42 000 fits, ~8 min):
@@ -481,11 +609,11 @@ def ordered_present_stages(stages, custom_stages):
 # Channel triage (high-density montages) — per-(epoch, channel) flags
 # ---------------------------------------------------------------------------
 def load_channel_flags(reports_folder, file_id, ch_names, n_epochs):
-    """Read tool 6's `{file_id}_epoch_channel_rejection.tsv` into per-method (n_ep, n_ch) bool arrays.
+    """Read tool 7's `{file_id}_epoch_channel_rejection.tsv` into per-method (n_ep, n_ch) bool arrays.
 
-    This is the ONLY thing tool 7 reads from `reports_preprocessing/`, and only when the user points at
+    This is the ONLY thing tool 8 reads from `reports_preprocessing/`, and only when the user points at
     that folder: it is what makes per-channel badness exact (it carries the per-channel 1/f flags, which
-    tool 7 would otherwise have to refit at ~8 min on a 32-channel night). Absent/unreadable -> None,
+    tool 8 would otherwise have to refit at ~8 min on a 32-channel night). Absent/unreadable -> None,
     and the caller falls back to `recompute_channel_flags` (time-domain only). Non-fatal by design.
     Returns {method: (n_ep, n_ch) bool} for the methods present, or None."""
     path = Path(reports_folder) / f'{file_id}_epoch_channel_rejection.tsv'
@@ -510,7 +638,7 @@ def load_channel_flags(reports_folder, file_id, ch_names, n_epochs):
 
 def recompute_channel_flags(P, thresholds):
     """Fallback for `load_channel_flags`: per-(epoch, channel) TIME-DOMAIN flags recomputed from the
-    signal with the tool-6 formulas (amplitude / gradient / flat). Covers ~89 % of the flagged pairs on
+    signal with the tool-7 formulas (amplitude / gradient / flat). Covers ~89 % of the flagged pairs on
     a real 32-channel night but NOT the 1/f ones, so the caller must say so in the UI.
     Returns {method: (n_ep, n_ch) bool} for amplitude / gradient / flat."""
     data = P['data_uV']
@@ -525,7 +653,7 @@ def recompute_channel_flags(P, thresholds):
 
 def channel_badness(pair_flags, methods_sel, in_scope, n_ch):
     """Per-channel badness = % of IN-SCOPE epochs where the channel is flagged by a selected method
-    (the same definition as tool 7bis's channel-first step, so both tools rank channels identically).
+    (the same definition as tool 8bis's channel-first step, so both tools rank channels identically).
     Returns (overall (n_ch,) float %, {method: (n_ch,) float %})."""
     insc = np.asarray(in_scope, dtype=bool)
     n_in = int(insc.sum())
@@ -542,10 +670,10 @@ def channel_badness(pair_flags, methods_sel, in_scope, n_ch):
 
 
 def channels_over_threshold(badness_pct, ch_names, threshold_pct):
-    """Channel names whose badness exceeds `threshold_pct` (tool 7bis's channel-first rule). Tool 7
+    """Channel names whose badness exceeds `threshold_pct` (tool 8bis's channel-first rule). Tool 8
     applies it as a SUGGESTION: it unticks those channels, and the user can re-tick any of them by hand.
     Careful with 0: the test is a strict `>`, so `threshold_pct=0` returns every channel flagged even
-    once. Tool 7 spells 0 as "keep every channel" and therefore does not call this at all in that case."""
+    once. Tool 8 spells 0 as "keep every channel" and therefore does not call this at all in that case."""
     return [c for c, b in zip(ch_names, np.asarray(badness_pct, dtype=float)) if b > float(threshold_pct)]
 
 
@@ -553,11 +681,11 @@ def recompute_reject(meta, methods_sel, stages_sel, event_types_sel=None,
                      pair_flags=None, ch_names=None, dropped_channels=(),
                      epoch_rule='any', epoch_rule_value=20.0):
     """Recompute the per-epoch reject decision from a USER-SELECTED subset of flagging methods, sleep
-    stages and (for the 'event' method) event types — the tool-7 analogue of tool-7bis's build_pair_matrix,
+    stages and (for the 'event' method) event types — the tool-8 analogue of tool-8bis's build_pair_matrix,
     but read from the .fif metadata. An epoch is rejected when its stage is in `stages_sel` (in scope) AND at
     least one SELECTED method flags it; the 'event' method contributes the OR of the selected `evt_<type>`
     columns (falling back to `flag_event` when no per-type columns exist — pre-feature data). With every
-    present method + stage + type selected this reproduces tool 6's stored `reject_flag`.
+    present method + stage + type selected this reproduces tool 7's stored `reject_flag`.
 
     HIGH-DENSITY channel layer (all optional; when `pair_flags` is None none of it runs and the result
     is exactly the pre-high-density one):
@@ -565,7 +693,7 @@ def recompute_reject(meta, methods_sel, stages_sel, event_types_sel=None,
       `ch_names`     channel names matching the pair_flags columns
       `dropped_channels`  channels the user dropped in the triage step: they no longer flag ANY epoch
       `epoch_rule`   'any' -> one flagged kept channel is enough (the classic rule)
-                     'pct' -> more than `epoch_rule_value` % of the kept channels (tool 7bis's rule)
+                     'pct' -> more than `epoch_rule_value` % of the kept channels (tool 8bis's rule)
     Why this matters: with 3 channels 'any' is sound, with 32 it rejects 72.6 % of a real night, a third
     of it for a single electrode. Dropping the bad channel and/or switching to 'pct' is what makes the
     manual review tractable — see the measured figures in the HD constants block at the top.
@@ -610,7 +738,7 @@ def recompute_reject(meta, methods_sel, stages_sel, event_types_sel=None,
         pair_hits = {m: np.asarray(pair_flags[m], dtype=bool)[:, kept]
                      for m in methods_sel if m != 'event' and m in pair_flags}
         # Selected methods with NO per-channel column keep their epoch-level flag, broadcast across
-        # every kept channel (tool 7bis's convention). That is always 'event', and also the two 1/f
+        # every kept channel (tool 8bis's convention). That is always 'event', and also the two 1/f
         # methods when the flags were recomputed from the signal (time-domain only) instead of read
         # from the reports TSV — without this their contribution would silently vanish.
         epoch_only = {m: hits[m] for m in methods_sel
@@ -775,7 +903,7 @@ def plot_metric_distributions(metrics, stages, reject_flag, thresholds, stage_or
 def plot_metric_scatter(metrics, reject_flag, reject_method, thresholds, title_prefix=''):
     """Scatter p-p vs max-gradient, coloured clean/grey or by reject method. Returns a Figure.
 
-    Used by the DATABASE-POOLED section of `7_reject_manually_batch.py` only — it was dropped from the
+    Used by the DATABASE-POOLED section of `8_reject_manually_batch.py` only — it was dropped from the
     per-participant report (`build_participant_report_figs`), where the metric distributions already
     show both metrics with their thresholds and it never drove a decision."""
     fig, ax = plt.subplots(figsize=(6.0, 5.0))
@@ -802,11 +930,11 @@ def plot_metric_scatter(metrics, reject_flag, reject_method, thresholds, title_p
 def plot_channel_flag_heatmap(P, pair_flags, methods_sel, in_scope, badness_pct=None,
                               dropped_channels=(), custom_stages=(), flags_source=''):
     """Channels × epochs flagged-pair heatmap (coloured by flagging method) with a hypnogram strip on
-    top and a per-channel badness bar on the right. The counterpart of tool 6's and tool 7bis's
-    heatmaps, in tool 7's report — it is what makes "CPz is bad on 59 % of the night" visible BEFORE
+    top and a per-channel badness bar on the right. The counterpart of tool 7's and tool 8bis's
+    heatmaps, in tool 8's report — it is what makes "CPz is bad on 59 % of the night" visible BEFORE
     reviewing a single epoch, which is the decisive question on a dense montage.
 
-    The matrix height scales with the channel count (same formula as 7bis) so a 3-channel PSG montage
+    The matrix height scales with the channel count (same formula as 8bis) so a 3-channel PSG montage
     stays a short strip and a 64-channel one stays under ~12 in. `badness_pct` (n_ch,) is the bar; when
     None it is derived from `pair_flags` over the in-scope epochs. Dropped channels get a red bold
     label. `flags_source` is echoed in the title ('reports TSV' vs 'recomputed, time-domain only').
@@ -818,7 +946,7 @@ def plot_channel_flag_heatmap(P, pair_flags, methods_sel, in_scope, badness_pct=
     insc = np.asarray(in_scope, dtype=bool)
     used = [m for m in METHOD_ORDER if m in pair_flags and m in methods_sel]
 
-    # Per-cell method code: 0 none, 1..6 the single method, 7 multiple (same code space as tool 6).
+    # Per-cell method code: 0 none, 1..6 the single method, 7 multiple (same code space as tool 7).
     n_hits = np.zeros((n_ch, n_ep), dtype=int)
     first = np.zeros((n_ch, n_ep), dtype=int)
     for m in used:
@@ -904,7 +1032,7 @@ def plot_channel_flag_heatmap(P, pair_flags, methods_sel, in_scope, badness_pct=
 def build_rejection_table_html(meta, methods_present, stage_order, title='', reject_flag=None):
     """Per-stage × per-method rejection table (% and raw count), from the .fif metadata flags.
     `reject_flag` (optional (n_ep,) bool) overrides the 'Any' column / 'All' total with a recomputed
-    decision (tool 7 passes its selected-methods `base_reject`); default None uses the tool-6 `reject_flag`.
+    decision (tool 8 passes its selected-methods `base_reject`); default None uses the tool-7 `reject_flag`.
     The 'All' total is taken over the epochs whose stage is in `stage_order` (the in-scope stages), so a
     stage sub-selection stays self-consistent."""
     rows = []
@@ -947,8 +1075,8 @@ def build_participant_report_figs(P, metrics, freqs, psds_uV2, thresholds, custo
                                   pair_flags=None, in_scope=None, badness_pct=None,
                                   dropped_channels=(), flags_source=''):
     """Assemble the Section-2 figures for one participant. Returns (list_of_(title, fig), table_html).
-    `reject_flag` / `reject_method` / `stage_order` / `methods` let tool 7 pass its RECOMPUTED
-    selected-methods decision + in-scope stage order; all default to the tool-6 metadata (batch twin
+    `reject_flag` / `reject_method` / `stage_order` / `methods` let tool 8 pass its RECOMPUTED
+    selected-methods decision + in-scope stage order; all default to the tool-7 metadata (batch twin
     unchanged). When `pair_flags` is given the channels × epochs flagging heatmap is prepended (it is
     the per-channel overview; see plot_channel_flag_heatmap) — omitted when None, so the batch twin's
     output is unchanged."""
@@ -988,7 +1116,7 @@ def build_participant_report_figs(P, metrics, freqs, psds_uV2, thresholds, custo
                                            reject_method=reject_method, fit_note=fit_note)))
     # No p-p vs gradient scatter here: it only adds the JOINT distribution of two metrics the figure
     # above already shows separately (with thresholds and method colours), which is an exploration
-    # view, not a decision one. It is kept POOLED OVER THE DATABASE in 7_reject_manually_batch.py,
+    # view, not a decision one. It is kept POOLED OVER THE DATABASE in 8_reject_manually_batch.py,
     # where comparing the two metrics across participants does carry information.
     table_html = build_rejection_table_html(meta, methods, stage_order,
                                             title='Rejection by stage × method', reject_flag=reject_flag)
@@ -999,7 +1127,7 @@ def build_participant_report_figs(P, metrics, freqs, psds_uV2, thresholds, custo
 # Section 3 — per-epoch figures (used by the interactive navigator)
 # ---------------------------------------------------------------------------
 def _epoch_channel_method(cur_ch_uV, stage, thresholds):
-    """Recompute which method (if any) flags one channel of one epoch (tool-6 formulas + thresholds).
+    """Recompute which method (if any) flags one channel of one epoch (tool-7 formulas + thresholds).
     Priority amplitude > gradient > flat (spectral flags are handled in the detail panel)."""
     ptp = float(np.ptp(cur_ch_uV))
     grad = float(np.max(np.abs(np.diff(cur_ch_uV))))
@@ -1053,7 +1181,7 @@ def select_montage_channels(P, ei, thresholds, mode='all', n_worst=16, neighbour
 
 
 def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, title_method=None,
-                       scales=None, show_channels=None):
+                       scales=None, show_channels=None, number_label=None, manual=None):
     """Stacked montage of epoch `ei` (± `context` epochs), MNE-raw-plot style. EEG channels on top
     (current-epoch trace coloured by its recomputed flagging method, steepest-gradient jump boxed), then
     the optional EOG/EMG/ECG context traces below — **each channel TYPE on its own FIXED amplitude scale**
@@ -1063,10 +1191,14 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
 
     `ctx`   : dict from load_context_epochs (EOG/EMG/ECG epoched 1:1 with the EEG); None -> EEG only.
     `onsets`: DataFrame [type, onset_s, duration_s] from load_event_onsets; None -> no event markers.
-    `title_method`: reject-method label to show (tool 7 passes its recomputed value); None -> tool-6 meta.
+    `title_method`: reject-method label to show (tool 8 passes its recomputed value); None -> tool-7 meta.
     `scales`: optional {type: µV per row} overriding DISPLAY_SCALE_UV (e.g. {'EEG': 200}).
     `show_channels`: optional list of channel INDICES to draw (see select_montage_channels) - the
-        high-density lever; None (default) draws every channel, i.e. the classic behaviour."""
+        high-density lever; None (default) draws every channel, i.e. the classic behaviour.
+    `number_label`: optional '(#124 - 23:23:54)' string appended to the epoch number in the title, so the
+        montage names the epoch the way the scoring software does; None (default) -> classic title.
+    `manual`: optional DataFrame of manual annotations (load_manual_events) drawn as DASHED vertical
+        lines, distinct from the solid scored-event lines; None (default) -> none drawn."""
     data, sf, ch_all = P['data_uV'], P['sfreq'], P['ch_names']
     stages, meta = P['stages'], P['meta']
     n_ep, n_ch_all, n_t = data.shape
@@ -1176,7 +1308,7 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
     for typ in ctx_types_present:
         _scalebar([off_of(n_ch + j) for j, r in enumerate(ctx_rows) if r[1] == typ], typ)
 
-    # scored-event onset markers (from the tool-6 _event_onsets.tsv sidecar): a full-height vertical line
+    # scored-event onset markers (from the tool-7 _event_onsets.tsv sidecar): a full-height vertical line
     # with the event name written HORIZONTALLY just under the top border of the plot (axes-fraction y, so
     # it hugs the top edge regardless of the amplitude scaling).
     epoch_len = n_t / sf; win_start = lo * epoch_len
@@ -1193,6 +1325,23 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
                         va='top', ha='left', fontsize=7, color=METHOD_COLOR['event'], clip_on=True, zorder=7)
                 drew_event = True
 
+    # manual annotations (tool 8's navigator): same geometry as the scored marks but DASHED and in
+    # MANUAL_COLOR, with the label written slightly lower so it cannot overlap a scored label at the
+    # same time point. Their comment is not drawn (it would clutter the trace) — it is in the list below
+    # the montage and in the TSV.
+    drew_manual = False
+    if manual is not None and len(manual):
+        for _, mvr in manual.iterrows():
+            try:
+                x = float(mvr['onset_s']) - win_start
+            except Exception:
+                continue
+            if 0 <= x <= t[-1]:
+                ax.axvline(x, color=MANUAL_COLOR, lw=1.1, ls='--', alpha=0.9, zorder=6)
+                ax.text(x + 0.2, 0.955, str(mvr['type']), transform=ax.get_xaxis_transform(),
+                        va='top', ha='left', fontsize=7, color=MANUAL_COLOR, clip_on=True, zorder=7)
+                drew_manual = True
+
     for k in range(len(idxs) + 1):
         ax.axvline(k * n_t / sf, color='0.85', lw=0.6, zorder=1)
     ax.set_yticks([]); ax.set_xlabel('Time (s)'); ax.set_xlim(t[0], t[-1])
@@ -1202,7 +1351,8 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
                           for k in ['EEG'] + ctx_types_present if k in type_scale)
     # State the subset explicitly: on a dense montage channels are hidden, and that must never be silent.
     sub_txt = f'showing {n_ch}/{n_ch_all} channels; ' if n_ch < n_ch_all else ''
-    ax.set_title(f'Epoch {ei} — stage {stg} — reject_method={rm}   '
+    num_txt = f' {number_label}' if number_label else ''
+    ax.set_title(f'Epoch {ei}{num_txt} — stage {stg} — reject_method={rm}   '
                  f'({sub_txt}context ±{context}; fixed scales: {scale_txt}; '
                  f'coloured = flagging method)', fontsize=10)
 
@@ -1215,6 +1365,8 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
         handles.append(Line2D([0], [0], color=rep, lw=2, label=f'{typ} (context)'))
     if drew_event:
         handles.append(Line2D([0], [0], color=METHOD_COLOR['event'], lw=1.5, label='event onset'))
+    if drew_manual:
+        handles.append(Line2D([0], [0], color=MANUAL_COLOR, lw=1.5, ls='--', label='manual annotation'))
     ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(1.005, 1.0), fontsize=7, framealpha=0.9)
     fig.subplots_adjust(left=0.17, right=0.84, top=0.93, bottom=0.08)
     return fig
@@ -1222,7 +1374,7 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
 
 def has_positions(P):
     """True when the epochs carry usable electrode positions (Curry `.cdt` keeps a real DigMontage
-    through tool 6; Compumedics EDF has none). Gates the topomap panel — non-fatal when absent."""
+    through tool 7; Compumedics EDF has none). Gates the topomap panel — non-fatal when absent."""
     try:
         loc = np.array([c['loc'][:3] for c in P['epochs'].info['chs']], dtype=float)
     except Exception:
@@ -1256,9 +1408,14 @@ def _draw_channel_topomap(ax, P, values, title, cmap='viridis', mask=None):
 
 def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin=2.0,
                       clean_mask=None, table_rows=None, topomap=None):
-    """2×2 detail panel for epoch `ei`: per-channel PSD (top-left) with the per-channel metric table right
-    beside it (top-right); mean band power + 50 Hz ratio and the epoch spectrogram on the bottom row
-    (the spectrogram's channel selector sits under the figure in the navigator).
+    """Detail panel for epoch `ei`: per-channel PSD (left) with the per-channel metric table right beside
+    it (right), plus the two topomaps on a high-density montage.
+
+    The former bottom row — mean band power + 50 Hz ratio, and the epoch spectrogram — is COMMENTED OUT:
+    neither helped decide on a single epoch (the band bars only restate what the PSD already shows, and the
+    spectrogram needed its own channel selector to tell what the montage tells faster). The code is kept in
+    place, commented, so it can be restored in one edit; `spectro_ch_idx` is therefore currently unused but
+    kept in the signature so every caller keeps working.
 
     PSD panel (same units/scale as the Section-2 overlay — semilogy, µV²/Hz, linear frequency axis, so
     non-experts read both plots the same way):
@@ -1270,14 +1427,14 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
     Table: value (threshold) per metric, the value shown in RED when it breaches its threshold.
 
     `clean_mask` (optional (n_ep,) bool): epochs to use as the clean reference; default = not rejected
-    according to the tool-6 metadata.
+    according to the tool-7 metadata.
     `table_rows` (optional int): HIGH-DENSITY lever — keep every channel that breaches a threshold plus
         this many worst-by-p-p ones in the metric table, instead of one row per channel (illegible past
         ~15 rows). None (default) = every channel, i.e. the classic behaviour.
     `topomap` (optional bool): draw the spatial panels (peak-to-peak + 1/f MAE). None (default) = auto:
         on when the epochs carry electrode positions AND the montage is dense. Curry keeps a real
-        DigMontage through tool 6; position-less EDF simply never gets the panel."""
-    from scipy.signal import welch as _welch
+        DigMontage through tool 7; position-less EDF simply never gets the panel."""
+    from scipy.signal import welch as _welch   # only used by the commented-out 50 Hz-ratio block
     data, sf, ch = P['data_uV'], P['sfreq'], P['ch_names']
     stg = P['stages'][ei]
     n_ch = len(ch)
@@ -1299,24 +1456,24 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
             return '1f_error'
         return None
 
-    # Layout: PSD (top-left) with the metric table right beside it (top-right); mean band power and the
-    # epoch spectrogram on the bottom row. The spectrogram's channel selector sits under the figure in the UI.
-    # A third column carries the two topomaps when positions are available (high-density montages).
+    # Layout: ONE row - PSD (left) + the metric table beside it (right); the extra columns carry the two
+    # topomaps when positions are available (high-density montages). The former bottom row (mean band
+    # power + epoch spectrogram) is commented out - see the docstring. To restore it: go back to a 2-row
+    # gridspec (height_ratios=[1.15, 1.0], hspace=0.35, figsize height 8), uncomment ax_band/ax_spec here
+    # and blocks (c)/(d) below, and put the topomaps back on gs[0, 2] / gs[1, 2].
     if topomap:
-        fig = plt.figure(figsize=(16.5, 8))
-        gs = fig.add_gridspec(2, 3, width_ratios=[1.35, 1.0, 0.75], height_ratios=[1.15, 1.0],
-                              wspace=0.25, hspace=0.35)
+        fig = plt.figure(figsize=(18, 4.8))
+        gs = fig.add_gridspec(1, 4, width_ratios=[1.35, 1.0, 0.62, 0.62], wspace=0.25)
         ax_topo_ptp = fig.add_subplot(gs[0, 2])
-        ax_topo_mae = fig.add_subplot(gs[1, 2])
+        ax_topo_mae = fig.add_subplot(gs[0, 3])
     else:
-        fig = plt.figure(figsize=(13, 8))
-        gs = fig.add_gridspec(2, 2, width_ratios=[1.35, 1.0], height_ratios=[1.15, 1.0],
-                              wspace=0.2, hspace=0.35)
+        fig = plt.figure(figsize=(13, 4.8))
+        gs = fig.add_gridspec(1, 2, width_ratios=[1.35, 1.0], wspace=0.2)
         ax_topo_ptp = ax_topo_mae = None
     ax_psd = fig.add_subplot(gs[0, 0])
     ax_table = fig.add_subplot(gs[0, 1])
-    ax_band = fig.add_subplot(gs[1, 0])
-    ax_spec = fig.add_subplot(gs[1, 1])
+    # ax_band = fig.add_subplot(gs[1, 0])   # mean band power   - commented out (see the docstring)
+    # ax_spec = fig.add_subplot(gs[1, 1])   # epoch spectrogram - commented out (see the docstring)
 
     # (a) PSD — clean stage reference in the background, flagged channels highlighted
     ax = ax_psd
@@ -1430,42 +1587,46 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
                   else f'\n{len(show_rows)}/{n_ch} channels shown ({len(breached)} flagged)')
     ax.set_title(f'Per-channel metrics (stage {stg}) — red = over threshold{subset_txt}', fontsize=9)
 
-    # (c) mean band power + 50 Hz ratio (worst channel — line noise is per channel, so report the
-    #     worst one by name instead of tying this panel to the spectrogram's channel selector)
-    ax = ax_band
-    bp = band_powers(freqs, psds_uV2[ei].mean(axis=0))
-    ax.bar([b[0] for b in BANDS], [bp[b[0]] for b in BANDS], color='#807dba')
-    ax.set_ylabel('Band power (µV²)')
-    ax.set_yscale('log')
-    ax.set_title('Mean band power (across channels)', fontsize=9)
-    if sf / 2 > 52:
-        worst_ratio, worst_ch = np.nan, ''
-        for c in range(n_ch):
-            f2, p2 = _welch(data[ei, c], fs=sf, nperseg=min(int(4 * sf), data.shape[-1]))
-            def _bp(lo, hi):
-                m = (f2 >= lo) & (f2 < hi)
-                return float(np.trapz(p2[m], f2[m])) if m.sum() > 1 else np.nan
-            nb = _bp(40, 47)
-            r = _bp(48, 52) / nb if nb and nb > 0 else np.nan
-            if not np.isnan(r) and (np.isnan(worst_ratio) or r > worst_ratio):
-                worst_ratio, worst_ch = r, ch[c]
-        txt = (f'50 Hz / 40–47 Hz = {worst_ratio:.2f}  (worst: {worst_ch})'
-               if not np.isnan(worst_ratio) else '50 Hz ratio n/a')
-        ax.text(0.98, 0.96, txt, transform=ax.transAxes, ha='right', va='top', fontsize=8)
-    else:
-        ax.text(0.98, 0.96, '50 Hz ratio n/a (Nyquist ≤ 52 Hz)',
-                transform=ax.transAxes, ha='right', va='top', fontsize=8)
-
-    # (d) epoch spectrogram of the selected channel — separates a brief transient artefact (vertical
-    #     smear) from a sustained contamination (horizontal band, e.g. line noise).
-    ax = ax_spec
-    f3, t3, Sxx = sp_spectrogram(data[ei, spectro_ch_idx], fs=sf,
-                                 nperseg=int(1.5 * sf), noverlap=int(0.75 * sf))
-    fm = f3 <= 40
-    ax.pcolormesh(t3, f3[fm], 10 * np.log10(Sxx[fm] + 1e-12), shading='auto', cmap='viridis')
-    ax.set_ylabel('Frequency (Hz)')
-    ax.set_xlabel('Time (s)')
-    ax.set_title(f'Epoch spectrogram — {ch[spectro_ch_idx]}', fontsize=9)
+    # --- COMMENTED OUT: the two bottom panels of the old 2x2 detail figure ---------------------
+    # Neither helped decide on ONE epoch: the band bars restate what the PSD above already shows,
+    # and the spectrogram needed its own channel selector to say what the montage says faster.
+    # Kept verbatim so it can be restored (see the layout note above for the gridspec to put back).
+    # # (c) mean band power + 50 Hz ratio (worst channel — line noise is per channel, so report the
+    # #     worst one by name instead of tying this panel to the spectrogram's channel selector)
+    # ax = ax_band
+    # bp = band_powers(freqs, psds_uV2[ei].mean(axis=0))
+    # ax.bar([b[0] for b in BANDS], [bp[b[0]] for b in BANDS], color='#807dba')
+    # ax.set_ylabel('Band power (µV²)')
+    # ax.set_yscale('log')
+    # ax.set_title('Mean band power (across channels)', fontsize=9)
+    # if sf / 2 > 52:
+    #     worst_ratio, worst_ch = np.nan, ''
+    #     for c in range(n_ch):
+    #         f2, p2 = _welch(data[ei, c], fs=sf, nperseg=min(int(4 * sf), data.shape[-1]))
+    #         def _bp(lo, hi):
+    #             m = (f2 >= lo) & (f2 < hi)
+    #             return float(np.trapz(p2[m], f2[m])) if m.sum() > 1 else np.nan
+    #         nb = _bp(40, 47)
+    #         r = _bp(48, 52) / nb if nb and nb > 0 else np.nan
+    #         if not np.isnan(r) and (np.isnan(worst_ratio) or r > worst_ratio):
+    #             worst_ratio, worst_ch = r, ch[c]
+    #     txt = (f'50 Hz / 40–47 Hz = {worst_ratio:.2f}  (worst: {worst_ch})'
+    #            if not np.isnan(worst_ratio) else '50 Hz ratio n/a')
+    #     ax.text(0.98, 0.96, txt, transform=ax.transAxes, ha='right', va='top', fontsize=8)
+    # else:
+    #     ax.text(0.98, 0.96, '50 Hz ratio n/a (Nyquist ≤ 52 Hz)',
+    #             transform=ax.transAxes, ha='right', va='top', fontsize=8)
+#
+    # # (d) epoch spectrogram of the selected channel — separates a brief transient artefact (vertical
+    # #     smear) from a sustained contamination (horizontal band, e.g. line noise).
+    # ax = ax_spec
+    # f3, t3, Sxx = sp_spectrogram(data[ei, spectro_ch_idx], fs=sf,
+    #                              nperseg=int(1.5 * sf), noverlap=int(0.75 * sf))
+    # fm = f3 <= 40
+    # ax.pcolormesh(t3, f3[fm], 10 * np.log10(Sxx[fm] + 1e-12), shading='auto', cmap='viridis')
+    # ax.set_ylabel('Frequency (Hz)')
+    # ax.set_xlabel('Time (s)')
+    # ax.set_title(f'Epoch spectrogram — {ch[spectro_ch_idx]}', fontsize=9)
 
     # (e) spatial view — only a high-density montage with real electrode positions can show this, and
     #     it answers the question that dominates at 32-64 channels: ONE bad electrode (a hot spot) or
@@ -1477,11 +1638,15 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
     return fig
 
 
-def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=None):
+def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=None, visited=None):
     """Section-4 review strip: hypnogram step-line on top; below, a per-epoch bar coloured by the
     final keep/reject decision, with overridden epochs outlined. Returns a Figure.
     `in_scope` (optional (n_ep,) bool): epochs whose stage is out of the selected scope are drawn GREY
-    (excluded — not written to the clean-epo), not green; default None treats every epoch as in scope."""
+    (excluded — not written to the clean-epo), not green; default None treats every epoch as in scope.
+    `visited` (optional (n_ep,) bool or set of epoch indices): epochs actually displayed in the navigator.
+    The ones NOT visited are hatched, so "flagged and reviewed" is distinguishable from "flagged and never
+    looked at" — an override marks a changed decision, nothing marked a confirmed one. Default None keeps
+    the classic un-hatched strip."""
     stages = P['stages']
     n_ep = len(stages)
     stage_y, stage_colors, ytick_pos, ytick_labels = custom_stage_style(custom_stages)
@@ -1512,6 +1677,23 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     ax.bar(idx[excl], np.ones(int(excl.sum())), width=1.0, color='#bdbdbd', align='edge')
     ax.bar(idx[keep], np.ones(int(keep.sum())), width=1.0, color='#2ecc71', align='edge')
     ax.bar(idx[rej], np.ones(int(rej.sum())), width=1.0, color='#c0392b', align='edge')
+    # Epochs never displayed in the navigator: washed out + hatched over their decision colour, so an
+    # untouched stretch of the night is visible at a glance. Skipped entirely when `visited` is None,
+    # which keeps the figure byte-identical for the batch twin and for older callers.
+    unseen_txt = ''
+    if visited is not None:
+        vis = np.zeros(n_ep, dtype=bool)
+        if isinstance(visited, (set, frozenset, list, tuple)):
+            for e in visited:
+                if 0 <= int(e) < n_ep:
+                    vis[int(e)] = True
+        else:
+            vis = np.asarray(visited, dtype=bool)
+        unseen = insc & ~vis
+        if unseen.any():
+            ax.bar(idx[unseen], np.ones(int(unseen.sum())), width=1.0, color='white', alpha=0.5,
+                   hatch='///', edgecolor='0.55', lw=0.0, align='edge')
+        unseen_txt = f', pale/hatched = not reviewed ({int(unseen.sum())})'
     for ei in sorted(overridden):
         ax.plot([ei + 0.5], [1.15], marker='v', color='k', ms=4)
     ax.set_ylim(0, 1.35)
@@ -1519,7 +1701,8 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     ax.set_xlim(0, n_ep)
     ax.set_xlabel('Epoch index', fontsize=9)
     ax.set_title(f'Final decision — green = keep ({int(keep.sum())}), red = reject ({int(rej.sum())}), '
-                 f'grey = excluded/out-of-scope ({int(excl.sum())}), ▼ = overridden ({len(overridden)})',
+                 f'grey = excluded/out-of-scope ({int(excl.sum())}), ▼ = overridden ({len(overridden)})'
+                 f'{unseen_txt}',
                  fontsize=9)
     for sp in ['top', 'right']:
         ax.spines[sp].set_visible(False)
@@ -1531,13 +1714,17 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
 def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, overridden,
                               stages_sel, methods_sel, event_types_sel, thresholds, epoch_length_s=30,
                               dropped_channels=(), epoch_rule='any', epoch_rule_value=20.0,
-                              flags_source=''):
-    """One-row durable record of a tool-7 manual review — the analogue of tool 7bis's
+                              flags_source='', visited=None, epoch_number_offset=1,
+                              n_manual_annotations=0):
+    """One-row durable record of a tool-8 manual review — the analogue of tool 8bis's
     `{file_id}_autoreject_decision.tsv`, and the source rebuilt into the global summary. Counts are over
     the IN-SCOPE epochs (the selected stages, i.e. exactly what the clean-epo contains).
     The channel-triage provenance (`dropped_channels`, `epoch_rule`, …) is written as ADDITIVE columns
     whose values are constant on the classic path (no channel dropped, rule 'any').
-    Returns a one-row DataFrame."""
+    `visited` (epoch indices actually displayed), `epoch_number_offset` and `n_manual_annotations` are
+    likewise ADDITIVE — they say how thorough the review was and how it was numbered, which a rejection
+    percentage alone cannot: 5 % rejected after looking at every flagged epoch is not the same result as
+    5 % rejected without opening one. Returns a one-row DataFrame."""
     base = np.asarray(base_reject, dtype=bool)
     fin = np.asarray(final_reject, dtype=bool)
     insc = np.asarray(in_scope, dtype=bool)
@@ -1545,6 +1732,15 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
     n_in = int(insc.sum())
     n_rej = int((insc & fin).sum())
     amp = thresholds.get('amplitude_ptp_uV', {})
+    # "Seen" is counted over the REVIEW SET (the in-scope epochs the selection flagged) — that is what the
+    # navigator walks, so it is the only denominator for which "all reviewed" is reachable.
+    to_review = insc & base
+    n_to_review = int(to_review.sum())
+    seen = np.zeros(len(stages), dtype=bool)
+    for e in (visited or ()):
+        if 0 <= int(e) < len(stages):
+            seen[int(e)] = True
+    n_seen = int((seen & to_review).sum())
     row = {
         'file_id': file_id,
         'n_epochs': int(len(stages)),
@@ -1557,6 +1753,10 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
         'n_overrides': len(overridden),
         'n_rescued': int((insc & base & ~fin).sum()),
         'n_added': int((insc & ~base & fin).sum()),
+        'n_seen': n_seen,
+        'pct_seen': round(100.0 * n_seen / n_to_review, 2) if n_to_review else np.nan,
+        'n_manual_annotations': int(n_manual_annotations),
+        'epoch_number_offset': int(epoch_number_offset),
         'stages_used': '+'.join(stages_sel),
         'methods_used': '+'.join(methods_sel),
         'event_types_used': '+'.join(event_types_sel) if event_types_sel else '',
@@ -1585,9 +1785,11 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
     return pd.DataFrame([row])
 
 
-def manual_decision_html(file_id, decision_row, stage_table_html=''):
+def manual_decision_html(file_id, decision_row, stage_table_html='', manual_events=None):
     """Human-readable recap of a manual review for the report: headline counts + the parameters used,
-    followed by the per-stage x per-method table. Returns an HTML string."""
+    followed by the per-stage x per-method table and, when the reviewer added any, the list of manual
+    annotations (`manual_events`: the DataFrame from load_manual_events; None/empty -> section omitted).
+    Returns an HTML string."""
     r = decision_row.iloc[0]
     def _cell(label, value):
         return (f'<tr><td style="padding:3px 10px;border:1px solid #ccc;">{label}</td>'
@@ -1599,8 +1801,12 @@ def manual_decision_html(file_id, decision_row, stage_table_html=''):
             + _cell('Rejected', f'{r["n_rejected"]}  ({pct} of in-scope)')
             + _cell('Kept &rarr; clean-epo', r['n_kept'])
             + _cell('Flagged by the selection', r['n_flagged_by_selection'])
+            + _cell('Reviewed in the navigator',
+                    ('—' if pd.isna(r.get('pct_seen', np.nan))
+                     else f'{r["n_seen"]} / {r["n_flagged_by_selection"]}  ({r["pct_seen"]:.0f}%)'))
             + _cell('Manual overrides', f'{r["n_overrides"]} '
                                         f'(rescued {r["n_rescued"]}, newly rejected {r["n_added"]})')
+            + _cell('Manual annotations added', r.get('n_manual_annotations', 0) or '—')
             + _cell('Stages used', r['stages_used'])
             + _cell('Methods used', r['methods_used'])
             + _cell('Event types used', r['event_types_used'] or '—')
@@ -1612,9 +1818,25 @@ def manual_decision_html(file_id, decision_row, stage_table_html=''):
                                    else 'any flagged channel'))
             + _cell('Epoch length', f'{r["epoch_length_s"]} s')
             + _cell('Reviewed at', r['reviewed_at']))
+    annot_html = ''
+    if manual_events is not None and len(manual_events):
+        cells = ''
+        for _, a in manual_events.iterrows():
+            cells += ('<tr>'
+                      + ''.join(f'<td style="padding:3px 10px;border:1px solid #ccc;">{a.get(c, "")}</td>'
+                                for c in ['epoch_idx', 'epoch_number', 'clock_time', 'stage', 'type',
+                                          'onset_s', 'comment'])
+                      + '</tr>')
+        head = ''.join(f'<th style="padding:3px 10px;border:1px solid #ccc;">{h}</th>'
+                       for h in ['epoch', 'n°', 'clock', 'stage', 'type', 'onset (s)', 'comment'])
+        annot_html = ('<h4>Manual annotations added during this review</h4>'
+                      '<p style="font-size:.85em;color:#555;">Saved beside the recording as '
+                      f'<code>{file_id}_manual_events.tsv</code> — the scored-event companions are never '
+                      'modified.</p>'
+                      f'<table style="border-collapse:collapse;font-size:.9em;"><tr>{head}</tr>{cells}</table>')
     return (f'<h3>{file_id} — manual epoch rejection</h3>'
             f'<table style="border-collapse:collapse;font-size:.9em;">{body}</table>'
-            + (stage_table_html or ''))
+            + (stage_table_html or '') + annot_html)
 
 
 def save_report_html(out_path, title, figs, table_html):
