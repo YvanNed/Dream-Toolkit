@@ -172,3 +172,20 @@ def test_add_box_offers_only_the_participants_not_selected_yet():
     assert sel.tags.value == ['p2'] and 'zzz' in sel.lbl_paste.value
     sel.tags.value = []                                          # 'x' on the tag: offered again
     assert list(sel.cmb_add.options) == ['p1', 'p2', 'p3', 'p4']
+
+
+def test_empty_registry_header_only_means_everyone_included(data):
+    """A registry whose rows were all removed (e.g. a 5bis validation without any criterion) keeps its
+    header only: it must read as 'nobody excluded', and the exclusion columns still be added."""
+    P.write_registry_rows(data, '5bis_criteria', [{'file_id': 'a', 'reason': 'r'}])
+    P.write_registry_rows(data, '5bis_criteria', [])                # new validation, no criterion
+    assert P.registry_path(data).read_text(encoding='utf-8').strip() == '\t'.join(P.REGISTRY_COLUMNS)
+    reg, warn = P.load_registry(data)
+    assert warn is None and len(reg) == 0
+    out = P.add_exclusion_columns(pd.DataFrame({'file_id': ['a', 'b']}), P.effective_status(reg))
+    assert out[P.COL_EXCLUDED].tolist() == [False, False] and out[P.COL_REASON].tolist() == ['', '']
+    P.registry_path(data).write_text('', encoding='utf-8')         # an empty FILE (0 byte) too:
+    reg, warn = P.load_registry(data)                              # no decision, no warning, and
+    assert len(reg) == 0 and warn is None                          # a tool can still write into it
+    P.write_registry_rows(data, '7_manual', [{'file_id': 'a', 'reason': 'r'}])
+    assert P.excluded_ids(P.effective_status(P.load_registry(data)[0])) == ['a']

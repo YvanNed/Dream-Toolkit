@@ -43,10 +43,12 @@ def run_tool5bis(data, criteria=None, comment='test selection'):
         return nb.widget_text() + nb.value('lbl_validate.value')
 
 
-def run_tool6(data):
+def run_tool6(data, subset=None, skip=True):
     with NotebookSession(T6) as nb:
         nb.pick('fc_folder', data)
         nb.pick('fc_config', Path(data) / 'config_param' / 'remap_reref_persubject.json')
+        if subset is not None:
+            select_subset(nb, subset, skip)
         nb.click('btn_run')
         return nb.widget_text()
 

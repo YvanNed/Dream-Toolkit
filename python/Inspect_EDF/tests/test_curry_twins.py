@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # twin -> markers that must appear in it (the EDF original carries them too)
 TWINS = {
+    'tools_curry/6_quality_overview_curry_voila.ipynb': [
+        'participant_selector', 'add_exclusion_columns', 'excluded_banner_html', 'read_curry_header'],
     'tools_curry/7_preprocessing_curry_voila.ipynb': [
         'participant_selector', "raw.info['bads'] = bad_present", "'bad_channels'",
         "'7_manual'", 'n_participants_excluded', 'read_raw_curry'],
@@ -20,6 +22,7 @@ TWINS = {
         'participant_selector', "'8bis_auto'", '_epoch_decision.tsv', 'tool7_deselected'],
 }
 ORIGINALS = {
+    'tools_curry/6_quality_overview_curry_voila.ipynb': 'tools/6_quality_overview_voila.ipynb',
     'tools_curry/7_preprocessing_curry_voila.ipynb': 'tools/7_preprocessing_voila.ipynb',
     'tools_curry/8_reject_manually_curry_voila.ipynb': 'tools/8_reject_manually_voila.ipynb',
     'tools_curry/8bis_reject_automatically_curry_voila.ipynb': 'tools/8bis_reject_automatically_voila.ipynb',
@@ -40,6 +43,6 @@ def test_twin_parses_and_follows_its_edf_original(twin):
     text = '\n'.join(cells)
     original = '\n'.join(code_of(ORIGINALS[twin]))
     for marker in TWINS[twin]:
-        if marker != 'read_raw_curry':
+        if marker not in ('read_raw_curry', 'read_curry_header'):
             assert marker in original, f'marker {marker!r} not in the EDF original: update this test'
         assert marker in text, f'{twin} lacks {marker!r}: re-run its tools_curry/_make_tool*_curry.py'

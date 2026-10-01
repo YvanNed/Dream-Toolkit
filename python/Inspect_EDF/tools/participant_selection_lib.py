@@ -76,7 +76,7 @@ def load_registry(data_folder):
     if data_folder is None:
         return empty_registry(), None
     path = registry_path(data_folder)
-    if not path.is_file():
+    if not path.is_file() or path.stat().st_size == 0:        # absent, or an empty file: no decision yet
         return empty_registry(), None
     try:
         df = pd.read_csv(path, sep='\t', dtype=str, keep_default_na=False)

@@ -55,3 +55,18 @@ def test_tool5_subset(chain, data_copy):
     # the database table is rebuilt from every per-recording file: still the 4 recordings
     gtable = (data_copy / 'reports_features_macrostructure' / 'global_sleep_metrics.tsv').read_text()
     assert all(pid in gtable for pid in p)
+
+
+def test_tool6_subset(chain, data_copy):
+    p = minidb.PARTICIPANTS[chain['dataset']]
+    reports = data_copy / 'reports_quality_overview'
+    before = mtimes(reports, '*_quality_metrics.tsv')
+    assert len(before) == 4
+    log = pipeline.run_tool6(data_copy, subset=[p[2]], skip=True)          # already processed: warned
+    assert 'will NOT be processed' in log
+    assert mtimes(reports, '*_quality_metrics.tsv') == before
+    pipeline.run_tool6(data_copy, subset=[p[2]], skip=False)               # reprocessed, only it
+    after = mtimes(reports, '*_quality_metrics.tsv')
+    assert sorted(k for k in after if after[k] != before[k]) == [f'{p[2]}_quality_metrics.tsv']
+    summary = (reports / 'quality_summary.tsv').read_text(encoding='utf-8')
+    assert all(pid in summary for pid in p)                                # still the whole database
