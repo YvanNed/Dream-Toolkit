@@ -1650,7 +1650,7 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     """Section-4 review strip: hypnogram step-line on top; below, a per-epoch bar coloured by the
     final keep/reject decision, with overridden epochs outlined. Returns a Figure.
     `in_scope` (optional (n_ep,) bool): epochs whose stage is out of the selected scope are drawn GREY
-    (excluded — not written to the clean-epo), not green; default None treats every epoch as in scope.
+    (out of scope: never averaged by tool 9), not green; default None treats every epoch as in scope.
     `visited` (optional (n_ep,) bool or set of epoch indices): epochs actually displayed in the navigator.
     The ones NOT visited are hatched, so "flagged and reviewed" is distinguishable from "flagged and never
     looked at" — an override marks a changed decision, nothing marked a confirmed one. Default None keeps
@@ -1679,7 +1679,7 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     fr = np.asarray(final_reject, dtype=bool)
     insc = np.ones(n_ep, dtype=bool) if in_scope is None else np.asarray(in_scope, dtype=bool)
     idx = np.arange(n_ep)
-    excl = ~insc                       # out-of-scope stages: excluded from the clean-epo -> grey
+    excl = ~insc                       # out-of-scope stages: never averaged by tool 9 -> grey
     keep = insc & ~fr
     rej = insc & fr
     ax.bar(idx[excl], np.ones(int(excl.sum())), width=1.0, color='#bdbdbd', align='edge')
@@ -1726,7 +1726,7 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
                               n_manual_annotations=0):
     """One-row durable record of a tool-8 manual review — the analogue of tool 8bis's
     `{file_id}_autoreject_decision.tsv`, and the source rebuilt into the global summary. Counts are over
-    the IN-SCOPE epochs (the selected stages, i.e. exactly what the clean-epo contains).
+    the IN-SCOPE epochs (the selected stages, i.e. the epochs tool 9 can average).
     The channel-triage provenance (`dropped_channels`, `epoch_rule`, …) is written as ADDITIVE columns
     whose values are constant on the classic path (no channel dropped, rule 'any').
     `visited` (epoch indices actually displayed), `epoch_number_offset` and `n_manual_annotations` are
@@ -1807,7 +1807,7 @@ def manual_decision_html(file_id, decision_row, stage_table_html='', manual_even
             + _cell('In scope (selected stages)', r['n_in_scope'])
             + _cell('Excluded (out-of-scope stages)', r['n_out_of_scope'])
             + _cell('Rejected', f'{r["n_rejected"]}  ({pct} of in-scope)')
-            + _cell('Kept &rarr; clean-epo', r['n_kept'])
+            + _cell('Kept (averaged by tool 9)', r['n_kept'])
             + _cell('Flagged by the selection', r['n_flagged_by_selection'])
             + _cell('Reviewed in the navigator',
                     ('—' if pd.isna(r.get('pct_seen', np.nan))

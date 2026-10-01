@@ -105,17 +105,23 @@ def run_tool8(data, file_id):
         return nb.widget_text()
 
 
-def run_tool9(data, clean_dir):
+def run_tool9(data, raw_dir, decision_dir=None, subset=None, skip=True, reaggregate=False):
+    """decision_dir: a tool 8 / 8bis rejection_* folder (None = no decision). reaggregate: click
+    'Re-aggregate only' instead of Run."""
     data = Path(data)
     with NotebookSession(T9) as nb:
         nb.pick('fc_data', data)
-        nb.pick('fc_clean', clean_dir)
+        nb.pick('fc_raw', raw_dir)
+        if decision_dir is not None:
+            nb.pick('fc_decision', decision_dir)
         nb.pick('fc_subj', data / 'participants.tsv')
         nb.set('dd_join_col', 'participant_id')
         nb.click('btn_scan')
         nb.set('cb_avg_lin', True)          # export both averaging spaces (more columns covered)
         nb.set('cb_thirds', True)           # and the night-thirds companion table
-        nb.click('btn_run')
+        if subset is not None:
+            select_subset(nb, subset, skip)
+        nb.click('btn_reagg' if reaggregate else 'btn_run')
         return nb.widget_text()
 
 
@@ -130,7 +136,8 @@ def run_chain(data, manual_participant, log=print):
                      ('7', lambda: run_tool7(data)),
                      ('8bis', lambda: run_tool8bis(data)),
                      ('8', lambda: run_tool8(data, manual_participant)),
-                     ('9', lambda: run_tool9(data, data / 'derivatives' / 'clean_epo_auto'))]:
+                     ('9', lambda: run_tool9(data, data / 'derivatives' / 'raw_epo',
+                                             data / 'derivatives' / 'rejection_auto'))]:
         log(f'--- tool {name}')
         logs[name] = fn()
     return logs

@@ -4,7 +4,7 @@ Tool 7  - deselected channels are kept in the .fif (marked bad), re-referenced l
           flagged; manual exclusion; exclusion columns + a per-stage summary over the non-excluded only.
           Re-referencing is checked EXACTLY through a property of linear processing: any common
           reference cancels out in a bipolar derivation (Fp1 - C3), and filtering is linear.
-Tool 8bis - epoch / channel decision tables, consistent with the clean .fif; automatic exclusions in the
+Tool 8bis - epoch / channel decision tables, equal to the former clean .fif (golden); automatic exclusions in the
           registry (and lifted again by a re-run).
 Tool 8  - decision tables; the Exclude / Remove button.
 """
@@ -20,6 +20,7 @@ import pytest
 
 import minidb
 import pipeline
+import snapshot
 from nbdriver import NotebookSession
 from pipeline import select_subset
 
@@ -149,19 +150,28 @@ def test_tool7_chain_stage_summary_leaves_out_the_5bis_exclusion(chain):
 
 
 # =====================================================================================  tool 8bis
-def test_tool8bis_decision_tables_match_the_clean_epochs(chain):
+def golden_clean(golden, fid, kind):
+    """The clean-epo the tools wrote BEFORE the refactor (golden snapshot): kept epoch indices + channels."""
+    base = golden / 'derivatives' / kind / f'{fid}_clean-epo.fif'
+    meta = snapshot._read_table(str(base) + '.metadata.tsv.gz')
+    summary = json.loads(Path(str(base) + '.summary.json').read_text(encoding='utf-8'))
+    return meta['epoch_idx'].astype(int).tolist(), summary['ch_names']
+
+
+def test_tool8bis_decision_tables_match_the_clean_epochs(chain, golden):
+    """The decision tables keep exactly the epochs and channels the former clean-epo held."""
     p = ids(chain)
     dec_dir = chain['data'] / 'derivatives' / 'rejection_auto'
+    assert not (chain['data'] / 'derivatives' / 'clean_epo_auto').exists()     # no copy of the epochs
     for fid in p:
         ed = tsv(dec_dir / f'{fid}_epoch_decision.tsv')
-        clean = fif(chain['data'], fid, 'clean_epo_auto', 'clean-epo')
+        kept_old, chans_old = golden_clean(golden, fid, 'clean_epo_auto')
         assert len(ed) == len(fif(chain['data'], fid))                   # every epoch has a row
-        kept = ed[ed['in_scope'] & ~ed['rejected']]['epoch_idx'].tolist()
-        assert kept == clean.metadata['epoch_idx'].astype(int).tolist()
+        assert ed[ed['in_scope'] & ~ed['rejected']]['epoch_idx'].tolist() == kept_old
         assert (ed.loc[ed['rejected'], 'reject_reason'] != '').all()
         assert not (ed['rejected'] & ~ed['in_scope']).any()
         cd = tsv(dec_dir / f'{fid}_channel_decision.tsv')
-        assert sorted(cd.loc[~cd['dropped'], 'channel']) == sorted(clean.ch_names)
+        assert sorted(cd.loc[~cd['dropped'], 'channel']) == sorted(chans_old)
     for fid, bad in [(p[0], 'Fp1'), (p[1], 'C3')]:                      # tool-7 deselected channels
         cd = tsv(dec_dir / f'{fid}_channel_decision.tsv')
         assert cd.loc[cd['channel'] == bad, 'drop_reason'].item() == 'tool7_deselected'
@@ -193,15 +203,15 @@ def test_tool8bis_event_threshold_excludes_then_a_rerun_lifts_it(chain, data_cop
 
 
 # =====================================================================================  tool 8
-def test_tool8_decision_tables(chain):
+def test_tool8_decision_tables(chain, golden):
     fid = minidb.manual_review_participant(chain['dataset'])
     dec_dir = chain['data'] / 'derivatives' / 'rejection_manual'
+    assert not (chain['data'] / 'derivatives' / 'clean_epo_manual').exists()
     ed = tsv(dec_dir / f'{fid}_epoch_decision.tsv')
-    clean = fif(chain['data'], fid, 'clean_epo_manual', 'clean-epo')
-    assert ed[ed['in_scope'] & ~ed['rejected']]['epoch_idx'].tolist() == \
-        clean.metadata['epoch_idx'].astype(int).tolist()
+    kept_old, chans_old = golden_clean(golden, fid, 'clean_epo_manual')
+    assert ed[ed['in_scope'] & ~ed['rejected']]['epoch_idx'].tolist() == kept_old
     cd = tsv(dec_dir / f'{fid}_channel_decision.tsv')
-    assert sorted(cd.loc[~cd['dropped'], 'channel']) == sorted(clean.ch_names)
+    assert sorted(cd.loc[~cd['dropped'], 'channel']) == sorted(chans_old)
 
 
 def test_tool8_exclude_button(chain, data_copy):
