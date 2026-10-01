@@ -12,7 +12,8 @@ import snapshot
 TOOL_OUTPUTS = {
     '5': ['derivatives/features_macrostructure/',
           'reports_features_macrostructure/global_', 'reports_features_macrostructure/sleep_'],
-    '5bis': ['reports_features_macrostructure/participant_selection'],
+    '5bis': ['reports_features_macrostructure/participant_selection',
+             'config_param/participant_exclusions.tsv'],     # the registry: in the chain, 5bis rows only
     '6': ['reports_quality_overview/'],
     '7': ['derivatives/raw_epo/', 'reports_preprocessing/'],
     '8bis': ['derivatives/clean_epo_auto/', 'reports_rejection_auto/'],
@@ -29,9 +30,17 @@ def test_every_golden_file_is_owned_by_a_tool(golden):
     assert not orphans, orphans
 
 
+# Outputs whose values are MEANT to differ from the pre-refactor golden, each with its own test:
+INTENDED_CHANGES = {
+    # pooled over the NON-excluded participants only (test_exclusion_tools.py)
+    '7': ['reports_preprocessing/global_rejection_by_stage.tsv'],
+}
+
+
 @pytest.mark.parametrize('tool', list(TOOL_OUTPUTS))
 def test_outputs_match_golden(chain, golden, tool):
-    report = snapshot.compare(chain['snapshot'], golden, prefixes=TOOL_OUTPUTS[tool])
+    report = snapshot.compare(chain['snapshot'], golden, prefixes=TOOL_OUTPUTS[tool],
+                              ignore=INTENDED_CHANGES.get(tool, ()))
     assert not report, f'tool {tool} outputs differ from golden:\n' + snapshot.format_report(report)
 
 

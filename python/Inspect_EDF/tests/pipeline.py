@@ -51,7 +51,16 @@ def run_tool6(data):
         return nb.widget_text()
 
 
-def run_tool7(data, events=True):
+def select_subset(nb, ids, skip):
+    """Put a tool's shared participant selector in 'Subset only' mode on `ids`."""
+    nb.run("participant_selector.dd_mode.value = 'Subset only'")
+    nb.run(f'participant_selector.tags.value = {list(ids)!r}')
+    nb.set('participant_selector.cb_skip', skip)
+
+
+def run_tool7(data, events=True, subset=None, skip=True, channels=None, before_run=None):
+    """subset: run only these participants; channels: {file_id: {channel: keep}} edits applied in the
+    per-participant editor; before_run(nb): any extra driving before Run."""
     data = Path(data)
     with NotebookSession(T7) as nb:
         nb.pick('fc_edf', data)
@@ -62,6 +71,13 @@ def run_tool7(data, events=True):
         if events:
             nb.set('cb_event_reject', True)
         nb.click('btn_load')
+        if subset is not None:
+            select_subset(nb, subset, skip)
+        for fid, chans in (channels or {}).items():
+            for ch, keep in chans.items():
+                nb.run(f'participant_channels[{fid!r}][{ch!r}] = {keep!r}')
+        if before_run is not None:
+            before_run(nb)
         nb.click('btn_run')
         return nb.widget_text()
 

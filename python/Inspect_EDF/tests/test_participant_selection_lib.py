@@ -160,3 +160,15 @@ def test_rescan_drops_vanished_ids_from_the_subset():
     sel.tags.value = ['p1', 'p4']
     sel.set_participants(['p1', 'p2'], done=set())
     assert sel.tags.value == ['p1']
+
+
+def test_add_box_offers_only_the_participants_not_selected_yet():
+    sel = make_selector()
+    assert list(sel.cmb_add.options) == ['p1', 'p2', 'p3', 'p4']
+    sel.cmb_add.value = 'p2'                                     # picked in the autocompletion + Enter
+    assert sel.subset_mode and sel.tags.value == ['p2'] and sel.cmb_add.value == ''
+    assert list(sel.cmb_add.options) == ['p1', 'p3', 'p4']
+    sel.tags.value = ['p2', 'zzz', 'p2']                         # typed straight into the tag box
+    assert sel.tags.value == ['p2'] and 'zzz' in sel.lbl_paste.value
+    sel.tags.value = []                                          # 'x' on the tag: offered again
+    assert list(sel.cmb_add.options) == ['p1', 'p2', 'p3', 'p4']

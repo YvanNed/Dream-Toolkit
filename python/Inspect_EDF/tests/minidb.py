@@ -15,8 +15,8 @@ Both carry the same four defects (injected by tools/generate_test_data.py):
 
 The originals are never touched: everything is written into `root/data/`. The channel config (tool
 2's remap_reref_persubject.json) is written here, so the tests do not depend on the state of
-tools/test_data/config_param. The third recording uses an AVERAGE reference (the others a linked M2
-reference) so both re-referencing paths of tool 7 are exercised.
+tools/test_data/config_param. Every recording uses the M2 (mastoid) reference of a classical clinical PSG
+montage; the average reference (meant for high-density montages) gets a dedicated tool-7 test.
 """
 import json
 import shutil
@@ -42,10 +42,6 @@ EVENT_REMAP = {
     'SpO2 desaturation': 'spo2_desaturation',
 }
 AGES = [25, 70, 40, 55]          # the 2nd participant (dead channel) is the one '5bis age > 60' excludes
-
-
-def average_ref_participant(dataset):
-    return PARTICIPANTS[dataset][2]
 
 
 def manual_review_participant(dataset):
@@ -74,9 +70,7 @@ def build(root, dataset='synthetic'):
         for pid in pids:
             if not (data / f'{pid}.edf').exists():
                 synthetic.write_recording(data, pid)
-    config = {pid: {'config': 'config. 1', 'remap': dict(REMAP),
-                    'ref_channels': 'average' if pid == average_ref_participant(dataset) else ['M2']}
-              for pid in pids}
+    config = {pid: {'config': 'config. 1', 'remap': dict(REMAP), 'ref_channels': ['M2']} for pid in pids}
     (cfg_dir / 'remap_reref_persubject.json').write_text(json.dumps(config, indent=2), encoding='utf-8')
     # A participant table: the real recordings all derive from the same night (identical sleep
     # metrics), so `age` is what lets a tool-5bis criterion exclude exactly one participant.

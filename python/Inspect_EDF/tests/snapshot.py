@@ -41,6 +41,13 @@ def _replace_paths(text, data):
     return text
 
 
+def _write_gz(path, text):
+    """gzip with a fixed timestamp (mtime=0): the same content always gives the same bytes, so a
+    regenerated golden file only shows up in git when its content really changed."""
+    with open(path, 'wb') as raw, gzip.GzipFile(fileobj=raw, mode='wb', mtime=0, filename='') as gz:
+        gz.write(text.encode('utf-8'))
+
+
 def take(data, dest):
     """Write the snapshot of the outputs found under `data` into `dest` (replaced)."""
     import mne
@@ -61,17 +68,14 @@ def take(data, dest):
         out = dest / rel
         out.parent.mkdir(parents=True, exist_ok=True)
         if f.suffix in ('.tsv', '.json'):
-            text = _replace_paths(f.read_text(encoding='utf-8'), data)
-            with gzip.open(str(out) + '.gz', 'wt', encoding='utf-8', newline='') as fh:
-                fh.write(text)
+            _write_gz(str(out) + '.gz', _replace_paths(f.read_text(encoding='utf-8'), data))
         elif f.name.endswith('-epo.fif'):
             ep = mne.read_epochs(str(f), preload=False, verbose=False)
             summary = {'n_epochs': len(ep), 'ch_names': list(ep.ch_names), 'bads': list(ep.info['bads']),
                        'sfreq': float(ep.info['sfreq']), 'tmin': float(ep.tmin), 'tmax': float(ep.tmax)}
             (Path(str(out) + '.summary.json')).write_text(json.dumps(summary, indent=1), encoding='utf-8')
             if ep.metadata is not None:
-                with gzip.open(str(out) + '.metadata.tsv.gz', 'wt', encoding='utf-8', newline='') as fh:
-                    ep.metadata.to_csv(fh, sep='\t', index=False)
+                _write_gz(str(out) + '.metadata.tsv.gz', ep.metadata.to_csv(sep='\t', index=False))
     return dest
 
 
@@ -130,10 +134,11 @@ def _compare_json(new, old, where=''):
     return diffs
 
 
-def compare(new_dir, golden_dir, prefixes=None, expect_missing=()):
+def compare(new_dir, golden_dir, prefixes=None, expect_missing=(), ignore=()):
     """Compare snapshot `new_dir` to `golden_dir`. Returns {relative file: [differences]} (empty dict =
     identical). `prefixes` restricts to golden files whose relative path starts with one of them;
-    `expect_missing` lists relative paths (or prefixes) a change is ALLOWED to remove."""
+    `expect_missing` lists relative paths (or prefixes) a change is ALLOWED to remove; `ignore` lists
+    files whose values are MEANT to change (each must have its own dedicated test)."""
     new_dir, golden_dir = Path(new_dir), Path(golden_dir)
     report = {}
     for g in sorted(golden_dir.rglob('*')):
@@ -141,6 +146,8 @@ def compare(new_dir, golden_dir, prefixes=None, expect_missing=()):
             continue
         rel = g.relative_to(golden_dir).as_posix()
         if prefixes and not any(rel.startswith(p) for p in prefixes):
+            continue
+        if any(rel.startswith(p) for p in ignore):           # an intended change, tested on its own
             continue
         n = new_dir / rel
         if not n.exists():
@@ -150,7 +157,13 @@ def compare(new_dir, golden_dir, prefixes=None, expect_missing=()):
         if rel.endswith('.tsv.gz'):
             d = compare_tables(_read_table(n), _read_table(g))
         else:
-            d = _compare_json(_read_json(n), _read_json(g))
+            new_json, old_json = _read_json(n), _read_json(g)
+            if rel.endswith('.summary.json') and not old_json.get('bads'):
+                # Tool 7 now KEEPS the deselected channels in the .fif, marked bad (they used to be
+                # dropped): compare on the analysed channels, the bad ones are checked by their own tests.
+                new_json = dict(new_json, ch_names=[c for c in new_json['ch_names']
+                                                    if c not in new_json.get('bads', [])], bads=[])
+            d = _compare_json(new_json, old_json)
         if d:
             report[rel] = d
     return report

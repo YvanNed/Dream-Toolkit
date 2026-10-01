@@ -219,8 +219,15 @@ class ParticipantSelector:
         self._excluded = {}                # normcase key -> reason
         self.dd_mode = w.ToggleButtons(options=['All participants', 'Subset only'],
                                        value='All participants', style={'button_width': '150px'})
-        self.tags = w.TagsInput(value=[], allowed_tags=[], allow_duplicates=False,
-                                layout=w.Layout(width='620px'))
+        # Two widgets: the Combobox ADDS a participant (its autocompletion offers only the ones not
+        # selected yet, validated on Enter), the TagsInput SHOWS the subset (x on a tag removes it).
+        # TagsInput's own autocompletion (allowed_tags) cannot shrink as ids are picked: its validator
+        # rejects any value outside allowed_tags. So it gets none, and unknown typed ids are removed.
+        self.cmb_add = w.Combobox(placeholder='type an id to add it to the subset...', options=[],
+                                  ensure_option=True, continuous_update=False,
+                                  layout=w.Layout(width='300px'))
+        self.tags = w.TagsInput(value=[], allow_duplicates=False, layout=w.Layout(width='620px'))
+        self._cleaning = False
         self.txt_paste = w.Text(placeholder='or paste a list: 165, 176 ...',
                                 layout=w.Layout(width='300px'))
         self.btn_paste = w.Button(description='Add list', icon='plus', layout=w.Layout(width='100px'))
@@ -234,13 +241,14 @@ class ParticipantSelector:
         self.lbl_summary = w.HTML('<i>Scan first.</i>')
         self.html_warn = w.HTML('')
         self.lbl_paste = w.HTML('')
-        self.box_subset = w.VBox([w.HBox([self.tags]),
-                                  w.HBox([self.txt_paste, self.btn_paste, self.btn_clear, self.lbl_paste])],
+        self.box_subset = w.VBox([w.HBox([self.cmb_add, self.btn_clear]), w.HBox([self.tags]),
+                                  w.HBox([self.txt_paste, self.btn_paste, self.lbl_paste])],
                                  layout=w.Layout(display='none'))
         self.widget = w.VBox([w.HBox([self.dd_mode, self.tgl_list]), self.box_subset, self.lst,
                               self.cb_skip, self.lbl_summary, self.html_warn])
         self.dd_mode.observe(self._on_mode, names='value')
-        self.tags.observe(self._refresh, names='value')
+        self.tags.observe(self._on_tags, names='value')
+        self.cmb_add.observe(self._on_add, names='value')
         self.cb_skip.observe(self._refresh, names='value')
         self.tgl_list.observe(self._on_toggle_list, names='value')
         self.lst.observe(self._on_list_pick, names='value')
@@ -254,9 +262,7 @@ class ParticipantSelector:
         self._ids = [str(i) for i in ids]
         self._done = {id_key(i) for i in done}
         self._excluded = {id_key(k): v for k, v in (excluded or {}).items()}
-        known = {id_key(i) for i in self._ids}
-        self.tags.allowed_tags = list(self._ids)
-        self.tags.value = [t for t in self.tags.value if id_key(t) in known]
+        self._on_tags()               # drops subset ids that vanished from the new scan
         self._fill_list()
         self._refresh()
 
@@ -328,6 +334,42 @@ class ParticipantSelector:
         if not self.subset_mode:
             self.dd_mode.value = 'Subset only'
         self.lst.value = None
+
+    def _on_add(self, change=None):
+        """An id picked (or typed + Enter) in the add box: into the subset, then the box is emptied."""
+        known = {id_key(i): i for i in self._ids}
+        fid = known.get(id_key(self.cmb_add.value or ''))
+        if fid is None:
+            return
+        if fid not in self.tags.value:
+            self.tags.value = list(self.tags.value) + [fid]
+        if not self.subset_mode:
+            self.dd_mode.value = 'Subset only'
+        self.cmb_add.value = ''
+
+    def _on_tags(self, change=None):
+        """Keep the subset clean (known ids only, in their scan spelling, no duplicate), then refresh
+        the add box so it no longer offers the participants already selected."""
+        if self._cleaning:
+            return
+        known = {id_key(i): i for i in self._ids}
+        clean = []
+        for t in self.tags.value:
+            fid = known.get(id_key(t))
+            if fid is not None and fid not in clean:
+                clean.append(fid)
+        unknown = [t for t in self.tags.value if id_key(t) not in known]
+        if clean != list(self.tags.value):
+            self._cleaning = True
+            try:
+                self.tags.value = clean
+            finally:
+                self._cleaning = False
+        if unknown:
+            self.lbl_paste.value = f'<span style="color:#c62828">unknown id(s): {", ".join(unknown)}</span>'
+        chosen = {id_key(t) for t in clean}
+        self.cmb_add.options = [fid for fid in self._ids if id_key(fid) not in chosen]
+        self._refresh()
 
     def _on_paste(self, _=None):
         known = {id_key(i): i for i in self._ids}

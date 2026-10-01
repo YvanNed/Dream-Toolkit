@@ -286,8 +286,15 @@ def load_participant(fif_path):
     `meas_date` is the recording-start datetime MNE carried over from the EDF/Curry header into the .fif
     (None when the file has none); it is what lets the navigator show a wall-clock time WITHOUT reloading
     the raw recording. `epoch_len_s` is read back from the epochs themselves and is only a fallback — the
-    authoritative value is `epoch_length_s` in tool 7's params sidecar (see load_params)."""
+    authoritative value is `epoch_length_s` in tool 7's params sidecar (see load_params).
+
+    `bad_channels`: the channels tool 7 saved in the .fif but marked bad (deselected by the user, never
+    flagged). They are dropped from the analysis here, so tools 8 / the batch see exactly the channels
+    tool 7 flagged; the list is returned so a decision table can record them as dropped."""
     epochs = mne.read_epochs(str(fif_path), preload=True, verbose=False)
+    bad_channels = list(epochs.info['bads'])
+    if bad_channels:
+        epochs.drop_channels(bad_channels)
     meta = epochs.metadata.reset_index(drop=True).copy()
     data_uV = epochs.get_data() * 1e6                       # (n_ep, n_ch, n_t), µV
     stages = meta['stage'].astype(str).values
@@ -300,6 +307,7 @@ def load_participant(fif_path):
         'ch_names': list(epochs.ch_names), 'meta': meta, 'stages': stages,
         'reject_flag': reject_flag, 'methods_present': methods_present,
         'meas_date': epochs.info.get('meas_date'), 'epoch_len_s': epoch_len_s,
+        'bad_channels': bad_channels,
     }
 
 
