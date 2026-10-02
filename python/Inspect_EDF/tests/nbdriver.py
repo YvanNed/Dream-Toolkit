@@ -38,6 +38,16 @@ def _dtk_pick(fc, path):
     fc._show_dialog()
     fc._on_select_click(None)        # dialog open -> apply the selection + run the callback
 
+def _dtk_button(description):
+    """The most recently created Button with this label: some tools build their buttons inside a
+    callback (no global name to click), the way the user finds them on the page."""
+    import ipywidgets as _w
+    found = [w for w in list(_w.Widget.widgets.values())
+             if isinstance(w, _w.Button) and w.description == description]
+    if not found:
+        raise LookupError(f'no button labelled {description!r}')
+    return found[-1]
+
 def _dtk_widget_text():
     """Text of every Output widget (where the tools print their run logs)."""
     import ipywidgets as _w
@@ -119,6 +129,10 @@ class NotebookSession:
 
     def click(self, button):
         return self.run(f'{button}.click()')
+
+    def click_labelled(self, description):
+        """Click a button built inside a callback, found by its label."""
+        return self.run(f'_dtk_button({description!r}).click()')
 
     def value(self, expr):
         """Evaluate an expression in the kernel; JSON round-trip (non-JSON objects as str)."""
