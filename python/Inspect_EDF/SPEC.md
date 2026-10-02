@@ -16,6 +16,7 @@ Inspect_EDF/
 ├── environment.yml              # Conda environment definition (inspect_edf)
 ├── CLAUDE.md                    # Development rules and design decisions
 ├── SPEC.md                      # This file: project specification
+├── TESTS.md                     # What the test suite checks, in plain words (for researchers)
 ├── tools/
 │   ├── 0_live_explore_1file.ipynb               # Interactive single-file explorer (Jupyter)
 │   ├── 0_live_explore_1file_voila.ipynb         # Interactive single-file explorer (Voila GUI)
@@ -169,7 +170,8 @@ python tools/1_inspect_edf_perparticipant.py
 & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest -k synthetic   # synthetic only
 & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" tests/make_golden.py --dataset synthetic
 ```
-A pytest suite (added for the exclusion refactor, at the user's request; pytest installed with pip, as
+A plain-language description of every check, for researchers, is in **`TESTS.md`** (keep it in step when
+a test is added or changed). A pytest suite (added for the exclusion refactor, at the user's request; pytest installed with pip, as
 conda hits an SSL certificate error on the ICM network) runs the chain **5 → 5bis → 6 → 7 → 8bis → 8 →
 9** through the **real notebook widgets**: `nbdriver.py` executes every cell in a Jupyter kernel
 (`nbclient`), then injects driver cells that pick folders in the FileChoosers (`reset` + the dialog's
