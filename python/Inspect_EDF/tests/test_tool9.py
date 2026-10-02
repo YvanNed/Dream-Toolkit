@@ -126,3 +126,19 @@ def test_tool9_reaggregate_equals_a_full_run(chain, data_copy):
         # the per-epoch spectrum is stored in float32: psd_stage agrees to ~1e-7 relative
         diffs = same(a, b, ignore=(), atol=1e-5)
         assert not diffs, f'{name}: ' + '; '.join(diffs)
+
+
+def test_tool9_night_thirds_count_their_own_epochs(chain):
+    """n_epochs_rejected / n_epochs_out_of_scope / pct_rejected of a stage x third cell are THAT cell's,
+    recounted here from the per-epoch table (which carries `third`, `in_scope`, `rejected`)."""
+    feat = chain['data'] / 'derivatives' / 'features_spectral'
+    for fid in minidb.PARTICIPANTS[chain['dataset']]:
+        th = tsv(feat / f'{fid}_spectral_stage_third.tsv')
+        ep = tsv(feat / f'{fid}_aperiodic_epoch.tsv').drop_duplicates('epoch_idx')
+        for (stage, third), row in th.drop_duplicates(['stage', 'third']).set_index(['stage', 'third']).iterrows():
+            cell = ep[(ep['stage'] == stage) & (ep['third'] == third)]
+            n_rej = int((cell['in_scope'] & cell['rejected']).sum())
+            n_kept = int((cell['in_scope'] & ~cell['rejected']).sum())
+            assert row['n_epochs_rejected'] == n_rej, (fid, stage, third)
+            assert row['n_epochs_out_of_scope'] == int((~cell['in_scope']).sum())
+            assert row['pct_rejected'] == pytest.approx(100.0 * n_rej / (n_kept + n_rej), abs=0.01)

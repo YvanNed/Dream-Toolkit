@@ -189,3 +189,37 @@ def test_empty_registry_header_only_means_everyone_included(data):
     assert len(reg) == 0 and warn is None                          # a tool can still write into it
     P.write_registry_rows(data, '7_manual', [{'file_id': 'a', 'reason': 'r'}])
     assert P.excluded_ids(P.effective_status(P.load_registry(data)[0])) == ['a']
+
+
+def test_registry_newer_than_its_tables(data, tmp_path):
+    import os, time
+    table = tmp_path / 'global.tsv'
+    assert not P.registry_newer_than(data, table)                  # nothing to compare yet
+    table.write_text('x\n', encoding='utf-8')
+    assert not P.registry_newer_than(data, table)                  # no registry
+    P.write_registry_rows(data, '7_manual', [{'file_id': 'a', 'reason': 'r'}])
+    later = time.time() + 5
+    os.utime(P.registry_path(data), (later, later))
+    assert P.registry_newer_than(data, table)                      # decision taken after the table
+    os.utime(table, (later + 5, later + 5))
+    assert not P.registry_newer_than(data, table)                  # table rebuilt since
+    assert 'registry changed after' in P.stale_tables_html(P.STALE_RERUN)
+
+
+def test_rewriting_the_same_decisions_leaves_the_registry_untouched(data):
+    """Tool 8bis re-run with the same thresholds: no new decision, so no new file date (the stale-table
+    warning of the other tools must not fire) and the original decided_at is kept."""
+    import os
+    P.write_registry_rows(data, '8bis_auto', [{'file_id': 'a', 'reason': 'all channels dropped'}],
+                          replace_ids=['a'])
+    P.write_registry_rows(data, '8bis_auto', [], replace_ids=['b'])      # nothing for b, before or after
+    path = P.registry_path(data)
+    os.utime(path, (1_000_000, 1_000_000))
+    before = path.read_text(encoding='utf-8')
+    P.write_registry_rows(data, '8bis_auto', [{'file_id': 'a', 'reason': 'all channels dropped'}],
+                          replace_ids=['a'])
+    P.write_registry_rows(data, '8bis_auto', [], replace_ids=['b'])
+    assert path.stat().st_mtime == 1_000_000 and path.read_text(encoding='utf-8') == before
+    P.write_registry_rows(data, '8bis_auto', [{'file_id': 'a', 'reason': 'all in-scope epochs rejected'}],
+                          replace_ids=['a'])                               # a real change: written
+    assert path.stat().st_mtime != 1_000_000

@@ -43,13 +43,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 **Shared conventions** (→ SPEC *Cross-cutting procedures*)
 - **Rejected data is computed, flagged, left out of the outputs** (→ SPEC *Cross-cutting → Rejected-data
   policy* + *Participant exclusion registry* + *Participant selector*): no tool skips a rejected participant,
-  epoch or channel. Tables carry `participant_excluded` / `participant_exclude_reason`, and tool 9's per-epoch
+  epoch or channel. Tables of tools 6-9 carry `participant_excluded` / `participant_exclude_reason` (**tool 5
+  knows nothing of exclusions**: raw extraction, the decisions belong to 5bis), and tool 9's per-epoch
   tables `in_scope` / `rejected` / `channel_dropped`; only group statistics and figures (and per-participant
   figures) use the kept data. Participant exclusions live in **one registry**
   (`config_param/participant_exclusions.tsv`, `tools/participant_selection_lib.py`, shared module): each tool
   rewrites **only its own `source` rows**, a forced inclusion (5bis manual) overrides every exclusion, an
-  unreadable registry is never overwritten. A registry change reaches a tool's tables at its next run (Skip
-  ticked = rebuild only). Epoch / channel decisions are **tables** (`derivatives/rejection_auto|manual/`
+  unreadable registry is never overwritten, identical rows are never rewritten (its date = "a decision
+  changed"). A registry change reaches a tool's tables at its next run (Skip ticked = rebuild only); tools
+  6/7/8bis/9 warn at scan when the registry is newer than their tables (`registry_newer_than`). Epoch / channel decisions are **tables** (`derivatives/rejection_auto|manual/`
   `_epoch_decision.tsv` + `_channel_decision.tsv`): **no `clean-epo.fif` any more**, tool 9 joins them to
   tool 7's `_all-epo.fif`. Tools 5/6/7/8bis/9 use the shared **`ParticipantSelector`** (all / subset;
   Skip applies to a subset too, with an orange warning box), never one checkbox per participant.
@@ -155,8 +157,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc.
 - **Participant selection (`5bis_select_participants_voila`)**: reads only tool 5's `global_sleep_metrics.tsv`,
   writes a decision record (`participant_selection.tsv`) beside it **and the registry**: Validate replaces all
-  `5bis_criteria` rows, Section 3 saves `5bis_manual` exclusions / forced inclusions at once. Tool 5's table is
-  one validation behind (re-run tool 5 after 5bis). `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **verbatim copies of tool 5's**: edit
+  `5bis_criteria` rows, Section 3 saves `5bis_manual` exclusions / forced inclusions at once. Tool 5 stays
+  decision-free. `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **verbatim copies of tool 5's**: edit
   both notebooks together. The unicorn GIF on Validate is deliberate (`SHOW_UNICORN`). → SPEC §5bis.
 - **Preprocessing (`7_preprocessing`)**: `METHOD_ORDER` is the single source of truth so optional
   additions (event rejection, notch, resample, configurable 1/f fit range) keep event/feature-free runs

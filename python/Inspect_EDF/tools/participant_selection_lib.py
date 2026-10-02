@@ -132,6 +132,14 @@ def write_registry_rows(data_folder, source, rows, replace_ids=None):
             raise ValueError(f'decision must be exclude or include, got {r.decision!r}')
         if r.decision == INCLUDE and source != '5bis_manual':
             raise ValueError('a forced inclusion can only be written by 5bis_manual')
+    # Same decisions as already recorded (e.g. tool 8bis re-run with the same thresholds): leave the file
+    # untouched, so its date keeps meaning "a decision changed" (the stale-table warning relies on it) and
+    # the original decided_at survives.
+    content = ['file_id', 'decision', 'reason', 'comment']
+    old_rows = sorted(map(tuple, reg.loc[mine, content].astype(str).values.tolist()))
+    new_rows = sorted(map(tuple, new[content].astype(str).values.tolist()))
+    if path.is_file() and old_rows == new_rows:
+        return reg
     out = pd.concat([reg[~mine], new], ignore_index=True)
     out = out.sort_values(['file_id', 'source', 'decided_at'], kind='stable').reset_index(drop=True)
     _write_atomic(out, path)
@@ -182,6 +190,31 @@ def add_exclusion_columns(df, status, id_col='file_id'):
     out[COL_EXCLUDED] = [p[0] for p in pairs]
     out[COL_REASON] = [p[1] for p in pairs]
     return out
+
+
+def registry_newer_than(data_folder, *tables):
+    """True when the exclusion registry was modified AFTER (the oldest of) the given database tables:
+    a decision taken since they were built is not in them yet. False when the registry or every table is
+    absent (nothing to compare: a first run builds the tables with the current registry anyway)."""
+    if data_folder is None:
+        return False
+    reg = registry_path(data_folder)
+    existing = [Path(t) for t in tables if t is not None and Path(t).is_file()]
+    if not reg.is_file() or not existing:
+        return False
+    return reg.stat().st_mtime > min(t.stat().st_mtime for t in existing)
+
+
+def stale_tables_html(how_to_refresh):
+    """Orange box shown at scan / load when `registry_newer_than` is True."""
+    return ('<div style="background:#fff4e5;border:2px solid #ef6c00;color:#7a3e00;padding:8px 12px;'
+            'margin:6px 0;border-radius:4px"><b>&#9888; The exclusion registry changed after this tool\'s '
+            'database tables were built</b>: a participant excluded (or re-included) since then is not '
+            f'flagged in them yet. {how_to_refresh}</div>')
+
+
+STALE_RERUN = ('Click <b>Run</b> with <i>Skip already processed</i> ticked: nobody is reprocessed, the '
+               'database tables and reports are rebuilt with the current registry.')
 
 
 def excluded_banner_html(reason):

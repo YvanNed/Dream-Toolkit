@@ -222,14 +222,17 @@ instead of restating them. Only tool-specific deltas are kept inline.
   a rejected participant, epoch or channel is **never** skipped by a downstream tool. Every tool computes
   on the whole database and marks what is rejected with a column; only the **outputs** (descriptive
   statistics, group figures, per-participant figures) use the non-rejected data. Any exclusion can thus
-  be revisited without reprocessing. The boundary:
+  be revisited without reprocessing. **Tool 5 is outside this policy on purpose**: it extracts the raw
+  macrostructure of every recording and knows nothing of exclusions (no column, every participant in its
+  figures); tool 5bis takes the decisions from its table and is where they are shown (its selection files,
+  its report, the registry). The boundary for the processing tools 6 to 9:
 
   | Level | Content |
   |---|---|
   | per-epoch tables (tool 9 `_bandpower_epoch`, `_aperiodic_epoch`, `_periodic_peaks`) | **every** epoch and channel, with `in_scope`, `rejected`, `channel_dropped` |
   | per-participant × stage aggregates (tool 9 `_spectral_stage`, `_aperiodic_stage`, `_psd_stage`) | computed over the **kept** epochs (in scope, not rejected), for **every** channel (`channel_dropped` flags the dropped ones), with `n_epochs_rejected` / `n_epochs_out_of_scope` |
-  | database tables (`global_*.tsv`, workbooks) of tools 5, 6, 7, 8, 8bis, 9 | **every** participant, with `participant_excluded` / `participant_exclude_reason` (named so to stay distinct from tool 6's per-channel `exclude`) |
-  | database figures / statistics (tool 5 / 6 / 9 database reports, tool 7 `global_rejection_by_stage.tsv`, tool 8bis bar plot) | non-excluded participants and kept channels only; the excluded ones are named |
+  | database tables (`global_*.tsv`, workbooks) of tools 6, 7, 8, 8bis, 9 | **every** participant, with `participant_excluded` / `participant_exclude_reason` (named so to stay distinct from tool 6's per-channel `exclude`) |
+  | database figures / statistics (tool 6 / 9 database reports, tool 7 `global_rejection_by_stage.tsv`, tool 8bis bar plot) | non-excluded participants and kept channels only; the excluded ones are named |
   | an excluded participant's own report | still written, with a red `EXCLUDED: reason` banner (`excluded_banner_html`) |
 - **Participant exclusion registry (`<data_folder>/config_param/participant_exclusions.tsv`)**: one row
   per decision, `file_id, source, decision, reason, comment, decided_at`, written through
@@ -250,8 +253,15 @@ instead of restating them. Only tool-specific deltas are kept inline.
   output folder of tools 5 / 7, the data folder of tool 6, `find_data_folder` from the raw-epochs folder for
   tools 8 / 8bis / 9). **A decision taken after a tool ran reaches its tables at its next run**: run it again
   with *Skip already processed* ticked (nobody is reprocessed, the database tables are rebuilt with the
-  current registry, tool 7 included when it has nobody to process), or tool 9's *Re-aggregate only*. Tool 5
-  is always one validation behind (5bis decides from its table): re-run it after validating 5bis.
+  current registry, tool 7 included when it has nobody to process), or tool 9's *Re-aggregate only*.
+  **Stale-table warning** (tools 6, 7, 8bis, 9): at scan / load, `registry_newer_than(data_folder, *tables)`
+  compares the registry's modification date with the tool's database tables (6 `quality_summary.tsv`, 7
+  `global_epoch_rejection.tsv` + `global_rejection_by_stage.tsv`, 8bis `global_autoreject_summary.tsv`, 9
+  `global_spectral_stage.tsv`) and, when the registry is newer, shows an orange box
+  (`stale_tables_html`) saying how to refresh (Run with Skip ticked, or Re-aggregate only for tool 9). For the
+  date to mean "a decision changed", `write_registry_rows` **leaves the file untouched when the rows it would
+  write equal those recorded** (same `file_id, decision, reason, comment`; the original `decided_at` is kept):
+  a tool 8bis re-run with the same thresholds never makes the other tools' tables look stale.
 - **Participant selector (`ParticipantSelector`, tools 5, 6, 7, 8bis, 9)**: replaces the one-checkbox-per-
   participant lists (unreadable on a large database). Mode **All participants** / **Subset only**; in
   subset mode an **add box** (`Combobox`, autocompletion offering only the participants not selected yet,
@@ -1004,14 +1014,10 @@ The notebook's closing **Outputs: where to look** cell and the report's section 
 document every file (which question it answers, which column to read, what to check before trusting a
 value).
 
-**Excluded participants** (*Cross-cutting → Rejected-data policy* + *Participant exclusion registry*):
-`global_sleep_metrics.tsv` (and the workbook's `sleep_metrics` sheet) gain `participant_excluded` /
-`participant_exclude_reason`, read from `<output folder>/config_param/participant_exclusions.tsv` at every
-rebuild; the database report's figures (time in bed, metric distributions) leave the excluded participants
-out, its summary names them, its participant table keeps everyone with the reason. Tool 5bis decides from
-this very table, so **tool 5's table is always one validation behind**: re-run tool 5 after validating 5bis
-(every recording is skipped, only the database outputs are rebuilt, a few seconds). 5bis never takes the
-two exclusion columns for metrics.
+**No notion of exclusion** (decided with the user): tool 5 extracts the raw macrostructure of **every**
+recording; its tables, workbook and figures never carry or apply an exclusion. The decisions are taken by
+tool 5bis **from this table** and shown by 5bis (its selection files, report and the shared registry), so tool
+5's outputs are never "stale". The participant selector of Section 3 shows no exclusion status either.
 
 **Validated** on the real fixtures (headless run of the notebook cells): `tools/test lights on_off/
 1DEPA0756_N2` (summary-txt lights, French txt events, SpO2) → TIB 462.5, SOL 34.0, SPT 428.5, TST 387.5,
@@ -1680,7 +1686,10 @@ tools read tool 7's epochs + a decision* for the decision tables, the sidecar lo
   shortage is visible). Optional **night thirds** (draft, OFF): the sleep period (first to last non-W
   epoch **of the whole night**, every epoch counted: it no longer depends on the rejection decision) split into
   three equal spans of the epoch index, the stage × third averages using the kept epochs, written to a
-  companion table: NREM–REM cycle detection is deliberately not attempted.
+  companion table whose `n_epochs_rejected` / `n_epochs_out_of_scope` are **those of the stage × third
+  cell**, plus `pct_rejected` = rejected / (kept + rejected) in the cell, so a third resting on a small share
+  of its epochs (an artefact-ridden end of night) is visible: NREM–REM cycle detection is deliberately not
+  attempted.
 - **Averaging space, epoch → stage** (the old script's open TODO, now an explicit choice): `log space`
   (**ON**, mean of the per-epoch dB, what a per-epoch model sees, robust to one loud epoch) and/or
   `linear space` (OFF, dB of the linear mean, preserves total power, but a few high-power epochs
