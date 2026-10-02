@@ -41,6 +41,18 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tools 0 & 6: **keep in sync**.
 
 **Shared conventions** (→ SPEC *Cross-cutting procedures*)
+- **Rejected data is computed, flagged, left out of the outputs** (→ SPEC *Cross-cutting → Rejected-data
+  policy* + *Participant exclusion registry* + *Participant selector*): no tool skips a rejected participant,
+  epoch or channel. Tables carry `participant_excluded` / `participant_exclude_reason`, and tool 9's per-epoch
+  tables `in_scope` / `rejected` / `channel_dropped`; only group statistics and figures (and per-participant
+  figures) use the kept data. Participant exclusions live in **one registry**
+  (`config_param/participant_exclusions.tsv`, `tools/participant_selection_lib.py`, shared module): each tool
+  rewrites **only its own `source` rows**, a forced inclusion (5bis manual) overrides every exclusion, an
+  unreadable registry is never overwritten. A registry change reaches a tool's tables at its next run (Skip
+  ticked = rebuild only). Epoch / channel decisions are **tables** (`derivatives/rejection_auto|manual/`
+  `_epoch_decision.tsv` + `_channel_decision.tsv`): **no `clean-epo.fif` any more**, tool 9 joins them to
+  tool 7's `_all-epo.fif`. Tools 5/6/7/8bis/9 use the shared **`ParticipantSelector`** (all / subset;
+  Skip applies to a subset too, with an orange warning box), never one checkbox per participant.
 - **Scored events (`load_events`)**: tool 4 reads three Compumedics companions **TXT-first**: the
   `*_ScoredEvents_Export.txt` text export (French, UTF-16-or-UTF-8, no header, clock-time, parsed inline like
   `curry_io._parse_events_txt`), then `*_event_xml.csv`, then the `<ScoredEvents>` of `*.edf.XML`. The scan
@@ -142,8 +154,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `Desaturation` column). Skip marker = `{file_id}_sleep_metrics.tsv` (checks TSV written first). Globals
   globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc.
 - **Participant selection (`5bis_select_participants_voila`)**: reads only tool 5's `global_sleep_metrics.tsv`,
-  writes a decision record (`participant_selection.tsv`, keyed on `file_id` + `excluded`) beside it. No tool
-  reads it yet. `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **verbatim copies of tool 5's**: edit
+  writes a decision record (`participant_selection.tsv`) beside it **and the registry**: Validate replaces all
+  `5bis_criteria` rows, Section 3 saves `5bis_manual` exclusions / forced inclusions at once. Tool 5's table is
+  one validation behind (re-run tool 5 after 5bis). `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **verbatim copies of tool 5's**: edit
   both notebooks together. The unicorn GIF on Validate is deliberate (`SHOW_UNICORN`). → SPEC §5bis.
 - **Preprocessing (`7_preprocessing`)**: `METHOD_ORDER` is the single source of truth so optional
   additions (event rejection, notch, resample, configurable 1/f fit range) keep event/feature-free runs
@@ -171,9 +184,12 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   consistently across tool 7 → context companion → sidecar → tools 8/8bis/`qc_rejected_epochs_lib` (re-run the
   Curry generator). → SPEC §7 *Epoching (configurable epoch length)*.
   **Output location**: tool 7 writes its `.fif`/sidecar/context under **`derivatives/raw_epo/<subtree>/`**
-  (sibling of tool 8's `clean_epo_manual/` and 8bis's `clean_epo_auto/`). Tools 8/8bis **strip a leading
-  `raw_epo/`** when mirroring the subtree into their `clean_epo_*/` (pre-`raw_epo` layouts pass through), and
-  tool 7 deletes stale same-id copies at the old `derivatives/<subtree>/` location on reprocess.
+  (sibling of tool 8's `rejection_manual/` and 8bis's `rejection_auto/`), and deletes stale same-id copies at
+  the old `derivatives/<subtree>/` location on reprocess.
+  **Deselected channels are kept as `bads`** (→ SPEC §7): in the `.fif` and the sidecar (`bad_channels`),
+  out of the average reference and of the flagging (dropped right after epoching, put back at save), but
+  **re-referenced by hand** (MNE leaves bads in their original reference). Every tool-7 table stays
+  byte-identical. The Curry generator's `OLD_LOAD`/`NEW_LOAD` carries these lines: mirror any edit there.
 - **Context-channels companion (`7_preprocessing` block `[H]`, → tool 8)**: when the participant's
   `sub_config` carries a tool-2 `context_channels` block, tool 7 reads **only** those declared EOG/EMG/ECG
   channels from the raw EDF, renames them to role labels (`EOG-L`/`EOG-R`/`EMG`/`ECG`), sets MNE channel
@@ -190,13 +206,13 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   optional data folder + Raw-epochs folder** (like 8bis **minus** the reports picker: tool 8 never reads
   `reports_preprocessing/`). `find_participants` runs on the chosen raw folder so versioned tool-7 runs stay
   apart on the participant dropdown. `data_root` = the selected data folder, else the `derivatives/`
-  ancestor's parent. An **"already processed" badge** (clean-epo **and** a review/decision TSV on disk) is
-  informative only: it blocks nothing.
+  ancestor's parent. An **"already processed" badge** (`_epoch_decision.tsv` **and** a review/decision TSV on
+  disk) is informative only: it blocks nothing. The **Exclude this participant** button writes `8_manual`.
   **The decision is RECOMPOSED, not read**: Section 1 checkboxes (stages / methods / event types, all on by
   default) feed `recompute_reject`, which rebuilds `base_reject` + `reject_method` the way 8bis's
   `build_pair_matrix` does: all ticked ⇒ **identical to tool 7's `reject_flag`** (keep it that way). It
-  drives the navigator, Section 2 **and** the clean-epo (**out-of-scope stages are excluded from the
-  `.fif`**), and gates the cost (`fit_mask=in_scope`, `do_1f=False` when no 1/f method is ticked).
+  drives the navigator, Section 2 **and** the saved decision (**out-of-scope stages = `in_scope False`**), and
+  gates the cost (`fit_mask=in_scope`, `do_1f=False` when no 1/f method is ticked).
   Per-channel attribution is **recomputed** with tool-7 formulas + persisted thresholds. Section 4 also
   writes an **8bis-style decision record** (`_manualreject_decision.tsv` → `_manualreject_report.html` →
   `global_manualreject_summary.tsv` **rebuilt by globbing the per-file TSVs**, data written before the report). Analysis + plotting live in a **shared module
@@ -216,8 +232,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   aligned by epoch index): still no raw-EDF reload. Absent companion → toggle is a no-op. The navigator
   header names the **event type(s)** that flagged the epoch, read from the `.fif` `evt_<type>` metadata
   columns (no reports-folder access, present only when tool-7 event flagging ran). **Data/reports
-  split** (both folders precomputed at load: `S['out_folder']` / `S['reports_folder']`): `_clean-epo.fif` →
-  **`derivatives/clean_epo_manual/<subtree>/`**. Reviewed TSVs + `qc2b_report.html` → **`reports_rejection_manual/`**
+  split** (both folders precomputed at load: `S['out_folder']` / `S['reports_folder']`): decision tables →
+  **`derivatives/rejection_manual/<subtree>/`**. Reviewed TSVs + `qc2b_report.html` → **`reports_rejection_manual/`**
   (`deriv_root.parent/…`, beside `reports_preprocessing/`).
 - **Automatic epoch rejection (`8bis_reject_automatically_voila`)**: **flagging → rejection** decision tool
   (naming scheme: 7 flag → 8 manual → 8bis auto, where 8 and 8bis are alternatives). Voila app. It reads only
@@ -232,21 +248,23 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `reject_any`, byte-identical default). Ticking `event` reveals per-canonical-type rows (checkbox +
   `exclude if > N events` threshold + a mean/median-per-file hint) fed by the tool-7 `_event_epoch_flags.tsv`
   (per-type epoch flags, absent → fall back to `flag_event`) and `_event_counts.tsv` (raw counts). A ticked
-  type over its threshold **excludes the whole participant** (no clean-epo, row/report marked `excluded`).
-  Provenance columns `methods_used`/`event_types_used`/`excluded`/`exclude_reason` (+ `.fif`
-  `auto_reject_methods`/`_event_types`). Run tally gains `excluded`. Still format-agnostic → **Curry twin stays a
+  type over its threshold **excludes the whole participant** (registry `8bis_auto`, like all-channels-dropped /
+  all-epochs-rejected; a re-run replaces these rows). Provenance columns
+  `methods_used`/`event_types_used`/`excluded`/`exclude_reason`. Run tally gains `excluded`. Still format-agnostic → **Curry twin stays a
   verbatim copy** (re-run `_make_tool8bis_curry.py`). **Section 1 = two explicit folder pickers (raw-epochs + reports) + a Scan button**
   (+ an optional data-folder chooser that pre-points them): *not* one root scanned recursively, so
   renamed/versioned tool-7 runs (`raw_epo_v2`, `reports_preprocessing_v2`) stay apart. **Data/reports split**:
-  `{file_id}_clean-epo.fif` (selected stages, dropped channels removed) → **`clean_epo_auto/`** (`raw_root.parent/…`,
-  beside the raw folder). `_autoreject_decision.tsv` (durable record + global-summary source, written **before**
+  `_epoch_decision.tsv` + `_channel_decision.tsv` → **`rejection_auto/`** (`raw_root.parent/…`, beside the raw
+  folder; 8bis no longer reads the `.fif`). `_autoreject_decision.tsv` (durable record + global-summary source, written **before**
   the report) + `_autoreject_report.html` + the global summary/report → **`reports_rejection_auto/`**
   (`reports_root.parent/…`, beside the reports folder). No interpolation (channels are dropped, interpolation is deferred). Skip gate
-  = clean-epo **and** decision TSV present. Global summary rebuilt by globbing the per-file decision TSVs.
-  All-channels-/all-epochs-rejected → still get a decision row + report (100 % in the summary), no clean-epo. See SPEC §8bis.
+  = `_epoch_decision.tsv` **and** decision TSV present. Global summary rebuilt by globbing the per-file decision TSVs.
+  All-channels-/all-epochs-rejected → still get tables + row + report (100 % in the summary). See SPEC §8bis.
 
-- **Spectral features (`9_spectral_features_voila`)**: first **feature tool**: it starts from `clean_epo_*`
-  (tool 8/8bis), never from the raw. Tool 7's params sidecar is **provenance only** (auto-located, absence
+- **Spectral features (`9_spectral_features_voila`)**: first **feature tool**: it reads tool 7's `_all-epo.fif`
+  + a tool 8/8bis decision folder, never the raw, and computes **every** epoch and channel (aggregates over the
+  kept epochs). It saves `_psd_epoch.npz` so **Re-aggregate only** rebuilds everything after a decision change
+  without PSD / fit; `finish_participant` is shared by both paths. Night thirds span the whole night. Tool 7's params sidecar is **provenance only** (auto-located, absence
   non-fatal). Three invariants: the **PSD smoothing feeds the specparam fit only** (band powers always use
   the raw PSD). **Band integrals are rectangular sums** (`Σ PSD × df`, so tiling bands give relative powers
   summing to 1). And the **peak model follows specparam's defaults** (`[0.5, 12]`, `min_peak_height 0.1`),
@@ -255,7 +273,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (epoch × channel) 1/f flags and forces a full reprocess). Tool 9 is **not** part of tool 7's three-copy
   `SpectralModel` sync constraint. Outputs split data → `derivatives/features_spectral/`, reports
   → `reports_features_spectral/`. Database tables are globbed from disk and **padded to the channel union**
-  because 8/8bis drop channels per participant. → SPEC §9.
+  (database figures: `figure_rows` = not excluded, not dropped). → SPEC §9.
 - **Any tool computing a PSD**: work in **µV²/Hz** and guard logs with `np.where(psd > 0, psd, np.nan)`,
   and **never** with `psd + 1e-10` on a V²/Hz array (that is a 100 µV²/Hz floor, above most of the sleep spectrum).
   With **multitaper**, pass `normalization='full'`: MNE's `'length'` default is not a density (off by
@@ -305,8 +323,12 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (`==`, `in`, `.isin()`, set/dict membership) in `os.path.normcase(...)` **at the comparison only** (keep
   the stored/displayed value original). Prevents skip checks silently failing on `C:`/`c:` and `/`/`\`.
 - **Language**: all user-facing strings in notebooks and all of SPEC.md must be in English.
-- **No formal test suite**: validate against real EDF files from the dataset. Don't add pytest/unittest
-  unless explicitly asked.
+- **Tests** (`tests/`, pytest, → SPEC *How to run → Tests*): the notebooks are driven headlessly through
+  their widgets on two datasets. **synthetic** (generated, golden versioned) and **real** (tools/test_data, a
+  real participant's PSG: **never versioned**, `tests/golden/real/` git-ignored). Run the suite before staging a
+  change to tools 5-9; regenerate a golden (`tests/make_golden.py`) **only on trusted code, before** a change, and
+  list an intended output change in `INTENDED_CHANGES` with its own dedicated test. Beyond that, validate on
+  real EDF files; no new test framework.
 
 ## Operational notes (this machine)
 
