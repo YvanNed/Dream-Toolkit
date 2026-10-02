@@ -49,6 +49,7 @@ def tsv(path):
 
 
 # =====================================================================================  tool 7
+@pytest.mark.tool7
 def test_tool7_keeps_deselected_channels_as_bad(chain):
     """The chain's tool-6 exclusions (clipped Fp1, dead C3) are deselected in tool 7: they are in the
     .fif, marked bad, listed in the sidecar, absent from the flagging tables."""
@@ -64,6 +65,7 @@ def test_tool7_keeps_deselected_channels_as_bad(chain):
     assert fif(chain['data'], p[2]).info['bads'] == []
 
 
+@pytest.mark.tool7
 def test_tool7_bad_channel_gets_the_m2_reference(chain, data_copy):
     """Re-run the clipping participant with Fp1 KEPT: every channel, Fp1 included, must equal the chain's
     run where Fp1 was deselected. Hence the bad Fp1 was re-referenced to M2 and filtered exactly like a
@@ -77,6 +79,7 @@ def test_tool7_bad_channel_gets_the_m2_reference(chain, data_copy):
                                    rtol=0, atol=1e-9, err_msg=ch)
 
 
+@pytest.mark.tool7
 def test_tool7_average_reference_ignores_the_bad_channel(chain, data_copy):
     """Average reference (high-density montages): MNE averages the GOOD channels only, and leaves the
     bad ones in their original reference, which tool 7 corrects. Checked on the clipping participant
@@ -104,6 +107,7 @@ def test_tool7_average_reference_ignores_the_bad_channel(chain, data_copy):
     np.testing.assert_allclose(bip(bad_run), bip(good_run), rtol=0, atol=1e-9)
 
 
+@pytest.mark.tool7
 def test_tool7_manual_exclusion_and_global_tables(chain, data_copy):
     p = ids(chain)
 
@@ -138,6 +142,7 @@ def test_tool7_manual_exclusion_and_global_tables(chain, data_copy):
     assert dict(zip(stage['stage'], stage['n_total'])) == expected.to_dict()
 
 
+@pytest.mark.tool7
 def test_tool7_chain_stage_summary_leaves_out_the_5bis_exclusion(chain):
     p = ids(chain)
     stage = tsv(chain['data'] / 'reports_preprocessing' / 'global_rejection_by_stage.tsv')
@@ -158,6 +163,7 @@ def golden_clean(golden, fid, kind):
     return meta['epoch_idx'].astype(int).tolist(), summary['ch_names']
 
 
+@pytest.mark.tool8bis
 def test_tool8bis_decision_tables_match_the_clean_epochs(chain, golden):
     """The decision tables keep exactly the epochs and channels the former clean-epo held."""
     p = ids(chain)
@@ -182,6 +188,7 @@ def test_tool8bis_decision_tables_match_the_clean_epochs(chain, golden):
     assert '8bis_auto' not in set(reg['source'])                         # nobody all-rejected here
 
 
+@pytest.mark.tool8bis
 def test_tool8bis_event_threshold_excludes_then_a_rerun_lifts_it(chain, data_copy):
     fid = ids(chain)[2]
 
@@ -203,6 +210,7 @@ def test_tool8bis_event_threshold_excludes_then_a_rerun_lifts_it(chain, data_cop
 
 
 # =====================================================================================  tool 8
+@pytest.mark.tool8
 def test_tool8_decision_tables(chain, golden):
     fid = minidb.manual_review_participant(chain['dataset'])
     dec_dir = chain['data'] / 'derivatives' / 'rejection_manual'
@@ -214,6 +222,7 @@ def test_tool8_decision_tables(chain, golden):
     assert sorted(cd.loc[~cd['dropped'], 'channel']) == sorted(chans_old)
 
 
+@pytest.mark.tool8
 def test_tool8_exclude_button(chain, data_copy):
     fid = ids(chain)[3]
     with NotebookSession(pipeline.T8) as nb:

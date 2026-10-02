@@ -18,6 +18,8 @@ import minidb
 import pipeline
 import snapshot
 
+pytestmark = pytest.mark.tool9
+
 EPOCH_TABLES = ['bandpower_epoch', 'aperiodic_epoch', 'periodic_peaks']
 STAGE_TABLES = ['spectral_stage', 'aperiodic_stage', 'psd_stage']
 SORT_KEYS = ['file_id', 'stage', 'band', 'third', 'channel', 'freq_hz', 'epoch_idx', 'peak_idx']

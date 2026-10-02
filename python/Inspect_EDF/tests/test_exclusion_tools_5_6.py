@@ -27,6 +27,7 @@ def data_copy(chain, tmp_path):
     return dst
 
 
+@pytest.mark.tool5
 def test_tool5_knows_nothing_of_exclusions(chain):
     """Tool 5 extracts the raw macrostructure of every recording; the decisions belong to 5bis (its
     selection files + the registry). No exclusion column, every participant in the report's figures."""
@@ -39,6 +40,7 @@ def test_tool5_knows_nothing_of_exclusions(chain):
     assert 'not in the figures' not in html and 'EXCLUDED' not in html
 
 
+@pytest.mark.tool7
 def test_tool7_rerun_with_nothing_to_process_refreshes_its_tables(chain, data_copy):
     """A decision taken after tool 7 ran (here a tool-8 exclusion) reaches tool 7's database tables when
     tool 7 is run again, even with every participant skipped."""
@@ -59,6 +61,7 @@ def test_tool7_rerun_with_nothing_to_process_refreshes_its_tables(chain, data_co
     assert (stage['n_participants'] == 2).all() and (stage['n_participants_excluded'] == 2).all()
 
 
+@pytest.mark.tool6
 def test_tool6_tables_flag_and_overview_leaves_out_the_excluded(chain):
     p = minidb.PARTICIPANTS[chain['dataset']]
     rep = chain['data'] / 'reports_quality_overview'
@@ -73,6 +76,7 @@ def test_tool6_tables_flag_and_overview_leaves_out_the_excluded(chain):
     assert 'EXCLUDED participant' in report
 
 
+@pytest.mark.tool9
 def test_tool9_scan_warns_when_the_registry_is_newer_than_its_tables(chain, data_copy):
     p = minidb.PARTICIPANTS[chain['dataset']]
     raw, dec = data_copy / 'derivatives' / 'raw_epo', data_copy / 'derivatives' / 'rejection_auto'

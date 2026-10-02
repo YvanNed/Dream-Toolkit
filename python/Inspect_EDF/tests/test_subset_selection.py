@@ -25,6 +25,7 @@ def mtimes(folder, pattern):
     return {f.name: f.stat().st_mtime_ns for f in folder.rglob(pattern)}
 
 
+@pytest.mark.tool5
 def test_tool5_subset(chain, data_copy):
     p = minidb.PARTICIPANTS[chain['dataset']]
     per_file = data_copy / 'derivatives' / 'features_macrostructure'
@@ -57,6 +58,7 @@ def test_tool5_subset(chain, data_copy):
     assert all(pid in gtable for pid in p)
 
 
+@pytest.mark.tool6
 def test_tool6_subset(chain, data_copy):
     p = minidb.PARTICIPANTS[chain['dataset']]
     reports = data_copy / 'reports_quality_overview'

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.quick
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # twin -> markers that must appear in it (the EDF original carries them too)
