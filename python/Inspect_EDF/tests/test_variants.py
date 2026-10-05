@@ -331,6 +331,40 @@ def test_tool8_reload_clears_the_sections(src, tmp_path):
 
 
 @pytest.mark.tool8
+@pytest.mark.tool9
+def test_tool9_names_a_stage_out_of_scope_in_tool8(src, tmp_path):
+    """N3 unticked in tool 8 for sim04: tool 9 keeps its N3 epochs in the per-epoch tables (in_scope False),
+    writes no N3 row in its stage table, and says why in its log. Tool 9's scan only offers the stages some
+    participant keeps, so a second participant keeping N3 is needed (its 8bis decision tables, same schema,
+    placed in the same decision folder; 8bis keeps N2/N3/R)."""
+    data = burst_copy(src, tmp_path)
+    with NotebookSession(pipeline.T8) as nb:
+        open_navigator(nb, data)
+        nb.set("_stage_cb['N3']", False)
+        nb.click('btn_apply')
+        nb.click('btn_save')
+    manual = data / 'derivatives' / 'rejection_manual'
+    for folder, dst in (('raw_epo', data / 'derivatives' / 'raw_epo'), ('rejection_auto', manual)):
+        for f in (src / 'derivatives' / folder).glob(f'{SIM_LINE}_*'):
+            if folder == 'raw_epo' or f.name.endswith('_decision.tsv'):
+                shutil.copy2(f, dst / f.name)
+    with NotebookSession(pipeline.T9) as nb:
+        nb.pick('fc_data', data)
+        nb.pick('fc_raw', data / 'derivatives' / 'raw_epo')
+        nb.pick('fc_decision', manual)
+        nb.click('btn_scan')
+        assert nb.value('"N3" in stage_checkboxes')
+        select_subset(nb, [SIM_BURSTS, SIM_LINE], skip=False)
+        nb.click('btn_run')
+        text = nb.widget_text()
+    assert 'stages requested but not analysed' in text and 'N3 (all ' in text and 'out of scope' in text
+    out = data / 'derivatives' / 'features_spectral'
+    assert 'N3' not in set(tsv(out / f'{SIM_BURSTS}_spectral_stage.tsv')['stage'])
+    ep = tsv(out / f'{SIM_BURSTS}_bandpower_epoch.tsv')
+    assert (ep['stage'] == 'N3').any() and not ep.loc[ep['stage'] == 'N3', 'in_scope'].any()
+
+
+@pytest.mark.tool8
 @pytest.mark.tool7
 def test_tool8_annotation_is_read_back_by_tool7(src, tmp_path):
     """A 'hypopnea' annotated in tool 8 on an epoch with no scored event lands in sim04_manual_events.tsv

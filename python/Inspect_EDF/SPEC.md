@@ -1810,7 +1810,14 @@ same three decision columns), plus `{file_id}_psd_epoch.npz` (above).
 
 **Outputs (reports → `reports_features_spectral/<subtree>/{file_id}_spectral_report.html`)**, drawn from the
 kept epochs of the kept channels (an excluded participant's report opens with the red banner; the parameters
-name the dropped channels and the rejected / out-of-scope counts): kept epochs against the epoch index
+name the dropped channels and the rejected / out-of-scope counts, and, only when it applies, a
+**`Stages requested but not analysed`** line, mirrored as a ⚠ in the run log: a stage ticked in tool 9 with
+no kept epoch has **no row** in the stage tables (nothing to average), so the line names it with the reason,
+`all N epochs out of scope (stage not selected in the tool 8/8bis decision)` / `all N epochs rejected` /
+`no epoch of this stage in the recording` / the mixed counts. Its epochs stay in the per-epoch tables with
+`in_scope = False`. Message only: every table is unchanged. It can only fire on a multi-participant run, since
+the scan offers only the stages **some** participant keeps (its `stages kept` column): a stage out of scope
+for everyone is simply not offered): kept epochs against the epoch index
 (removed epochs appear as gaps) + count per stage. Mean PSD per stage per
 channel (± SEM). The same after removing the aperiodic component. **Log-log PSD with the aperiodic fit
 dashed** (the visual check of `fixed` vs `knee`). **Exponent and offset across the night**, one point per
