@@ -127,19 +127,25 @@ def run_tool9(data, raw_dir, decision_dir=None, subset=None, skip=True, reaggreg
         return nb.widget_text()
 
 
-def run_chain(data, manual_participant, log=print):
-    """The full chain, in order, with the default parameters of each tool. Tool 8 (interactive, one
-    participant at a time) is driven on `manual_participant`."""
+def chain_steps(data, manual_participant):
+    """The chain, in order, as [(tool, callable)], each tool with its default parameters. Tool 8 (interactive,
+    one participant at a time) is driven on `manual_participant`."""
     data = Path(data)
+    return [('5', lambda: run_tool5(data)),
+            ('5bis', lambda: run_tool5bis(data, {'age': (None, 60)})),
+            ('6', lambda: run_tool6(data)),
+            ('7', lambda: run_tool7(data)),
+            ('8bis', lambda: run_tool8bis(data)),
+            ('8', lambda: run_tool8(data, manual_participant)),
+            ('9', lambda: run_tool9(data, data / 'derivatives' / 'raw_epo',
+                                    data / 'derivatives' / 'rejection_auto'))]
+
+
+def run_chain(data, manual_participant, log=print):
+    """The full chain from scratch (used by make_golden.py; the test fixture reuses the last run instead,
+    see chaincache.py)."""
     logs = {}
-    for name, fn in [('5', lambda: run_tool5(data)),
-                     ('5bis', lambda: run_tool5bis(data, {'age': (None, 60)})),
-                     ('6', lambda: run_tool6(data)),
-                     ('7', lambda: run_tool7(data)),
-                     ('8bis', lambda: run_tool8bis(data)),
-                     ('8', lambda: run_tool8(data, manual_participant)),
-                     ('9', lambda: run_tool9(data, data / 'derivatives' / 'raw_epo',
-                                             data / 'derivatives' / 'rejection_auto'))]:
+    for name, fn in chain_steps(data, manual_participant):
         log(f'--- tool {name}')
         logs[name] = fn()
     return logs

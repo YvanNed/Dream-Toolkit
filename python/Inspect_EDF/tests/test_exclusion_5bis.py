@@ -19,6 +19,8 @@ from nbdriver import NotebookSession
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
 import participant_selection_lib as P     # noqa: E402
 
+pytestmark = pytest.mark.tool5bis
+
 
 def _rows(data):
     reg, warn = P.load_registry(data)

@@ -9,9 +9,10 @@ The technical details (commands, file layout, how to add a test) are in SPEC.md,
 
 The tests run the **real notebooks** (the same code you run in Voila) on two small test databases. They
 click through the tools as a user would: **5 → 5bis → 6 → 7 → 8bis → 8 → 9**, the full chain from sleep
-metrics to spectral features. Then they check two things: the results are **the same numbers as a reference
-run** taken before the code changed, and each new behaviour does **exactly what it claims**. No part of the
-tools is copied or simulated: if a test passes, the notebook itself produced the result.
+metrics to spectral features. Then they check three things: the results are **the same numbers as a reference
+run** taken before the code changed, each new behaviour does **exactly what it claims**, and on artificial
+nights whose content is known, the tools **find what was put in** (the injected defects, the generated sleep
+rhythms). No part of the tools is copied or simulated: if a test passes, the notebook itself produced the result.
 
 ## How it works
 
@@ -34,7 +35,26 @@ tools is copied or simulated: if a test passes, the notebook itself produced the
 - **A reference run** ("golden snapshot") is taken once, on code known to be good, before a change. Each
   later run is compared to it, table by table and value by value.
 
-Running everything takes about 18 minutes; the synthetic database alone, about 6 minutes.
+## Three levels: run what the change needs
+
+Not every change needs every test. The suite has three levels, from the fastest to the most thorough:
+
+| Level | What it runs | Duration | When |
+|---|---|---|---|
+| **Quick** | small checks of the shared code, and every Voila notebook (EDF tools and Curry twins) opened and run from top to bottom without clicking anything | about 2 min | a change that touches no tool's results (a test, a text, a Curry generator) |
+| **Standard** | quick + the full chain on the synthetic nights (comparison with the reference run, every check below) + the known answers + tools 1, 3, 4 | about 9 min (5 when the chain is reused) | a change to a tool |
+| **Full** | standard + the chain on the real nights + the parameter variants | about 24 min | before merging a branch, or after a change to code shared by several tools |
+
+Two things keep the runs short:
+
+- **Only the tools concerned.** Each test is labelled with the tool it checks. A change to tool 7 runs the tests
+  of tool 7 and of the tools that use its outputs (8bis, 8, 9), not those of tools 5 or 6. A change to code
+  shared by several tools runs the tests of every tool that uses it.
+- **The chain is not rerun when nothing changed.** The test run remembers which version of each tool produced
+  the current results. If only tool 9 changed, tools 5 to 8 keep their results and only tool 9 is rerun (about
+  2 minutes instead of 4.5). A change to the test machinery itself reruns everything.
+
+At each change, the level to run is proposed with a recommendation, and you choose.
 
 ## The main checks
 
@@ -106,10 +126,75 @@ processed* ticked (nothing must run, and the orange warning must name the skippe
 unticked (only the chosen participant's files change, checked through their modification dates), and checks
 that the database tables still cover everyone.
 
+### 7. The tools find what was put in the synthetic nights (known answers)
+
+Comparing with a reference run proves that nothing **changed**, not that the result was right in the first
+place: a mistake present when the reference was taken would pass forever. On the synthetic nights the truth is
+known, because the test machinery generated it, so these tests recompute the expected answer from the
+generator itself:
+
+- **Tool 5**: total sleep time, sleep efficiency, sleep onset latency, WASO, time and percentage in each stage,
+  stage latencies: all recomputed from the generated hypnogram, and **exactly** equal.
+- **Tool 6**: exactly two channels flagged, the clipped Fp1 and the dead C3. Nothing else.
+- **Tool 7**: the 10 movement bursts are re-created with the same random seed on a silent signal, which gives
+  their exact position. Every epoch holding at least 1 s of burst is flagged on Fp1, and no other Fp1 epoch.
+- **Tool 9**, the generated physiology:
+  - occipital **alpha** stronger in wake than in N2 (about 15 dB), and stronger on O1 than on Fp1 in wake
+    (about 11 dB);
+  - a **spindle peak** in N2 on C3: 12–14 Hz above both 9–11 Hz (about 3.7 dB) and 16–20 Hz (about 10 dB).
+    The dead C3 of one participant is skipped, as it should be;
+  - a steeper **aperiodic slope** (higher exponent) in N3 than in wake.
+
+  The test thresholds are set well below these measured differences (for example 6 dB for a 15 dB effect),
+  so a genuine change of method fails while ordinary variation passes.
+
+### 8. The preparation tools 1, 3 and 4
+
+The chain starts from data already prepared by tools 1 to 4. Three short runs check them on a fresh
+synthetic database:
+
+- **Tool 1** (header inspection): 4 files of 4 channels at 256 Hz, the Fp1 recorded with a ±50 µV range
+  reported as a too-narrow dynamic range, every header anonymous.
+- **Tool 3** (hypnogram remapping): a raw hypnogram in the Compumedics style (stages coded `0` to `5`, N3
+  sometimes coded `4` as in the old R&K stage 4, unscored `?` epochs) is remapped. The result must give back
+  the generated AASM stages epoch by epoch, and the `?` in the middle of the night must be listed for review.
+- **Tool 4** (event labels): the raw labels are listed with their files; the harmonised file gets the
+  canonical names, a French label (`Hypopnée`) is recognised, a label ticked "ignore" is saved as ignored, and
+  a mapping saved earlier is kept.
+
+Tools 0 and 2 are too interactive for a useful run: they are only checked to open and run (quick level).
+Tool 1bis (anonymisation) checks its own work on every file (the signal part of the file must stay
+byte-identical) and is not part of the routine tests.
+
+### 9. Options other than the defaults (parameter variants)
+
+The chain runs every tool with its default settings. The full level also runs the main options, each on a
+copy of the database:
+
+| Tool | Option | What must happen |
+|---|---|---|
+| 7 | epochs of **10 s** | 3 times more epochs, each inheriting the stage of its 30 s epoch; tools 8bis and 9 then work on them |
+| 7 | **resampling** to 128 Hz | the saved epochs and the settings file are at 128 Hz |
+| 7 | **notch off** | the 50 Hz line noise of one participant stays more than 10 dB above the notched run |
+| 7 | a **custom stage** `N4` | N4 gets its own amplitude threshold, the saved epochs read back whole, N4 reaches tools 8bis and 9 |
+| 6 | **resampling + high-pass** | the dead channel stays flagged, no healthy channel is flagged |
+| 9 | **multitaper** spectrum | band powers within 3 dB of the default (Welch) |
+| 9 | **knee** aperiodic mode | the knee is estimated and the fits are good |
+| 8 | **rescue** an epoch in the navigator | it is saved as kept, marked as a manual rescue |
+| 8 → 7 | a **manual annotation** | added in tool 8, re-read by tool 7 when its option is ticked, and it flags its epoch |
+
+The custom-stage variant found a real bug when it was written: an epoch with a stage outside W/N1/N2/N3/R made
+the saved epochs file of tool 7 unreadable for tools 8 and 9. It is fixed, and this test keeps it fixed.
+
+The tool 6 variant also documents a deliberate choice: tool 6 measures the signal **after** its optional
+filtering (a high-pass can rescue a channel worth keeping). The filtering smooths the flat tops of a clipped
+channel, so with these options the clipped Fp1 of the synthetic set is no longer flagged.
+
 ## Smaller checks
 
 | Area | What is checked |
 |---|---|
+| Every Voila notebook | Opens and runs from top to bottom without error, EDF tools and Curry twins (quick level) |
 | Every tool | No Python error appears in any tool's output during the chain |
 | Every tool | Every reference file is owned by a tool (none escapes the comparison) |
 | Tool 5bis | Validating writes the criteria exclusions to the registry; a new validation replaces them but keeps the manual decisions; a forced inclusion is refused without a comment; the exclusion columns are never mistaken for sleep metrics |
@@ -127,9 +212,10 @@ that the database tables still cover everyone.
 - **The look of the notebooks and reports.** Widgets are driven and HTML reports are written, but nobody
   looks at them: layout, colours and figure readability still need a human eye in Voila.
 - **Figures.** Only the tables behind them are compared.
-- **Curry recordings.** The Curry twins are checked for consistency with their EDF original, not run (the
-  Curry test data is 17 GB).
-- **Tools 0 to 4 and 1bis** are not part of the chain.
+- **Curry recordings.** The Curry twins are checked for consistency with their EDF original and opened in a
+  kernel (quick level), but never run on a recording (the Curry test data is 17 GB).
+- **Tools 0 and 2** are only opened (too interactive for a useful run), **tool 1bis** checks itself.
+- **Every option.** The variants cover the main options of tools 6 to 9, not every combination.
 - **The science of the methods.** The tests prove the tools compute what they computed before, or what a
   change intends. Whether a threshold or a method is the right choice for a study remains a scientific
   decision.

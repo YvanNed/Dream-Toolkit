@@ -65,8 +65,9 @@ tests/                                         # pytest suite: the Voila noteboo
 ├── nbdriver.py                                # runs a notebook in a real kernel, sets widgets, clicks buttons
 ├── minidb.py / synthetic.py                   # the two test databases (real local copy / generated from seeds)
 ├── pipeline.py                                # the chain 5 -> 5bis -> 6 -> 7 -> 8bis -> 8 -> 9, tool by tool
+├── chaincache.py                              # chain reuse: rerun only from the first changed tool
 ├── snapshot.py / make_golden.py               # snapshot of the outputs, comparison to the golden one
-├── test_*.py                                  # the invariants (golden, exclusions, subset, tool 9, Curry twins)
+├── test_*.py                                  # golden, known answers, tools 1/3/4, variants, invariants, notebooks execute
 └── golden/synthetic/ (versioned), golden/real/ (git-ignored: real participant data)
 ```
 
@@ -166,12 +167,75 @@ python tools/1_inspect_edf_perparticipant.py
 
 ### Tests (`tests/`)
 ```powershell
-& "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest            # both datasets (~15 min)
-& "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest -k synthetic   # synthetic only
-& "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" tests/make_golden.py --dataset synthetic
+$py = "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe"
+& $py -m pytest -m quick                                # quick: unit tests + every Voila notebook executes
+& $py -m pytest -m "not full"                           # standard: quick + synthetic chain + known answers + tools 1/3/4
+& $py -m pytest                                         # full: standard + real chain + parameter variants
+& $py -m pytest -m "(tool7 or tool8bis or tool8 or tool9) and not full"   # only some tools (see below)
+& $py -m pytest --fresh-chain                           # rerun the chain from scratch instead of reusing it
+& $py tests/make_golden.py --dataset synthetic          # golden snapshot, on trusted code only
 ```
 A plain-language description of every check, for researchers, is in **`TESTS.md`** (keep it in step when
-a test is added or changed). A pytest suite (added for the exclusion refactor, at the user's request; pytest installed with pip, as
+a test is added or changed).
+
+**Three levels** (markers declared in `pytest.ini`, `--strict-markers` refuses an unknown one):
+- **quick** (`-m quick`, ~1.5 min): unit tests (registry, selector, chain cache), Curry twins' consistency, and
+  `test_notebooks_execute.py`, which runs every `tools/*_voila.ipynb` and `tools_curry/*_voila.ipynb` top to
+  bottom without clicking anything (no traceback, no `Import error`). The Jupyter (code-visible) twins are not run.
+- **standard** (`-m "not full"`, ~9 min from scratch, ~5 min with the chain reused): quick + the chain on the **synthetic** database (golden
+  comparison, invariants), the known-answer tests and the small runs of tools 1, 3, 4.
+- **full** (no `-m`, ~24 min from scratch): standard + the chain on the **real** database (skipped on a machine without
+  `tools/test_data`) + the parameter variants. `full` is put on the `real` parameter of the `chain` fixture
+  and on `test_variants.py`.
+
+**Which level to run.** At each implementation the level is proposed to the user with a recommendation (a
+change that only adds tests or touches no tool: quick; a change to a tool: standard on that tool and its
+downstream ones; before a merge or after a change to a shared module: full). **Tool markers** `tool1`, `tool3`,
+`tool4`, `tool5`, `tool5bis`, `tool6`, `tool7`, `tool8`, `tool8bis`, `tool9` select the tests of the
+tools concerned. Selection rule: the modified tool + every tool downstream in the chain
+(5 → 5bis → 6 → 7 → 8bis → 8 → 9) + every tool importing a modified shared module
+(`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 8, 8bis, 9); a change to a Curry generator
+or twin: quick (its notebook executes) + `test_curry_twins.py`.
+
+**Chain reuse** (`tests/chaincache.py`): the chain fixture does not rerun the whole chain each session. It
+fingerprints (sha256) the test harness (`BASE_DEPS`: `nbdriver`, `pipeline`, `minidb`, `synthetic`,
+`chaincache`, `tools/generate_test_data.py`) and each tool's notebook + the shared modules it imports
+(`TOOL_DEPS`), stored in `%TEMP%/dtk_tests/<dataset>/chain_state.json` after each tool. Next session, it
+reruns **from the first tool whose fingerprint changed** (a harness change: from scratch), after deleting
+that tool's and the later tools' outputs (`TOOL_OUTPUTS`) and their own registry rows
+(`TOOL_REGISTRY_SOURCES`). `--fresh-chain` forces a full rerun. A test that writes must therefore work on a
+**copy** (`data_copy` / `inputs_copy` fixtures), never on the chain's folders. Trap: tool 9 writes its data
+beside the **raw-epochs folder** it reads (`derivatives/features_spectral/`), not in the data folder, so a
+test must point it at a copied `raw_epo`.
+
+**Test files**:
+- `test_pipeline.py`: every tool's outputs vs the golden snapshot (see below).
+- `test_known_answers.py` (standard, synthetic only): the truth recomputed from the generator, not read from
+  a golden. Tool 5: sleep metrics from the generated hypnogram (exact). Tool 6: exactly the two injected
+  defective channels. Tool 7: the 10 movement bursts re-created with the generator's own function and seed on
+  a silent signal, every epoch with ≥ 1 s of burst flagged on Fp1 and no other. Tool 9: alpha W > N2 on O1
+  and O1 > Fp1 in W, the N2 spindle peak on C3 (12–14 Hz above 9–11 and 16–20 Hz, dropped channels skipped),
+  aperiodic exponent N3 > W. Thresholds sit well under the measured margins (commented in the file).
+- `test_tools_1_3_4.py` (standard): on a fresh synthetic database. Tool 1: 4 files × 4 channels at 256 Hz,
+  the ±50 µV Fp1 of sim01 as bad dynamic range, headers anonymous. Tool 3: a raw Compumedics-style export
+  (`0-5 / W / R / ?`, N3 coded `3` or `4`) remaps back to the generated stages, the mid-night `?` listed in
+  `mid_uncertain_epochs_to_verify.tsv`. Tool 4: raw labels listed, a French label suggested, an ignored label
+  saved as `null`, an existing mapping kept. Tools 0 and 2 stay at "executes" (too interactive), tool 1bis
+  verifies itself (`sha256(file[256:])`).
+- `test_variants.py` (full, synthetic, each on a light copy: inputs + only the needed outputs): tool 7 10 s
+  epochs (then 8bis, 9), resampling to 128 Hz, notch off (50 Hz on sim03 > 10 dB above the chain), custom
+  stage N4 (the `.fif` reads back, N4 reaches 8bis and 9); tool 6 resampling + high-pass (the metrics are
+  computed on the filtered signal on purpose, so the clipped Fp1 may no longer be flagged; the synthetic M2
+  may cross the 3.5 % flat limit); tool 9 multitaper (< 3 dB from Welch per band) and `knee`; tool 8 a
+  rescue in the navigator (`manual_rescued`) and a manual annotation re-read by tool 7 (`cb_manual_events`).
+- the exclusion-refactor invariants: `test_participant_selection_lib.py`, `test_exclusion_5bis.py`,
+  `test_exclusion_tools.py`, `test_exclusion_tools_5_6.py`, `test_subset_selection.py`, `test_tool9.py`,
+  `test_curry_twins.py`; `test_chaincache.py` for the chain reuse.
+
+`nbdriver.click_labelled(description)` clicks a button built inside a callback (no global name), found by
+its label like a user would (the most recent `Button` with that description).
+
+A pytest suite (added for the exclusion refactor, at the user's request; pytest installed with pip, as
 conda hits an SSL certificate error on the ICM network) runs the chain **5 → 5bis → 6 → 7 → 8bis → 8 →
 9** through the **real notebook widgets**: `nbdriver.py` executes every cell in a Jupyter kernel
 (`nbclient`), then injects driver cells that pick folders in the FileChoosers (`reset` + the dialog's
@@ -188,9 +252,7 @@ A golden snapshot (TSV/JSON outputs gzipped with a fixed timestamp, `.fif` summa
 metadata, run paths replaced by `<DATA>`) is taken with `make_golden.py` **on trusted code only, before a
 change**. `test_pipeline.py` compares every tool's outputs to it (added columns/files allowed, a removed
 column/file or a changed value fails, naming the first differing value); intended changes are listed in
-`INTENDED_CHANGES` / `EXPECTED_MISSING` and each has its own dedicated test. The other test files check the
-invariants of the exclusion refactor (registry, decision tables, exact re-referencing of a bad channel,
-tool-9 equivalence with the former clean-epo route, re-aggregate == full run, subset runs, Curry twins).
+`INTENDED_CHANGES` / `EXPECTED_MISSING` and each has its own dedicated test.
 
 ## Cross-cutting procedures (shared across tools)
 
@@ -1115,7 +1177,7 @@ a value keeps it, `Missing value excludes` behaves, and the notebook executes cl
 *(Stable tool: formerly “Phase 1” of the preprocessing pipeline.)*
 Implemented as `tools/6_quality_overview_voila.ipynb`. Produces one `mne.Report` HTML per participant. For each EEG channel: signal amplitude histogram with Savitzky-Golay smooth + peak detection, time series, metrics table, and a YASA hypnospectrogram (0.1–40 Hz bandpass applied per-channel just before plotting). Flags suspect channels for priority inspection. At the end of each run, generates `dataset_overview.html`: a single-page dataset-level summary with statistics and distribution plots per electrode, consumed by Phase 2 to identify channels to exclude.
 
-**Signal preparation (analysis only, not saved)**: a UI section (named *Signal preparation*, **not** *Preprocessing*, to make clear nothing is written to disk, unlike tool 7, the transforms are applied transiently, only to compute the overview). When the **config JSON is selected** (`update_acq_info`, registered on `fc_config`, needs both the folder and the config), an **acquisition scan** reads the EDF headers directly (byte parser `read_edf_sf_highpass`, the same header approach as `1_inspect_edf`, **no MNE**) and reports, grouped by unique value with file counts, each file's **sampling frequency** and **acquisition high-pass** **restricted to the selected channels** (the config `remap` keys, matched against the header channel labels, falls back to all channels for a file absent from the config). The value shown is **all distinct values** among the kept channels (joined by ` / `), **not** the most common one, so a montage whose EEG channels ended up at **different sampling frequencies (or high-passes) because of a bad export** is made visible, not hidden: such a mixed entry is rendered in red with a ⚠ and a "check the export!" note. Sampling frequency comes from the montage channels (MNE's file-level `info['sfreq']` would instead be the *max*, biased by faster non-EEG channels such as a 512 Hz ECG), and the high-pass is the `HP:` value of the `prefiltering` header field (`none/DC` when absent). Two optional transforms follow, applied per file **in this order**: (1) **resampling** (`raw.resample(target_freq, npad='auto')`, default **OFF**, `cb_resample`/`txt_target_freq`, guarded to never upsample) then (2) **high-pass** (`raw.filter(l_freq=…, h_freq=None)`, default **OFF**, `hp_check`/`hp_freq`, used to harmonise a heterogeneous dataset to a common corner (choose a target ≥ the max acquisition high-pass shown) or to centre DC-coupled data). Resampling is applied **before** the high-pass: `raw.resample` already anti-aliases (FFT method), so resampling first introduces no aliasing, and any resampling edge transients stay at the recording ends (wake). The order does **not** change the result: both transforms are linear, so the signal interior is identical to <0.2 µV either way (verified empirically), and the resampler's anti-alias step rings identically on an abrupt amplitude change regardless of order (a low-corner high-pass does not touch the sharp edge that produces the ring). High-passing the already-downsampled signal is chosen purely because it runs on far fewer samples (markedly faster). Both are analysis-only: no filtered/resampled signal is saved, only the resulting metrics/plots reflect them. Off by default keeps results byte-identical. On the **Curry twin** the high-pass defaults **ON** (0.1 Hz, DC-coupled data has no hardware high-pass) and the acquisition scan reads the Curry header via MNE (`read_raw_curry`), reporting the high-pass as `none/DC`.
+**Signal preparation (analysis only, not saved)**: a UI section (named *Signal preparation*, **not** *Preprocessing*, to make clear nothing is written to disk, unlike tool 7, the transforms are applied transiently, only to compute the overview). When the **config JSON is selected** (`update_acq_info`, registered on `fc_config`, needs both the folder and the config), an **acquisition scan** reads the EDF headers directly (byte parser `read_edf_sf_highpass`, the same header approach as `1_inspect_edf`, **no MNE**) and reports, grouped by unique value with file counts, each file's **sampling frequency** and **acquisition high-pass** **restricted to the selected channels** (the config `remap` keys, matched against the header channel labels, falls back to all channels for a file absent from the config). The value shown is **all distinct values** among the kept channels (joined by ` / `), **not** the most common one, so a montage whose EEG channels ended up at **different sampling frequencies (or high-passes) because of a bad export** is made visible, not hidden: such a mixed entry is rendered in red with a ⚠ and a "check the export!" note. Sampling frequency comes from the montage channels (MNE's file-level `info['sfreq']` would instead be the *max*, biased by faster non-EEG channels such as a 512 Hz ECG), and the high-pass is the `HP:` value of the `prefiltering` header field (`none/DC` when absent). Two optional transforms follow, applied per file **in this order**: (1) **resampling** (`raw.resample(target_freq, npad='auto')`, default **OFF**, `cb_resample`/`txt_target_freq`, guarded to never upsample) then (2) **high-pass** (`raw.filter(l_freq=…, h_freq=None)`, default **OFF**, `hp_check`/`hp_freq`, used to harmonise a heterogeneous dataset to a common corner (choose a target ≥ the max acquisition high-pass shown) or to centre DC-coupled data). Resampling is applied **before** the high-pass: `raw.resample` already anti-aliases (FFT method), so resampling first introduces no aliasing, and any resampling edge transients stay at the recording ends (wake). The order does **not** change the result: both transforms are linear, so the signal interior is identical to <0.2 µV either way (verified empirically), and the resampler's anti-alias step rings identically on an abrupt amplitude change regardless of order (a low-corner high-pass does not touch the sharp edge that produces the ring). High-passing the already-downsampled signal is chosen purely because it runs on far fewer samples (markedly faster). Both are analysis-only: no filtered/resampled signal is saved, only the resulting metrics/plots reflect them. Off by default keeps results byte-identical. **Every metric, the sample-level clipping detectors included (`flat_pct`, `bounds_pct`, `hist_extreme_pct`), is computed on the transformed signal, deliberately** (user decision, 2026-10-05): a high-pass can rescue a channel worth keeping, and the overview must judge the signal the analysis will use. The price, measured by the tool-6 variant test: filtering smooths clipping plateaus, so on synthetic data a channel clipped at ±50 µV (`bounds_pct` 2.28 %, `flat_pct` 4.9 % unfiltered) drops to 0.02 % / 2.6 % after resampling to 128 Hz + a 0.5 Hz high-pass and is no longer flagged. Tool 1 still reports the narrow physical range from the header. On the **Curry twin** the high-pass defaults **ON** (0.1 Hz, DC-coupled data has no hardware high-pass) and the acquisition scan reads the Curry header via MNE (`read_raw_curry`), reporting the high-pass as `none/DC`.
 
 **Per-participant pipeline progress bar**: below the participants bar (`i/N`) a second bar spans the *current participant's whole pipeline* in arbitrary "time-cost" units (`COST_LOAD_DATA` + optional `COST_HIGHPASS`/`COST_RESAMPLE`, `COST_ANALYSE_CH`×channels, `COST_RENDER_CH`×channels). It advances continuously (no per-channel reset) through three phases, **Load** (data → resample → high-pass sub-ticks), **Per-channel** (one tick per analysed channel), **Report** (one tick per rendered channel), with a 3-segment legend **glued directly under the bar** (`VBox([progress_ch, phase_legend])`, the legend drawn with no top border and square top corners so it reads as the bar's own labelled track) whose segment widths are proportional to those costs (≈ each phase's share of the run time). The `progress_ch_label` also names the current activity (`loading EDF signal…`, `high-pass 0.5 Hz…`, `analysing C3…`, `building report…`).
 
@@ -1260,6 +1322,15 @@ The two tools then differ only in what follows:
 4. **Bandpass filter**: FIR zero-double-pass Hamming window, defaults `l_freq=0.1 Hz, h_freq=50 Hz`. Applied via `raw.filter(..., method='fir', phase='zero-double', fir_window='hamming', fir_design='firwin')`.
 
 **Epoching (configurable epoch length)**: epochs are created with `mne.make_fixed_length_epochs(raw, duration=epoch_sec)`. `epoch_sec` is user-selectable via a Section-2 **`Epoch length`** dropdown (`dd_epoch_len`) offering the **divisors of 30 ≥ 5 s** (`30 (classic, default) / 15 / 10 / 6 / 5`) so the classic 30 s scored epoch re-cuts into a whole number of sub-epochs and the 4 s Welch window used by the 1/f fit still fits. The hypnogram is scored at 30 s (one label per 30 s epoch): the 30 s length validation/trim against the recording is **unchanged**, then each 30 s label is **expanded** to fill its sub-epochs (`hypno_sub = np.repeat(expert_hypno, epoch_factor)` with `epoch_factor = 30 // epoch_sec`) so each sub-epoch simply inherits its parent 30 s stage (no re-scoring, no interpolation). All flagging/summary/plot code keys on `hypno_epochs`/`n_epochs` generically, so it adapts automatically. The Welch window is `n_per_seg = int(min(4, epoch_sec) * sf)` (byte-identical to `4·sf` for every allowed size). Amplitude p-p thresholds stay the **same absolute µV** across sizes (artefact p-p does not scale with window length). Default 30 s keeps every output byte-identical to the pre-feature tool. Sleep stage assigned to each epoch from the (expanded) hypnogram. Epochs at the tail beyond the hypnogram length are discarded.
+
+**Stage event codes**: each epoch's MNE event code is its stage (`stage_mapping`: `W 0, N1 1, N2 2, N3 3, R 4`), and
+**every other label present** in the hypnogram gets its own code from 5 on: the declared custom stages first (in the
+`Custom stages` order), then any other label (e.g. `MT`) sorted. This is required, not cosmetic: MNE keeps only the
+epochs whose code is in `event_id` when it **reads a `.fif` back**, so a stage left without a code (formerly `-1`)
+produced a `.fif` that saved fine but could not be re-read (`selection must be shape (402,) got shape (480,)`),
+breaking tools 8 and 9 on any participant with a custom stage or MT. AASM-only hypnograms keep the same five codes,
+so their outputs are byte-identical. No downstream tool reads the codes (they all use the metadata `stage` column).
+Covered by the custom-stage variant test (`tests/test_variants.py`).
 
 **Event flagging when epoch length ≠ 30 s** (see the event method below): the onset-only rule is **kept** (`compute_event_epoch_mask` takes `epoch_sec`, an event flags only the sub-epoch containing its `Start`), and a **prominent amber warning** (`epoch_warn`, shown whenever `dd_epoch_len.value != 30`, plus a per-file `⚠` printed in the run log when event flagging is on) reminds the user that (because annotated durations are unreliable) an event spanning several sub-epochs leaves the others un-flagged, a risk that grows as epochs shrink.
 

@@ -327,10 +327,13 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **Language**: all user-facing strings in notebooks and all of SPEC.md must be in English.
 - **Tests** (`tests/`, pytest, → SPEC *How to run → Tests*): the notebooks are driven headlessly through
   their widgets on two datasets. **synthetic** (generated, golden versioned) and **real** (tools/test_data, a
-  real participant's PSG: **never versioned**, `tests/golden/real/` git-ignored). Run the suite before staging a
-  change to tools 5-9; regenerate a golden (`tests/make_golden.py`) **only on trusted code, before** a change, and
-  list an intended output change in `INTENDED_CHANGES` with its own dedicated test. Beyond that, validate on
-  real EDF files; no new test framework.
+  real participant's PSG: **never versioned**, `tests/golden/real/` git-ignored). Three levels: **quick**
+  (`-m quick`), **standard** (`-m "not full"`), **full** (everything). **At each implementation, propose a level
+  with a recommendation before running**, and select the tools concerned with the `toolN` markers (modified tool
+  + downstream + users of a modified shared module). The chain is reused and rerun from the first changed tool
+  (`tests/chaincache.py`): a writing test works on a **copy**, never on the chain's folders. Regenerate a golden
+  (`tests/make_golden.py`) **only on trusted code, before** a change, and list an intended output change in
+  `INTENDED_CHANGES` with its own dedicated test. Beyond that, validate on real EDF files; no new test framework.
 
 ## Operational notes (this machine)
 

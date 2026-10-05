@@ -43,7 +43,11 @@ INTENDED_CHANGES = {
 EXPECTED_MISSING = {'8bis': ['derivatives/clean_epo_auto/'], '8': ['derivatives/clean_epo_manual/']}
 
 
-@pytest.mark.parametrize('tool', list(TOOL_OUTPUTS))
+# one test per tool, carrying that tool's marker (-m tool7 ...)
+TOOL_PARAMS = [pytest.param(t, marks=getattr(pytest.mark, f'tool{t}')) for t in TOOL_OUTPUTS]
+
+
+@pytest.mark.parametrize('tool', TOOL_PARAMS)
 def test_outputs_match_golden(chain, golden, tool):
     report = snapshot.compare(chain['snapshot'], golden, prefixes=TOOL_OUTPUTS[tool],
                               ignore=INTENDED_CHANGES.get(tool, ()),
@@ -51,7 +55,7 @@ def test_outputs_match_golden(chain, golden, tool):
     assert not report, f'tool {tool} outputs differ from golden:\n' + snapshot.format_report(report)
 
 
-@pytest.mark.parametrize('tool', list(TOOL_OUTPUTS))
+@pytest.mark.parametrize('tool', TOOL_PARAMS)
 def test_no_traceback_in_logs(chain, tool):
     log = chain['logs'][tool]
     assert 'Traceback (most recent call last)' not in log, log[-3000:]
