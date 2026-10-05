@@ -228,7 +228,10 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   everywhere: it is the join key with tools 7/8bis/9. **Review tracking**: `visited` feeds a status banner
   (loud when the decision was *changed*), a `reviewed n/N` HTML strip and the Section-4 strip
   (`plot_review_strip(..., visited=)`, `None` ⇒ byte-identical), persisted as the additive `seen` column +
-  `n_seen`/`pct_seen` and re-read at load.
+  `n_seen`/`pct_seen` and re-read at load. The navigator's **`Show`** (`flagged` default = classic list /
+  `kept` / `all in scope` / `out of scope` view-only) is the only UI path to `manual_added`. Lists come from
+  `base_reject`, never the final decision. **Sections 2–4 are cleared on every load / Apply selection**
+  (`_RESET_HOOKS`) behind an unsaved-changes guard: a stale list would toggle the wrong participant's epochs.
   An **optional "Show EOG/EMG context" toggle** (**default ON**, a no-op when tool 7 wrote no companion) stacks the EOG-L/EOG-R/EMG traces under the
   per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
   aligned by epoch index): still no raw-EDF reload. Absent companion → toggle is a no-op. The navigator

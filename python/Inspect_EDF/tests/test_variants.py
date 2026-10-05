@@ -4,7 +4,9 @@ light copy of the database (one participant where possible) and is checked for w
     tool 7   10 s epochs (then 8bis and 9 on them), resampling to 128 Hz, notch off, custom stage N4
     tool 6   resampling + high-pass: the dead channel stays flagged, no healthy channel gets flagged
     tool 9   multitaper PSD (same order as Welch), 'knee' aperiodic mode
-    tool 8   a flagged epoch rescued in the navigator; a manual annotation re-read by tool 7
+    tool 8   a flagged epoch rescued / a kept epoch added in the navigator; out of scope = view only;
+             reloading clears the sections (after an unsaved-changes warning); a manual annotation
+             re-read by tool 7
 """
 import json
 import shutil
@@ -249,8 +251,7 @@ def open_navigator(nb, data):
 
 @pytest.mark.tool8
 def test_tool8_rescue_in_the_navigator(src, tmp_path):
-    """A flagged epoch set to Keep in the navigator is saved as rescued; the other flagged ones stay rejected.
-    (The navigator lists flagged epochs only, by design, so 'manual_added' has no path in the interface.)"""
+    """A flagged epoch set to Keep in the navigator is saved as rescued; the other flagged ones stay rejected."""
     data = burst_copy(src, tmp_path)
     with NotebookSession(pipeline.T8) as nb:
         nav = open_navigator(nb, data)
@@ -264,6 +265,69 @@ def test_tool8_rescue_in_the_navigator(src, tmp_path):
     assert bool(dec.loc[target, 'manual_override'])
     others = [e for e in nav if e in in_scope and e != target]
     assert dec.loc[others, 'rejected'].all()
+
+
+@pytest.mark.tool8
+def test_tool8_add_in_the_navigator(src, tmp_path):
+    """Show = kept lists the in-scope epochs the selection does not reject; one set to Reject is saved as
+    manual_added. The default 'flagged' list is the classic one."""
+    data = burst_copy(src, tmp_path)
+    with NotebookSession(pipeline.T8) as nb:
+        flagged = open_navigator(nb, data)
+        assert flagged == nb.value('[int(e) for e in np.flatnonzero(S["base_reject"])]')
+        nb.set('dd_show', 'kept')
+        kept = nb.value('[int(e) for e in S["nav_list"]]')
+        assert kept and not set(kept) & set(flagged)
+        target = kept[0]
+        nb.set('sl_epoch', 0)
+        nb.set('tgl_keep', 'reject')
+        nb.click('btn_save')
+    dec = tsv(data / 'derivatives' / 'rejection_manual' / f'{SIM_BURSTS}_epoch_decision.tsv').set_index('epoch_idx')
+    assert dec.loc[target, 'reject_reason'] == 'manual_added' and dec.loc[target, 'rejected']
+    assert bool(dec.loc[target, 'manual_override'])
+    assert dec.loc[flagged, 'rejected'].all()
+    log = tsv(data / 'reports_rejection_manual' / f'{SIM_BURSTS}_qc2b_review_log.tsv')
+    assert log.set_index('epoch_idx').loc[target, 'action'] == 'added'
+
+
+@pytest.mark.tool8
+def test_tool8_out_of_scope_is_view_only(src, tmp_path):
+    """With W unticked, Show = out of scope lists the W epochs with the decision toggle disabled, and the
+    'all in scope' Apply-to-all needs a confirming second click."""
+    data = burst_copy(src, tmp_path)
+    with NotebookSession(pipeline.T8) as nb:
+        open_navigator(nb, data)
+        nb.set("_stage_cb['W']", False)
+        nb.click('btn_apply')
+        nb.click('btn_run_nav')
+        nb.set('dd_show', 'out')
+        out = nb.value('[int(e) for e in S["nav_list"]]')
+        assert out and nb.value('all(S["P"]["stages"][e] == "W" for e in S["nav_list"])')
+        assert nb.value('tgl_keep.disabled') and nb.value('btn_apply_all.disabled')
+        nb.set('dd_show', 'all')
+        n_rej0 = nb.value('int(np.sum(S["final_reject"]))')
+        nb.set('tgl_keep', 'keep')               # toggles the first epoch only; then bulk 'keep'
+        nb.click('btn_apply_all')                # first click only arms the confirmation
+        assert nb.value('S["apply_all_armed"]') is False
+        nb.click('btn_apply_all')
+        assert nb.value('int(np.sum(S["final_reject"]))') == 0 and n_rej0 > 0
+
+
+@pytest.mark.tool8
+def test_tool8_reload_clears_the_sections(src, tmp_path):
+    """Loading a participant with unsaved changes first only warns; the second click clears the
+    navigator, so a toggle can never act on the previous participant's epoch list."""
+    data = burst_copy(src, tmp_path)
+    with NotebookSession(pipeline.T8) as nb:
+        nav = open_navigator(nb, data)
+        nb.set('tgl_keep', 'keep')
+        nb.click('btn_load')                     # refused: unsaved change
+        assert nb.value('[int(e) for e in S["nav_list"]]') == nav
+        assert nb.value('len(S["overridden"])') == 1
+        assert 'Unsaved manual changes' in nb.widget_text()
+        nb.click('btn_load')                     # second click discards
+        assert nb.value('S["nav_list"]') == [] and nb.value('len(S["overridden"])') == 0
+        assert nb.value('S["dirty"]') is False
 
 
 @pytest.mark.tool8
