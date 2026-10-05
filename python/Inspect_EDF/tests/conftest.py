@@ -1,8 +1,8 @@
 r"""Shared fixtures. Run from the repo root (the three levels, see TESTS.md):
     & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest -m quick         # ~2 min
-    & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest -m "not full"    # standard
-    & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest                  # full
-Only the tests of some tools: -m "tool9 and not full" (markers tool5 ... tool9, see pytest.ini).
+    & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest -m "not full"    # standard, ~9 min (~5 with the chain reused)
+    & "$env:LOCALAPPDATA\miniforge3\envs\inspect_edf\python.exe" -m pytest                  # full, ~24 min
+Only the tests of some tools: -m "tool9 and not full" (markers tool1 ... tool9, see pytest.ini).
 --fresh-chain forces the chain to run from scratch instead of reusing its last run (chaincache.py).
 
 The chain runs once per dataset and per session (fixture `chain`), reusing the last run for the tools whose
