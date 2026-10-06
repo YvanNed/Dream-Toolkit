@@ -4,7 +4,8 @@ light copy of the database (one participant where possible) and is checked for w
     tool 7   10 s epochs (then 8bis and 9 on them), resampling to 128 Hz, notch off, custom stage N4
     tool 6   resampling + high-pass: the dead channel stays flagged, no healthy channel gets flagged
     tool 9   multitaper PSD (same order as Welch), 'knee' aperiodic mode
-    tool 8   a flagged epoch rescued / a kept epoch added in the navigator; out of scope = view only;
+    tool 8   a flagged epoch rescued / a kept epoch added in the navigator; an unticked stage stays in
+             the decision (focus only, overrides kept);
              reloading clears the sections (after an unsaved-changes warning); a manual annotation
              re-read by tool 7
 """
@@ -255,7 +256,7 @@ def test_tool8_rescue_in_the_navigator(src, tmp_path):
     data = burst_copy(src, tmp_path)
     with NotebookSession(pipeline.T8) as nb:
         nav = open_navigator(nb, data)
-        in_scope = nb.value('[int(e) for e in np.flatnonzero(S["in_scope"])]')
+        in_scope = nb.value('[int(e) for e in np.flatnonzero(S["focus"])]')
         target = next(e for e in nav if e in in_scope)
         nb.set('sl_epoch', nav.index(target))
         nb.set('tgl_keep', 'keep')
@@ -269,7 +270,7 @@ def test_tool8_rescue_in_the_navigator(src, tmp_path):
 
 @pytest.mark.tool8
 def test_tool8_add_in_the_navigator(src, tmp_path):
-    """Show = kept lists the in-scope epochs the selection does not reject; one set to Reject is saved as
+    """Show = kept lists the focus-stage epochs the selection does not reject; one set to Reject is saved as
     manual_added. The default 'flagged' list is the classic one."""
     data = burst_copy(src, tmp_path)
     with NotebookSession(pipeline.T8) as nb:
@@ -291,26 +292,51 @@ def test_tool8_add_in_the_navigator(src, tmp_path):
 
 
 @pytest.mark.tool8
-def test_tool8_out_of_scope_is_view_only(src, tmp_path):
-    """With W unticked, Show = out of scope lists the W epochs with the decision toggle disabled, and the
-    'all in scope' Apply-to-all needs a confirming second click."""
+def test_tool8_unticked_stage_stays_in_the_decision(src, tmp_path):
+    """A stage unticked (U = W, or N1 when no W epoch is flagged) = out of the review FOCUS only: the
+    navigator no longer lists its epochs (no 'out of scope' mode any more), a manual override survives
+    that Apply (the decision does not depend on the stages), the saved table still decides every U epoch
+    (tool 7's flags: rejected), and the 'all' Apply-to-all needs a confirming second click. Changing a
+    METHOD then does reset the overrides."""
     data = burst_copy(src, tmp_path)
     with NotebookSession(pipeline.T8) as nb:
-        open_navigator(nb, data)
-        nb.set("_stage_cb['W']", False)
-        nb.click('btn_apply')
+        nav = open_navigator(nb, data)
+        stages = nb.value('[str(s) for s in S["P"]["stages"]]')
+        base = nb.value('[bool(b) for b in S["base_reject"]]')
+        U = next(st for st in ('W', 'N1') if any(s == st and base[e] for e, s in enumerate(stages)))
+        w_flagged = [e for e, s in enumerate(stages) if s == U and base[e]]
+        target = next(e for e in nav if stages[e] != U)
+        nb.set('sl_epoch', nav.index(target))
+        nb.set('tgl_keep', 'keep')                       # an unsaved override on a non-W epoch
+        nb.set(f"_stage_cb['{U}']", False)
+        nb.click('btn_apply')                            # focus only: no unsaved-changes refusal
+        assert nb.value('sorted(int(e) for e in S["overridden"])') == [target]
+        assert nb.value('bool(S["final_reject"][%d])' % target) is False
+        assert 'manual overrides kept' in nb.widget_text()
+        assert 'out' not in nb.value('[v for _, v in dd_show.options]')
         nb.click('btn_run_nav')
-        nb.set('dd_show', 'out')
-        out = nb.value('[int(e) for e in S["nav_list"]]')
-        assert out and nb.value('all(S["P"]["stages"][e] == "W" for e in S["nav_list"])')
-        assert nb.value('tgl_keep.disabled') and nb.value('btn_apply_all.disabled')
+        assert nb.value('[int(e) for e in S["nav_list"]]')
+        assert nb.value(f'all(S["P"]["stages"][e] != "{U}" for e in S["nav_list"])')
         nb.set('dd_show', 'all')
-        n_rej0 = nb.value('int(np.sum(S["final_reject"]))')
-        nb.set('tgl_keep', 'keep')               # toggles the first epoch only; then bulk 'keep'
-        nb.click('btn_apply_all')                # first click only arms the confirmation
+        nb.set('tgl_keep', 'keep')                       # toggles the first epoch only; then bulk 'keep'
+        nb.click('btn_apply_all')                        # first click only arms the confirmation
         assert nb.value('S["apply_all_armed"]') is False
         nb.click('btn_apply_all')
-        assert nb.value('int(np.sum(S["final_reject"]))') == 0 and n_rej0 > 0
+        assert nb.value('int(np.sum(np.asarray(S["final_reject"]) & np.asarray(S["focus"])))') == 0
+        nb.click('btn_save')
+        # a method change redecides: the overrides are reset (the save above cleared the unsaved flag)
+        m = nb.value('S["methods_sel"][0]')
+        nb.set(f"_method_cb['{m}']", False)
+        nb.click('btn_apply')
+        assert nb.value('len(S["overridden"])') == 0
+    dec = tsv(data / 'derivatives' / 'rejection_manual' / f'{SIM_BURSTS}_epoch_decision.tsv').set_index('epoch_idx')
+    assert dec['in_scope'].all()
+    assert dec.loc[w_flagged, 'rejected'].all()          # never reviewed: tool 7's automatic decision
+    assert not dec.loc[dec['stage'] != U, 'rejected'].any()
+    rec = tsv(data / 'reports_rejection_manual' / f'{SIM_BURSTS}_manualreject_decision.tsv').iloc[0]
+    assert rec['stages_used'] == '+'.join(s for s in ('W', 'N1', 'N2', 'N3', 'R') if s != U)
+    assert int(rec['n_rejected_ref']) == 0
+    assert int(rec['n_rejected']) == len(w_flagged) and int(rec['n_epochs']) == len(dec)
 
 
 @pytest.mark.tool8
@@ -332,18 +358,21 @@ def test_tool8_reload_clears_the_sections(src, tmp_path):
 
 @pytest.mark.tool8
 @pytest.mark.tool9
-def test_tool9_names_a_stage_out_of_scope_in_tool8(src, tmp_path):
-    """N3 unticked in tool 8 for sim04: tool 9 keeps its N3 epochs in the per-epoch tables (in_scope False),
-    writes no N3 row in its stage table, and says why in its log. Tool 9's scan only offers the stages some
-    participant keeps, so a second participant keeping N3 is needed (its 8bis decision tables, same schema,
-    placed in the same decision folder; 8bis keeps N2/N3/R)."""
+def test_tool9_names_a_stage_out_of_scope_in_a_legacy_decision(src, tmp_path):
+    """Backward compatibility: decision tables written before tools 8/8bis covered every epoch can hold
+    out-of-scope epochs. Simulated by marking sim04's N3 epochs in_scope False in its tool-8 table: tool 9
+    keeps them in the per-epoch tables (in_scope False), writes no N3 row in its stage table, and says why in
+    its log. Tool 9's scan only offers the stages some participant keeps, so a second participant keeping N3
+    is needed (its 8bis decision tables, same schema, placed in the same decision folder)."""
     data = burst_copy(src, tmp_path)
     with NotebookSession(pipeline.T8) as nb:
         open_navigator(nb, data)
-        nb.set("_stage_cb['N3']", False)
-        nb.click('btn_apply')
         nb.click('btn_save')
     manual = data / 'derivatives' / 'rejection_manual'
+    legacy = manual / f'{SIM_BURSTS}_epoch_decision.tsv'
+    ed = tsv(legacy)
+    ed.loc[ed['stage'] == 'N3', ['in_scope', 'rejected']] = False
+    ed.to_csv(legacy, sep='	', index=False)
     for folder, dst in (('raw_epo', data / 'derivatives' / 'raw_epo'), ('rejection_auto', manual)):
         for f in (src / 'derivatives' / folder).glob(f'{SIM_LINE}_*'):
             if folder == 'raw_epo' or f.name.endswith('_decision.tsv'):

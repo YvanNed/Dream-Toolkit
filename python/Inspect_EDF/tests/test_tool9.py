@@ -40,11 +40,19 @@ def same(new, old, ignore=('source',), atol=1e-9):
                                    atol=atol)
 
 
+# 8bis's default reference stages = the former scope of its decision (the golden clean-epo held only
+# these): since the decision covers every epoch, the W/N1 epochs it keeps are new rows, left out here.
+GOLDEN_SCOPE = ['N2', 'N3', 'R']
+
+
 def kept_rows(df):
-    """The rows the former clean-epo route had: kept epochs (in scope, not rejected) of kept channels."""
+    """The rows the former clean-epo route had: kept epochs (in scope, not rejected) of kept channels,
+    in the stages the former 8bis decision covered."""
     keep = ~df['channel_dropped'].fillna(False).astype(bool)
     if 'in_scope' in df.columns:
         keep &= df['in_scope'].astype(bool) & ~df['rejected'].astype(bool)
+    if 'stage' in df.columns:
+        keep &= df['stage'].astype(str).isin(GOLDEN_SCOPE)
     return df[keep]
 
 
@@ -143,4 +151,7 @@ def test_tool9_night_thirds_count_their_own_epochs(chain):
             n_kept = int((cell['in_scope'] & ~cell['rejected']).sum())
             assert row['n_epochs_rejected'] == n_rej, (fid, stage, third)
             assert row['n_epochs_out_of_scope'] == int((~cell['in_scope']).sum())
-            assert row['pct_rejected'] == pytest.approx(100.0 * n_rej / (n_kept + n_rej), abs=0.01)
+            if n_kept + n_rej == 0:          # a stage with no epoch at all in this third: padded row
+                assert pd.isna(row['pct_rejected']), (fid, stage, third)
+            else:
+                assert row['pct_rejected'] == pytest.approx(100.0 * n_rej / (n_kept + n_rej), abs=0.01)
