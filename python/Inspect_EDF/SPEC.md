@@ -31,6 +31,7 @@ Inspect_EDF/
 │   ├── check_hypno_config.py                  # Hypnogram validation (legacy script)
 │   ├── 3_remap_hypno.ipynb                      # Hypnogram label remapping (Jupyter)
 │   ├── 3_remap_hypno_voila.ipynb                # Hypnogram label remapping (Voila GUI)
+│   ├── 3bis_autoscoring_gssc_voila.ipynb        # Automatic sleep scoring with GSSC + comparison with the expert (Voila GUI)
 │   ├── 4_remap_events_edf.ipynb                 # Event label harmonization (Jupyter)
 │   ├── 4_remap_events_edf_voila.ipynb           # Event label harmonization (Voila GUI)
 │   ├── 5_sleep_macrostructure_voila.ipynb    # Sleep macrostructure metrics: TIB/SOL/TST/WASO/SE, latencies, AHI, PLM, ODI, T90 (Voila GUI)
@@ -110,6 +111,7 @@ Defined in `environment.yml`. Key packages:
 - **edfio**: EDF read/write (used directly for export with per-channel physical range control)
 - **specparam**: aperiodic/periodic spectral decomposition (1/f fitting)
 - **statsmodels 0.14**: LOWESS smoother (`smoothers_lowess.lowess`), used by tool 7 (and `qc_rejected_epochs_lib.py`) for the optional PSD smoothing before the 1/f fit (see tool 7)
+- **pytorch-cpu + gssc 0.0.9** (pip, pinned): tool 3bis's automatic sleep scoring. Install: `conda install -n inspect_edf -c conda-forge pytorch-cpu`, then `python -m pip install gssc==0.0.9`
 - **openpyxl 3.1**: writes tool 9's `.xlsx` workbook (via `pandas.ExcelWriter`). Its absence is non-fatal (the TSV tables stay complete)
 
 ## How to run the tools
@@ -129,6 +131,7 @@ voila tools/1_inspect_edf_voila.ipynb
 voila tools/1bis_anonymize_edf_voila.ipynb
 voila "tools/2_select&remap_channels_edf_voila.ipynb"
 voila tools/3_remap_hypno_voila.ipynb
+voila tools/3bis_autoscoring_gssc_voila.ipynb
 voila tools/4_remap_events_edf_voila.ipynb
 voila tools/5_sleep_macrostructure_voila.ipynb
 voila tools/5bis_select_participants_voila.ipynb
@@ -872,6 +875,99 @@ Interactive tool to harmonize sleep stage labels across a heterogeneous database
 - `config_param/custom_stages.json`: written/merged when the user keeps non-AASM labels as custom stages (see *Custom (non-AASM) stages* above). A flat `{"custom_stages": [...]}` list consumed by tools 0/6/7/8.
 
 `check_hypno_config.py` is the legacy script that preceded this notebook. Kept for reference.
+
+### 3bis. Automatic sleep scoring with GSSC (`3bis_autoscoring_gssc_voila.ipynb`)
+
+Scores every 30-s epoch automatically with **GSSC** (Greifswald Sleep Stage Classifier, `gssc==0.0.9`,
+pip-only, CPU torch from conda-forge), for nights without an expert hypnogram and to compare with the
+expert one where it exists. First, deliberately simple version (more outputs planned). **Voila only**: no
+Jupyter twin, no Curry twin, no batch `.py`. Like tool 5, it knows nothing of exclusions (no registry
+read or write, `ParticipantSelector` called with `excluded=None`).
+
+**Inputs**: the EDF files (recursive scan of the data folder), tool 2's
+`<data>/config_param/remap_reref_persubject.json` (required: an EDF absent from it is listed and not
+scored) and, optionally, the expert hypnogram (tool 3 format). The expert suffix is auto-detected with the
+tools 6/7 rule (longest among ≥ 50 %), skipping `event` / `summary` / `studylog` and the output suffix;
+empty or missing file = scored without comparison (non-fatal).
+
+**Signals**: EEG = tool 2's harmonized names minus the reference channels and EOG-like names
+(`EOG_NAME_RE`), read with `include=` (remap keys), `drop_suffix_duplicates` + `adapt_remap_dict_to_suffixes`,
+then **re-referenced as declared** (`ref_channels` list or `'average'`: GSSC was trained on referenced
+derivations such as C3-M2). EOG = tool 2's `context_channels.eog_left/eog_right`, read **apart** from the
+EEG (a joint read would upsample to the fastest rate), resampled to the EEG rate and cut/zero-padded to its
+length. EOG mode: **`L − R bipolar`** (default, Thomas's example script) / `L and R separately` / `None`.
+No EOG declared → EEG only, with a ⚠. No other preprocessing: GSSC filters 0.3–30 Hz itself and cuts
+2560-sample (30 s) epochs from t = 0, dropping the incomplete tail, so epoch *i* = expert line *i*.
+
+**Scoring mode** (`tb_mode`): **One electrode (fast)** (default, `dd_eeg`, C3 else C4 else the first) or
+**Several electrodes (consensus)** (one checkbox per electrode, `eeg_checks`, all ticked by default, with *Tick all* / *Untick all* buttons). A participant lacking the single electrode is
+**not** scored (no silent substitution); in consensus mode the electrodes present are used.
+
+**Consensus rule = GSSC's native `loudest_vote`**: every combination of the signals is scored (each EEG or
+none × each EOG or none, minus "nothing": 3 combinations for 1 EEG + 1 EOG, 7 for 3 EEG + 1 EOG) and, **per
+epoch, the most confident combination wins** (lowest entropy of its predicted stage). Not a majority vote nor
+a mean. **Hypnodensity**: gssc 0.0.9's `mne_infer` returns only the stages (the GitHub version also returns
+the probabilities but is not released), so `gssc_combination_logits` reproduces its loop step for step with
+gssc's own functions (`prepare_inst`, `permute_sigs`, `epo_arr_zscore`, `check_flip_chan`, the two networks)
+and keeps every combination's output. The stage is `gssc.utils.loudest_vote` of those outputs, the
+probabilities the softmax of the winning combination (what the GitHub version returns), and a guard checks
+that `argmax(probs)` equals the stages. **Verified identical to `mne_infer`** (941/941 epochs on night 100,
+both modes). Re-check this loop before upgrading gssc (hence the pin). The per-combination outputs make other
+consensus rules (mean of probabilities, majority vote) a later addition. Thomas's example script, which
+averages the softmax over combinations while taking the stage from `loudest_vote`, is deliberately not followed.
+torch ≥ 2.6 refuses the weights packaged with gssc (`weights_only=True`):
+`TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` is set before the model loads.
+
+**Comparison**: on `min(n_gssc, n_expert)` epochs (⚠ when they differ by > 1), restricted to expert labels
+W/N1/N2/N3/R (MT, custom stages, `?` left out and counted). Accuracy, Cohen's κ, per-stage F1
+(`sklearn`), confusion matrix (rows expert, columns GSSC; colour (full ColorBrewer Greens, white to `#00441b`; text white on the dark cells, luma < 0.5) and bold text = % of the expert row, the main reading,
+comparable across stages and nights; the epoch count in small type below, in parentheses, says how many
+epochs that % rests on).
+Measured on two real test nights with C3 (+ EOG L−R for 100): κ 0.71 (100) and 0.79 (731).
+
+**Expert stages outside W/N1/N2/N3/R** (custom stages declared in `config_param/custom_stages.json` by tool 3,
+read at scan with the toolkit's `load_custom_stages`; MT; any other label grouped as `other`): GSSC cannot
+produce them, so they **stay out of κ / accuracy / F1 / confusion matrices** (counted in `n_excluded_expert`).
+Instead, a **dedicated section** (per-participant report, and pooled in the database report) shows, per such
+stage, its number of epochs, its **mean hypnodensity** and the **% of its epochs per GSSC stage**
+(`non_aasm_profile`), as horizontal stacked bars, next to the same bars for the five AASM expert stages
+(reference rows above a line), to see which stage a custom one resembles. Present only when the night has such
+epochs. Order: AASM, then the custom stages in `custom_stages.json` order, then MT, then other. The expert
+hypnogram also draws them as rows below N3 (empty rows on the GSSC panel, same layout), custom stages in their
+tools 6/7 colour (`CUSTOM_STAGE_PALETTE` by rank in `custom_stages.json`), MT / other grey. The hypnodensity
+overlay keeps a gap on them.
+
+**Outputs** (data before report; skip gate = automatic hypnogram + hypnodensity + report, partial → ⚠ +
+rescore; database tables rebuilt by globbing the per-file tables, **excluding the `global_*` files**, which
+share the `_confusion.tsv` / `_custom_stages.tsv` suffixes and would otherwise be counted again; the run
+refuses an output suffix equal to the expert one):
+- beside the EDF: `{id}{output suffix}` (default `_Hypnogram_gssc.txt`), one label per line, tool-3
+  format, so tools 5–9 can use it through their hypnogram suffix.
+- `derivatives/autoscoring_gssc/<subtree>/{id}_hypnodensity.tsv`: `file_id, epoch_idx, onset_s,
+  stage_gssc, p_W, p_N1, p_N2, p_N3, p_R, confidence` (max probability), `winning_combination`,
+  `stage_expert` (empty without one), `agree` (empty when the expert label is not W/N1/N2/N3/R).
+- `derivatives/autoscoring_gssc/<subtree>/{id}_scoring_params.json`: mode, rule, number of combinations,
+  EEG/EOG used, EOG mode, reference, declared EOG, expert suffix, gssc/torch versions, device, notes, date.
+- `reports_autoscoring_gssc/<subtree>/{id}_autoscoring_comparison.tsv` (one row: epoch counts,
+  `accuracy, kappa, f1_<stage>, mean_confidence, scoring_mode, eeg_used, eog_used, status`),
+  `{id}_confusion.tsv` (long `file_id, expert, gssc, n`, removed when no comparison is possible) and
+  `{id}_autoscoring_report.html` (parameters, hypnograms expert/GSSC (grey line, REM red, as tools 6/7),
+  hypnodensity with the expert hypnogram as a black line over it (stage names on the right axis),
+  agreement table, confusion matrix, then the non-AASM section when present). Stage colours = the toolkit's
+  `BASE_STAGE_COLORS`.
+- `reports_autoscoring_gssc/<subtree>/{id}_custom_stages.tsv` (only when the night has expert epochs outside
+  W/N1/N2/N3/R; removed otherwise): one row per expert stage, `file_id, stage_expert, kind`
+  (`aasm_reference` / `custom` / `MT` / `other`)`, n_epochs, p_W … p_R` (mean hypnodensity)`,
+  pct_gssc_W … pct_gssc_R`, `labels` (the raw labels grouped in `other`).
+- `reports_autoscoring_gssc/` root: `global_autoscoring_summary.tsv`, `global_confusion.tsv` (pooled),
+  `global_autoscoring_report.html` (pooled confusion matrix, κ / accuracy per participant, **every
+  participant's hypnodensity stacked** on one shared time axis with its κ, the expert hypnogram drawn
+  over it as a black step line when available (W on top, then R, N1, N2, N3; a gap where the expert label
+  is outside W/N1/N2/N3/R), split into figures of `HYPNODENSITY_ROWS_PER_FIG` = 20 rows, read from the
+  `_hypnodensity.tsv` files on disk; the pooled non-AASM section; then the table),
+  `global_custom_stages.tsv` (per expert stage, the per-night means weighted by `n_epochs`, + `n_nights`;
+  pooled over the nights that have non-AASM epochs, reference rows from the same nights),
+  `failed_autoscoring.tsv` (merged on `file_id`: a participant rescored successfully leaves it).
 
 ### 4. Event Label Harmonization (`4_remap_events_edf_voila.ipynb`, `4_remap_events_edf.ipynb`)
 
