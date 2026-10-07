@@ -25,7 +25,9 @@ dependencies:
   - edfio=0.4.*
   - openpyxl=3.1.*
   - pytest            # tests/ (headless notebook pipeline tests); nbclient comes with voila
+  - pytorch-cpu       # tool 3bis (GSSC automatic sleep scoring)
   - pip
   - pip:
     - specparam
     - curryreader
+    - gssc==0.0.9     # tool 3bis: pip-only; pinned because tool 3bis reproduces its scoring loop

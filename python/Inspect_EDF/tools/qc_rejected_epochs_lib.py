@@ -115,6 +115,8 @@ MONTAGE_ROW_MIN_IN   = 0.16     # floor: thinner rows are unreadable anyway
 MONTAGE_MAX_H_IN     = 13.0     # cap on the montage figure height (inches)
 N_1F_SUBSAMPLE_HD    = 250      # default 1/f epoch subsample above the threshold (0 = fit every epoch)
 DEFAULT_TABLE_ROWS   = 8        # per-channel metric table: flagged channels + this many worst ones
+DETAIL_FIG_HEIGHT_IN = 3.3      # navigator detail panel (PSD + metric table): low enough that the montage,
+                                # the PSD and the table fit on one screen
 
 AASM_STAGES = ['W', 'N1', 'N2', 'N3', 'R']
 
@@ -660,8 +662,9 @@ def recompute_channel_flags(P, thresholds):
 
 
 def channel_badness(pair_flags, methods_sel, in_scope, n_ch):
-    """Per-channel badness = % of IN-SCOPE epochs where the channel is flagged by a selected method
-    (the same definition as tool 8bis's channel-first step, so both tools rank channels identically).
+    """Per-channel badness = % of the REFERENCE epochs (`in_scope`: tool 8's focus stages) where the
+    channel is flagged by a selected method (the same definition as tool 8bis's channel-first step over its
+    reference stages, so both tools rank channels identically).
     Returns (overall (n_ch,) float %, {method: (n_ch,) float %})."""
     insc = np.asarray(in_scope, dtype=bool)
     n_in = int(insc.sum())
@@ -690,10 +693,13 @@ def recompute_reject(meta, methods_sel, stages_sel, event_types_sel=None,
                      epoch_rule='any', epoch_rule_value=20.0):
     """Recompute the per-epoch reject decision from a USER-SELECTED subset of flagging methods, sleep
     stages and (for the 'event' method) event types — the tool-8 analogue of tool-8bis's build_pair_matrix,
-    but read from the .fif metadata. An epoch is rejected when its stage is in `stages_sel` (in scope) AND at
-    least one SELECTED method flags it; the 'event' method contributes the OR of the selected `evt_<type>`
-    columns (falling back to `flag_event` when no per-type columns exist — pre-feature data). With every
-    present method + stage + type selected this reproduces tool 7's stored `reject_flag`.
+    but read from the .fif metadata. An epoch is rejected when at least one SELECTED method flags it,
+    WHATEVER its stage: the decision covers every epoch, the choice of stages belongs to the analysis
+    (tool 9, statistics). `stages_sel` only defines the review FOCUS (what the navigator and the Section-2
+    report show, and the reference epochs of the channel badness). The 'event' method contributes the OR of
+    the selected `evt_<type>` columns (falling back to `flag_event` when no per-type columns exist —
+    pre-feature data). With every present method + type selected this reproduces tool 7's stored
+    `reject_flag`, whatever the ticked stages.
 
     HIGH-DENSITY channel layer (all optional; when `pair_flags` is None none of it runs and the result
     is exactly the pre-high-density one):
@@ -706,15 +712,15 @@ def recompute_reject(meta, methods_sel, stages_sel, event_types_sel=None,
     of it for a single electrode. Dropping the bad channel and/or switching to 'pct' is what makes the
     manual review tractable — see the measured figures in the HD constants block at the top.
 
-    Returns (base_reject, reject_method, in_scope):
-      base_reject   (n_ep,) bool  — in-scope AND flagged by a selected method
+    Returns (base_reject, reject_method, focus):
+      base_reject   (n_ep,) bool  — flagged by a selected method (every stage)
       reject_method (n_ep,) str   — the selected method that flagged it, 'multiple' for >=2, '' otherwise
                                     ('event' names the event contribution)
-      in_scope      (n_ep,) bool  — stage in stages_sel (the epochs the report/navigator restrict to)"""
+      focus         (n_ep,) bool  — stage in stages_sel (the epochs the report/navigator restrict to)"""
     stages = meta['stage'].astype(str).values
     n = len(stages)
     stages_sel = set(str(s) for s in stages_sel)
-    in_scope = np.array([s in stages_sel for s in stages], dtype=bool)
+    focus = np.array([s in stages_sel for s in stages], dtype=bool)
     event_types_sel = list(event_types_sel) if event_types_sel else []
     # per-method boolean hits (only methods actually present as flag_<m> columns)
     hits = {}
@@ -765,14 +771,14 @@ def recompute_reject(meta, methods_sel, stages_sel, event_types_sel=None,
         # attribution: the selected methods that flagged at least one KEPT channel in that epoch
         hits = {m: M.any(axis=1) for m, M in pair_hits.items()}
         hits.update(epoch_only)
-    base_reject = in_scope & any_hit
+    base_reject = any_hit
     # per-epoch attribution (stable method order)
     reject_method = np.full(n, '', dtype=object)
     order = [m for m in METHOD_ORDER if m in hits]
     for ei in np.where(base_reject)[0]:
         got = [m for m in order if hits[m][ei]]
         reject_method[ei] = got[0] if len(got) == 1 else ('multiple' if len(got) >= 2 else '')
-    return base_reject, reject_method.astype(str), in_scope
+    return base_reject, reject_method.astype(str), focus
 
 
 # ---------------------------------------------------------------------------
@@ -1017,7 +1023,7 @@ def plot_channel_flag_heatmap(P, pair_flags, methods_sel, in_scope, badness_pct=
     ax_b.barh(np.arange(n_ch), badness_pct, color=colours, height=0.8)
     ax_b.set_ylim(n_ch - 0.5, -0.5)
     ax_b.set_yticks([])
-    ax_b.set_xlabel('% in-scope epochs', fontsize=8)
+    ax_b.set_xlabel('% focus-stage epochs', fontsize=8)
     ax_b.tick_params(axis='x', labelsize=7)
     ax_b.grid(True, axis='x', alpha=0.25)
     ax_b.set_title(f'Badness (n={int(insc.sum())})', fontsize=8)
@@ -1470,12 +1476,12 @@ def plot_epoch_detail(P, ei, freqs, psds_uV2, thresholds, spectro_ch_idx=0, fmin
     # gridspec (height_ratios=[1.15, 1.0], hspace=0.35, figsize height 8), uncomment ax_band/ax_spec here
     # and blocks (c)/(d) below, and put the topomaps back on gs[0, 2] / gs[1, 2].
     if topomap:
-        fig = plt.figure(figsize=(18, 4.8))
+        fig = plt.figure(figsize=(18, DETAIL_FIG_HEIGHT_IN))
         gs = fig.add_gridspec(1, 4, width_ratios=[1.35, 1.0, 0.62, 0.62], wspace=0.25)
         ax_topo_ptp = fig.add_subplot(gs[0, 2])
         ax_topo_mae = fig.add_subplot(gs[0, 3])
     else:
-        fig = plt.figure(figsize=(13, 4.8))
+        fig = plt.figure(figsize=(13, DETAIL_FIG_HEIGHT_IN))
         gs = fig.add_gridspec(1, 2, width_ratios=[1.35, 1.0], wspace=0.2)
         ax_topo_ptp = ax_topo_mae = None
     ax_psd = fig.add_subplot(gs[0, 0])
@@ -1708,8 +1714,9 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     ax.set_yticks([])
     ax.set_xlim(0, n_ep)
     ax.set_xlabel('Epoch index', fontsize=9)
+    grey_txt = f'grey = excluded/out-of-scope ({int(excl.sum())}), ' if excl.any() else ''
     ax.set_title(f'Final decision — green = keep ({int(keep.sum())}), red = reject ({int(rej.sum())}), '
-                 f'grey = excluded/out-of-scope ({int(excl.sum())}), ▼ = overridden ({len(overridden)})'
+                 f'{grey_txt}▼ = overridden ({len(overridden)})'
                  f'{unseen_txt}',
                  fontsize=9)
     for sp in ['top', 'right']:
@@ -1725,8 +1732,12 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
                               flags_source='', visited=None, epoch_number_offset=1,
                               n_manual_annotations=0):
     """One-row durable record of a tool-8 manual review — the analogue of tool 8bis's
-    `{file_id}_autoreject_decision.tsv`, and the source rebuilt into the global summary. Counts are over
-    the IN-SCOPE epochs (the selected stages, i.e. the epochs tool 9 can average).
+    `{file_id}_autoreject_decision.tsv`, and the source rebuilt into the global summary. The decision
+    covers EVERY epoch, so `n_rejected` / `n_kept` / `pct_rejected` count every epoch; `in_scope` is the
+    review FOCUS (the stages ticked in Section 1), counted separately in the additive `n_epochs_ref` /
+    `n_rejected_ref` / `pct_rejected_ref` / `n_flagged_ref` (the review set). `n_in_scope` /
+    `n_out_of_scope` are kept for schema continuity (= `n_epochs` / 0). `n_<stage>` / `n_rejected_<stage>`
+    are written for the selected stages and every other stage present.
     The channel-triage provenance (`dropped_channels`, `epoch_rule`, …) is written as ADDITIVE columns
     whose values are constant on the classic path (no channel dropped, rule 'any').
     `visited` (epoch indices actually displayed), `epoch_number_offset` and `n_manual_annotations` are
@@ -1735,14 +1746,16 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
     5 % rejected without opening one. Returns a one-row DataFrame."""
     base = np.asarray(base_reject, dtype=bool)
     fin = np.asarray(final_reject, dtype=bool)
-    insc = np.asarray(in_scope, dtype=bool)
+    focus = np.asarray(in_scope, dtype=bool)
     stages = np.asarray(P['stages'])
-    n_in = int(insc.sum())
-    n_rej = int((insc & fin).sum())
+    n_ep = int(len(stages))
+    n_rej = int(fin.sum())
+    n_ref = int(focus.sum())
+    n_rej_ref = int((focus & fin).sum())
     amp = thresholds.get('amplitude_ptp_uV', {})
-    # "Seen" is counted over the REVIEW SET (the in-scope epochs the selection flagged) — that is what the
+    # "Seen" is counted over the REVIEW SET (the focus epochs the selection flagged) — that is what the
     # navigator walks, so it is the only denominator for which "all reviewed" is reachable.
-    to_review = insc & base
+    to_review = focus & base
     n_to_review = int(to_review.sum())
     seen = np.zeros(len(stages), dtype=bool)
     for e in (visited or ()):
@@ -1751,16 +1764,16 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
     n_seen = int((seen & to_review).sum())
     row = {
         'file_id': file_id,
-        'n_epochs': int(len(stages)),
-        'n_in_scope': n_in,
-        'n_out_of_scope': int((~insc).sum()),
+        'n_epochs': n_ep,
+        'n_in_scope': n_ep,               # the decision covers every epoch (column kept for continuity)
+        'n_out_of_scope': 0,
         'n_rejected': n_rej,
-        'n_kept': int((insc & ~fin).sum()),
-        'pct_rejected': round(100.0 * n_rej / n_in, 2) if n_in else np.nan,
-        'n_flagged_by_selection': int((insc & base).sum()),
+        'n_kept': n_ep - n_rej,
+        'pct_rejected': round(100.0 * n_rej / n_ep, 2) if n_ep else np.nan,
+        'n_flagged_by_selection': int(base.sum()),
         'n_overrides': len(overridden),
-        'n_rescued': int((insc & base & ~fin).sum()),
-        'n_added': int((insc & ~base & fin).sum()),
+        'n_rescued': int((base & ~fin).sum()),
+        'n_added': int((~base & fin).sum()),
         'n_seen': n_seen,
         'pct_seen': round(100.0 * n_seen / n_to_review, 2) if n_to_review else np.nan,
         'n_manual_annotations': int(n_manual_annotations),
@@ -1783,12 +1796,17 @@ def build_manual_decision_row(file_id, P, base_reject, final_reject, in_scope, o
         'thr_1f_mae_max': thresholds.get('1f_mae_max'),
         'thr_1f_r2_min': thresholds.get('1f_r2_min'),
         'reviewed_at': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+        # the review focus (stages ticked in Section 1): the same counts restricted to it
+        'n_epochs_ref': n_ref,
+        'n_rejected_ref': n_rej_ref,
+        'pct_rejected_ref': round(100.0 * n_rej_ref / n_ref, 2) if n_ref else np.nan,
+        'n_flagged_ref': n_to_review,
     }
-    # per-stage rejected counts over the in-scope stages (one column per selected stage)
-    for st in stages_sel:
-        sel = insc & (stages == st)
-        n = int(sel.sum())
-        row[f'n_{st}'] = n
+    # per-stage counts: the selected stages first (their former columns), then every other stage present
+    stage_cols = list(stages_sel) + [s for s in dict.fromkeys(stages.astype(str)) if s not in set(stages_sel)]
+    for st in stage_cols:
+        sel = stages == st
+        row[f'n_{st}'] = int(sel.sum())
         row[f'n_rejected_{st}'] = int((sel & fin).sum())
     return pd.DataFrame([row])
 
@@ -1803,19 +1821,20 @@ def manual_decision_html(file_id, decision_row, stage_table_html='', manual_even
         return (f'<tr><td style="padding:3px 10px;border:1px solid #ccc;">{label}</td>'
                 f'<td style="padding:3px 10px;border:1px solid #ccc;text-align:right;"><b>{value}</b></td></tr>')
     pct = '—' if pd.isna(r['pct_rejected']) else f'{r["pct_rejected"]:.1f}%'
+    pct_ref = '—' if pd.isna(r['pct_rejected_ref']) else f'{r["pct_rejected_ref"]:.1f}%'
     body = (_cell('Epochs in file', r['n_epochs'])
-            + _cell('In scope (selected stages)', r['n_in_scope'])
-            + _cell('Excluded (out-of-scope stages)', r['n_out_of_scope'])
-            + _cell('Rejected', f'{r["n_rejected"]}  ({pct} of in-scope)')
-            + _cell('Kept (averaged by tool 9)', r['n_kept'])
-            + _cell('Flagged by the selection', r['n_flagged_by_selection'])
+            + _cell('Rejected', f'{r["n_rejected"]}  ({pct} of every epoch)')
+            + _cell('Kept (available to tool 9)', r['n_kept'])
+            + _cell('Review focus (stages)', r['stages_used'])
+            + _cell('Rejected in the focus stages', f'{r["n_rejected_ref"]} / {r["n_epochs_ref"]}  ({pct_ref})')
+            + _cell('Flagged by the selection', f'{r["n_flagged_by_selection"]} '
+                                                f'({r["n_flagged_ref"]} in the focus stages)')
             + _cell('Reviewed in the navigator',
                     ('—' if pd.isna(r.get('pct_seen', np.nan))
-                     else f'{r["n_seen"]} / {r["n_flagged_by_selection"]}  ({r["pct_seen"]:.0f}%)'))
+                     else f'{r["n_seen"]} / {r["n_flagged_ref"]}  ({r["pct_seen"]:.0f}%)'))
             + _cell('Manual overrides', f'{r["n_overrides"]} '
                                         f'(rescued {r["n_rescued"]}, newly rejected {r["n_added"]})')
             + _cell('Manual annotations added', r.get('n_manual_annotations', 0) or '—')
-            + _cell('Stages used', r['stages_used'])
             + _cell('Methods used', r['methods_used'])
             + _cell('Event types used', r['event_types_used'] or '—')
             + _cell('Channels', f'{r["n_channels"]} ({r["channels"]})')

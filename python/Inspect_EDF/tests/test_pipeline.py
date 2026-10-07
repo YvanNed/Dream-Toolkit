@@ -34,6 +34,10 @@ def test_every_golden_file_is_owned_by_a_tool(golden):
 INTENDED_CHANGES = {
     # pooled over the NON-excluded participants only (test_exclusion_tools.py)
     '7': ['reports_preprocessing/global_rejection_by_stage.tsv'],
+    # the decision covers every epoch: n_epochs / pct_epochs_rejected now count the whole night (the
+    # former in-scope counts moved to the *_ref columns), checked by
+    # test_exclusion_tools.py::test_tool8bis_decision_tables_match_the_clean_epochs
+    '8bis': ['reports_rejection_auto/'],
     # every epoch / channel now computed + decision columns: compared through the kept epochs of the
     # kept channels by test_tool9.py::test_tool9_reproduces_the_clean_epochs_route
     '9': ['derivatives/features_spectral/', 'reports_features_spectral/'],

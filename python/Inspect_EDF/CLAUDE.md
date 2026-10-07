@@ -144,6 +144,13 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **Anonymization (`1bis_anonymize_edf*`)**: copy the file, then overwrite **only** `patient_id` and
   `recording_id` in the 256-byte header. Everything from byte 256 on stays byte-identical (verified by
   `sha256(file[256:])`). Originals are **never** modified.
+- **Automatic scoring (`3bis_autoscoring_gssc_voila`)**: GSSC, Voila only, knows nothing of exclusions.
+  Channels from tool 2's JSON (EEG re-referenced as declared, EOG = `context_channels`). Consensus =
+  gssc's native `loudest_vote`. gssc 0.0.9's `mne_infer` returns no probabilities, so
+  `gssc_combination_logits` **reproduces its loop** (verified identical stages): **gssc is pinned to 0.0.9**,
+  re-check that loop before any upgrade. `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for torch ≥ 2.6. The automatic
+  hypnogram goes beside the EDF (tool-3 format) and the run refuses an output suffix equal to the expert one.
+  → SPEC §3bis.
 - **Sleep macrostructure (`5_sleep_macrostructure_voila`)**: hypnogram + scored events + **EDF header only**
   (never the epochs, never the EEG signal, single-channel `include=` reads for the optional `Light`/`SpO2`
   only): the documented exception to *feature tools start from the clean epochs*. Binary header read, **not
@@ -210,11 +217,12 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   apart on the participant dropdown. `data_root` = the selected data folder, else the `derivatives/`
   ancestor's parent. An **"already processed" badge** (`_epoch_decision.tsv` **and** a review/decision TSV on
   disk) is informative only: it blocks nothing. The **Exclude this participant** button writes `8_manual`.
-  **The decision is RECOMPOSED, not read**: Section 1 checkboxes (stages / methods / event types, all on by
+  **The decision is RECOMPOSED, not read**: Section 1 checkboxes (methods / event types, all on by
   default) feed `recompute_reject`, which rebuilds `base_reject` + `reject_method` the way 8bis's
-  `build_pair_matrix` does: all ticked ⇒ **identical to tool 7's `reject_flag`** (keep it that way). It
-  drives the navigator, Section 2 **and** the saved decision (**out-of-scope stages = `in_scope False`**), and
-  gates the cost (`fit_mask=in_scope`, `do_1f=False` when no 1/f method is ticked).
+  `build_pair_matrix` does: all ticked ⇒ **identical to tool 7's `reject_flag`** (keep it that way). **The
+  decision covers every epoch** (`in_scope` always True): the stage checkboxes are only the review **focus**
+  (`S['focus']`: navigator, Section 2, channel-badness reference, `fit_mask=focus`; `do_1f=False` when no 1/f
+  method is ticked), and a focus-only Apply keeps the manual overrides. → SPEC §8 *Rejection redefinition*.
   Per-channel attribution is **recomputed** with tool-7 formulas + persisted thresholds. Section 4 also
   writes an **8bis-style decision record** (`_manualreject_decision.tsv` → `_manualreject_report.html` →
   `global_manualreject_summary.tsv` **rebuilt by globbing the per-file TSVs**, data written before the report). Analysis + plotting live in a **shared module
@@ -228,8 +236,12 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   everywhere: it is the join key with tools 7/8bis/9. **Review tracking**: `visited` feeds a status banner
   (loud when the decision was *changed*), a `reviewed n/N` HTML strip and the Section-4 strip
   (`plot_review_strip(..., visited=)`, `None` ⇒ byte-identical), persisted as the additive `seen` column +
-  `n_seen`/`pct_seen` and re-read at load.
-  An **optional "Show EOG/EMG context" toggle** (**default ON**, a no-op when tool 7 wrote no companion) stacks the EOG-L/EOG-R/EMG traces under the
+  `n_seen`/`pct_seen` and re-read at load. The navigator's **`Show`** (`flagged` default = classic list /
+  `kept` / `all`, within the focus stages) is the only UI path to `manual_added`. Lists come from
+  `base_reject`, never the final decision. **Sections 2–4 are cleared on every load / Apply selection**
+  (`_RESET_HOOKS`) behind an unsaved-changes guard: a stale list would toggle the wrong participant's epochs.
+  Section 3 order: navigator right above the plots, decision right under them, display settings last
+  (detail panel height `DETAIL_FIG_HEIGHT_IN`). An **optional "Show EOG/EMG context" toggle** (**default ON**, a no-op when tool 7 wrote no companion) stacks the EOG-L/EOG-R/EMG traces under the
   per-epoch montage, loaded on demand from the `{file_id}_context-epo.fif` companion (`load_context_epochs`,
   aligned by epoch index): still no raw-EDF reload. Absent companion → toggle is a no-op. The navigator
   header names the **event type(s)** that flagged the epoch, read from the `.fif` `evt_<type>` metadata
@@ -244,7 +256,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   EDF-specific code to swap). Re-run it after editing the EDF notebook. **Channel-first then epoch**
   (`auto_reject_decision`): drop a channel flagged in
   > `channel_pct` of in-scope epochs, then reject an in-scope epoch flagged in > `epoch_pct` of the *remaining
-  good* channels (both default 20 %, editable, computed over the **stages of interest** only). Reads tool-7
+  good* channels (both default 20 %, editable). The stage checkboxes are **reference stages** (channel
+  badness + participant exclusion); the epoch rule then decides **every** epoch (`in_scope` always True,
+  `_ref` columns keep the reference-stage counts). Reads tool-7
   outputs **read-only**. **Section 2 selectable flagging methods + event sub-selection**: `build_pair_matrix`
   recomposes the (epoch×channel) matrix from the ticked `flag_<method>` columns (all on = the stored
   `reject_any`, byte-identical default). Ticking `event` reveals per-canonical-type rows (checkbox +

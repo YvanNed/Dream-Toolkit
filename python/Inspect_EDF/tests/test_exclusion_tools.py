@@ -165,19 +165,40 @@ def golden_clean(golden, fid, kind):
 
 @pytest.mark.tool8bis
 def test_tool8bis_decision_tables_match_the_clean_epochs(chain, golden):
-    """The decision tables keep exactly the epochs and channels the former clean-epo held."""
+    """INTENDED CHANGE (decisions cover every epoch): on the reference stages the decision tables keep
+    exactly the epochs and channels the former clean-epo held (golden), and their `_ref` counts are the
+    former in-scope counts; every other epoch is now decided too, by the same rule (rejected when more
+    than 20 % of the good channels flag it, from tool 7's per-(epoch, channel) flags)."""
     p = ids(chain)
     dec_dir = chain['data'] / 'derivatives' / 'rejection_auto'
+    rep_dir = chain['data'] / 'reports_rejection_auto'
     assert not (chain['data'] / 'derivatives' / 'clean_epo_auto').exists()     # no copy of the epochs
     for fid in p:
         ed = tsv(dec_dir / f'{fid}_epoch_decision.tsv')
         kept_old, chans_old = golden_clean(golden, fid, 'clean_epo_auto')
+        rec = tsv(rep_dir / f'{fid}_autoreject_decision.tsv').iloc[0]
+        ref = rec['stages_of_interest'].split('+')
+        is_ref = ed['stage'].astype(str).isin(ref)
         assert len(ed) == len(fif(chain['data'], fid))                   # every epoch has a row
-        assert ed[ed['in_scope'] & ~ed['rejected']]['epoch_idx'].tolist() == kept_old
+        assert ed['in_scope'].all()                                      # the decision covers every epoch
+        assert ed[is_ref & ~ed['rejected']]['epoch_idx'].tolist() == kept_old
         assert (ed.loc[ed['rejected'], 'reject_reason'] != '').all()
-        assert not (ed['rejected'] & ~ed['in_scope']).any()
         cd = tsv(dec_dir / f'{fid}_channel_decision.tsv')
-        assert sorted(cd.loc[~cd['dropped'], 'channel']) == sorted(chans_old)
+        good = sorted(cd.loc[~cd['dropped'], 'channel'])
+        assert good == sorted(chans_old)
+        # the other stages: same epoch rule, on the good channels
+        pairs = tsv(next((chain['data'] / 'reports_preprocessing').rglob(f'{fid}_epoch_channel_rejection.tsv')))
+        frac = (pairs[pairs['channel'].isin(good)].groupby('epoch_idx')['reject_any']
+                .mean().reindex(ed['epoch_idx']).fillna(0.0).values)
+        expected = (frac > 0.20) if good else np.ones(len(ed), dtype=bool)
+        assert (ed['rejected'].values == expected).all()
+        assert (~is_ref).any()                                           # W/N1 epochs were decided
+        # the reference-stage counts are the former in-scope ones; the every-epoch counts cover the night
+        old = snapshot._read_table(str(golden / 'reports_rejection_auto' / f'{fid}_autoreject_decision.tsv.gz')).iloc[0]
+        assert int(rec['n_epochs_ref']) == int(old['n_epochs'])
+        assert int(rec['n_epochs_rejected_ref']) == int(old['n_epochs_rejected'])
+        assert int(rec['n_epochs']) == len(ed) and int(rec['n_epochs_rejected']) == int(ed['rejected'].sum())
+        assert sum(int(rec[f'n_{st}']) for st in ed['stage'].astype(str).unique()) == len(ed)
     for fid, bad in [(p[0], 'Fp1'), (p[1], 'C3')]:                      # tool-7 deselected channels
         cd = tsv(dec_dir / f'{fid}_channel_decision.tsv')
         assert cd.loc[cd['channel'] == bad, 'drop_reason'].item() == 'tool7_deselected'
@@ -217,6 +238,7 @@ def test_tool8_decision_tables(chain, golden):
     assert not (chain['data'] / 'derivatives' / 'clean_epo_manual').exists()
     ed = tsv(dec_dir / f'{fid}_epoch_decision.tsv')
     kept_old, chans_old = golden_clean(golden, fid, 'clean_epo_manual')
+    assert ed['in_scope'].all()                       # the decision covers every epoch
     assert ed[ed['in_scope'] & ~ed['rejected']]['epoch_idx'].tolist() == kept_old
     cd = tsv(dec_dir / f'{fid}_channel_decision.tsv')
     assert sorted(cd.loc[~cd['dropped'], 'channel']) == sorted(chans_old)
