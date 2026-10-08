@@ -25,7 +25,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **`detect_channel_types`**: classify non-EEG channels by transducer type OR name (incl. `chin|menton`
   for EMG). Reuse the helper from `0_live_explore_1file`, pre-filled as an editable selection so the user
   can correct misses. Tool 1 inspects EEG/EOG/ECG/EMG with the same *transducer-type OR curated
-  name-list* convention, **default selection = EEG + EOG** (ECG/EMG opt-in) across all four files.
+  name-list* convention, **default selection = EEG + EOG** (ECG/EMG opt-in) in the Voila app and both batch scripts.
 - **Context channels declared once in tool 2 (`2_select&remap_channels_edf*`, Section 2bis)**: identifies,
   **per channel configuration**, the non-EEG *context* channels (`eog_left`, `eog_right`, `emg`, `ecg`)
   via a dataframe-based `detect_context_channels(df_sub)` (same *transducer-type OR name* convention, but on
@@ -34,7 +34,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (`(none)` if absent), fanned out to participants like `remap`/`ref_channels`, and saved in an **additive,
   optional** `context_channels` block of `remap_reref_persubject.json` (**omitted when empty** → JSONs
   without context stay byte-identical). Analysis tools 6/7 ignore it. Only tools that explicitly ask (e.g.
-  tool 8's per-epoch inspector) load these channels on demand. EDF Voila + Jupyter kept in sync. The Curry
+  tool 8's per-epoch inspector) load these channels on demand. The Curry
   twin is **regenerated** via `tools_curry/_make_tool2_curry.py` (new code passes through, no generator
   edit needed). Re-run it after editing the EDF Voila.
 - **`get_phys_bounds_uV`**: scale MNE's physical bounds by `units[ch]*1e6`, otherwise mV channels
@@ -91,7 +91,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   byte-identical**. Format-agnostic → pass through the Curry generator (re-run `_make_tool7_curry.py`).
 - **Rejection-method palette = single source in `qc_rejected_epochs_lib.HEATMAP_COLORS`** (CVD-validated,
   index 0 `none` dark, `multiple` cyan, `CTX_COLOR` deliberately outside the six method hues). Duplicated
-  **verbatim** in tool 7's `plot_rejection_heatmap` and in tools 0/0-voila (whose array is shorter, has no
+  **verbatim** in tool 7's `plot_rejection_heatmap` and in tool 0 (whose array is shorter, has no
   `event` and uses a different order → remap per method, never copy-paste). 8bis imports the lib. Six
   categories can't be told apart by colour alone → always ship a legend / method-coloured labels. Changing
   it changes rendered PNGs. Re-run the Curry generators. → SPEC *Cross-cutting → Rejection-method colour palette*.
@@ -122,7 +122,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   from the vmin/vmax percentiles and render them grey, **then cap the colour span
   (`vmin = max(vmin, vmax − 45)`)** so a continuum of partly-flat/clipped low-power epochs can't drag
   `vmin` and wash the plot to red (clean channels span < 45 dB → untouched, still byte-identical). Keep
-  both in sync across tools 0, 0-voila, 6 (+ tool 6's Curry twin via `_make_tool6_curry.py`). → SPEC
+  both in sync across tools 0 and 6 (+ tool 6's Curry twin via `_make_tool6_curry.py`). → SPEC
   *Cross-cutting → Flat/dead-epoch colour scaling*.
 - **Time-series display cap for DC-coupled data**: DC sources (Curry `.cdt`, any DC export with no
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
@@ -137,8 +137,11 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `display` from that checkbox (`display='' if cb.value else 'none'`), never hard-code `'none'`: the
   `observe` handler only fires on a *change*, so a pre-ticked checkbox would leave its box hidden (as it did
   in the Curry twin of tool 6, where `hp_check` defaults ON). Applies to tools 6 & 7. Use it for any new one.
-- **Dual delivery**: every user-facing tool ships a code-visible Jupyter notebook **and** a code-hidden
-  Voila app (kept in sync). Some add a batch `.py`. Outputs are TSV (machine) + HTML (human).
+- **Single delivery = the Voila app**: every user-facing tool is one code-hidden Voila notebook
+  (`tools/*_voila.ipynb`), the only version maintained. Some add a batch `.py` (tools 1, 8). The former
+  code-visible Jupyter versions of tools 0–4 are **archived, frozen** in `tools/jupyter_notebook/` (since
+  2026-10-08): never edit or sync them, never create a Jupyter version for a new tool. Outputs are TSV
+  (machine) + HTML (human). → SPEC *Cross-cutting → Single delivery*.
 
 **Per-tool** (→ SPEC §1bis / §5 / §7 / §8 / §8bis / §9)
 - **Anonymization (`1bis_anonymize_edf*`)**: copy the file, then overwrite **only** `patient_id` and
@@ -151,7 +154,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   re-check that loop before any upgrade. `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for torch ≥ 2.6. The automatic
   hypnogram goes beside the EDF (tool-3 format) and the run refuses an output suffix equal to the expert one.
   → SPEC §3bis.
-- **Sleep macrostructure (`5_sleep_macrostructure_voila`)**: hypnogram + scored events + **EDF header only**
+- **Sleep macrostructure (`5_compute_sleep_macrostructure_voila`)**: hypnogram + scored events + **EDF header only**
   (never the epochs, never the EEG signal, single-channel `include=` reads for the optional `Light`/`SpO2`
   only): the documented exception to *feature tools start from the clean epochs*. Binary header read, **not
   edfio** (crashes on 73.edf). Policies live in SPEC §5 (do not re-derive them): 0-based epochs with an
@@ -162,7 +165,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   Unmapped labels **not counted** + warned. Copies tool 7's event chain (its XML parser gains an additive
   `Desaturation` column). Skip marker = `{file_id}_sleep_metrics.tsv` (checks TSV written first). Globals
   globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc.
-- **Participant selection (`5bis_select_participants_voila`)**: reads only tool 5's `global_sleep_metrics.tsv`,
+- **Participant selection (`5bis_exclude_sleep_macrostructure_voila`)**: reads only tool 5's `global_sleep_metrics.tsv`,
   writes a decision record (`participant_selection.tsv`) beside it **and the registry**: Validate replaces all
   `5bis_criteria` rows, Section 3 saves `5bis_manual` exclusions / forced inclusions at once. Tool 5 stays
   decision-free. `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **verbatim copies of tool 5's**: edit

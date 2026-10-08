@@ -236,7 +236,6 @@ if not os.path.exists(summary_path):
         "| failed_edf_read.tsv | all | EDF files that could not be read |\n\n"
         "## Tools that generate this folder\n\n"
         "- **1_inspect_edf_voila.ipynb** — Interactive UI (run with `voila tools/1_inspect_edf_voila.ipynb`). Recommended for non-programmers.\n"
-        "- **1_inspect_edf.ipynb** — Jupyter notebook version with visible code cells. Use for debugging.\n"
         "- **1_inspect_edf_perdataset.py** — Script version; processes a full dataset folder in one shot.\n"
         "- **1_inspect_edf_perparticipant.py** — Script version; generates one report per participant.\n"
     )
