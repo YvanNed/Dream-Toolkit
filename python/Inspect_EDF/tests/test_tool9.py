@@ -34,10 +34,21 @@ def sort(df):
     return df.sort_values(keys, kind='stable').reset_index(drop=True)
 
 
+# Power minus the aperiodic fit, in dB: a difference of two nearly equal numbers (often ~0.01 dB), so the
+# floating-point noise of the specparam fit, which changes with the BLAS library (OpenBLAS -> MKL when
+# pytorch was installed for tool 3bis), exceeds the relative tolerance. 1e-5 dB is far below anything meaningful.
+AP_REMOVED_ATOL_DB = 1e-5
+
+
 def same(new, old, ignore=('source',), atol=1e-9):
     cols = [c for c in old.columns if c not in ignore]
-    return snapshot.compare_tables(new[cols].reset_index(drop=True), old[cols].reset_index(drop=True),
-                                   atol=atol)
+    ap_cols = [c for c in cols if c.endswith('_ap_removed_db')]
+    other_cols = [c for c in cols if c not in ap_cols]
+    new, old = new.reset_index(drop=True), old.reset_index(drop=True)
+    diffs = snapshot.compare_tables(new[other_cols], old[other_cols], atol=atol)
+    if ap_cols and len(new) == len(old):                  # a row-count change is already reported above
+        diffs += snapshot.compare_tables(new[ap_cols], old[ap_cols], atol=AP_REMOVED_ATOL_DB)
+    return diffs
 
 
 # 8bis's default reference stages = the former scope of its decision (the golden clean-epo held only

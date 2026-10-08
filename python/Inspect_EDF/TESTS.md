@@ -64,8 +64,10 @@ For every tool, every table it writes (TSV) and every settings file (JSON) is co
 run. A changed value, a removed column or a missing file fails the test, and the message names the first
 value that differs (for example `column 'tst_min': 1 value differs, first at row 2: 265.5 -> 266.0`).
 Adding a column or a file is allowed, so a new feature does not break the comparison as long as it leaves
-the existing numbers alone. Two runs of the chain on the same data were checked to give byte-identical
-results, so any difference is real, not noise.
+the existing numbers alone. Two runs of the chain on the same data and the same installation were checked to
+give byte-identical results, so any difference is real, not noise. Changing the math library underneath numpy
+(as when pytorch was installed for tool 3bis) can move the last digits of fitted values, which is why numbers
+are compared to within one part in a million.
 
 When a change is *meant* to move numbers (for example the per-stage summary of tool 7 now leaves the
 excluded participants out), that output is listed as an intended change and gets its own dedicated test
@@ -80,7 +82,9 @@ every per-stage table and every database table must give **the same values**. Th
 new way of working changed the organisation of the data, not the science.
 
 (One deliberate difference is excluded from the comparison: the night thirds now span the whole night
-instead of the kept epochs only.)
+instead of the kept epochs only. And the power left once the 1/f background is removed (`*_ap_removed_db`)
+is compared to within 0.00001 dB rather than one part in a million: it is the difference of two nearly equal
+numbers, often around 0.01 dB, so the last digits of the 1/f fit weigh heavily on it.)
 
 ### 3. A deselected channel is referenced like the others
 
