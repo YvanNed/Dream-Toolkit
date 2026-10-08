@@ -937,6 +937,18 @@ hypnogram also draws them as rows below N3 (empty rows on the GSSC panel, same l
 tools 6/7 colour (`CUSTOM_STAGE_PALETTE` by rank in `custom_stages.json`), MT / other grey. The hypnodensity
 overlay keeps a gap on them.
 
+**Clock time**: the recording start is read from the EDF header (`read_edf_start_datetime`, offsets
+168/176, the toolkit's helper) through `recording_start`, which treats `01.01.85 00.00.00` (the EDF+ placeholder
+of an anonymised, unknown start) as unknown. It is stored as `recording_start` (ISO, or null) in
+`_scoring_params.json`; nights scored before that field fall back to their EDF header at report time
+(`night_start_hours`). Clock hours use a **noon-to-noon scale** (`clock_hours`: before 12:00 → +24 h) so a
+night crossing midnight stays continuous (a daytime nap falls to the left of the nights). The per-participant
+hypnograms and hypnodensity keep their relative axis (hours from recording start) with a **second clock-time
+axis under it** (`add_clock_axis`, ~0.65 inch below whatever the panel height). The database report's stacked
+hypnodensities are drawn **on clock time** (one shared window, full hours around the earliest start and latest
+end, `HH:MM` ticks every hour up to 12 h, else every 2 h, midnight dashed), so early and late sleepers stand
+out; the nights with an unknown start go to a separate figure on the relative axis.
+
 **Outputs** (data before report; skip gate = automatic hypnogram + hypnodensity + report, partial → ⚠ +
 rescore; database tables rebuilt by globbing the per-file tables, **excluding the `global_*` files**, which
 share the `_confusion.tsv` / `_custom_stages.tsv` suffixes and would otherwise be counted again; the run
@@ -947,7 +959,8 @@ refuses an output suffix equal to the expert one):
   stage_gssc, p_W, p_N1, p_N2, p_N3, p_R, confidence` (max probability), `winning_combination`,
   `stage_expert` (empty without one), `agree` (empty when the expert label is not W/N1/N2/N3/R).
 - `derivatives/autoscoring_gssc/<subtree>/{id}_scoring_params.json`: mode, rule, number of combinations,
-  EEG/EOG used, EOG mode, reference, declared EOG, expert suffix, gssc/torch versions, device, notes, date.
+  EEG/EOG used, EOG mode, reference, declared EOG, expert suffix, gssc/torch versions, device,
+  `recording_start` (ISO or null), notes, date.
 - `reports_autoscoring_gssc/<subtree>/{id}_autoscoring_comparison.tsv` (one row: epoch counts,
   `accuracy, kappa, f1_<stage>, mean_confidence, scoring_mode, eeg_used, eog_used, status`),
   `{id}_confusion.tsv` (long `file_id, expert, gssc, n`, removed when no comparison is possible) and
@@ -961,7 +974,7 @@ refuses an output suffix equal to the expert one):
   pct_gssc_W … pct_gssc_R`, `labels` (the raw labels grouped in `other`).
 - `reports_autoscoring_gssc/` root: `global_autoscoring_summary.tsv`, `global_confusion.tsv` (pooled),
   `global_autoscoring_report.html` (pooled confusion matrix, κ / accuracy per participant, **every
-  participant's hypnodensity stacked** on one shared time axis with its κ, the expert hypnogram drawn
+  participant's hypnodensity stacked** on one shared **clock-time** axis with its κ (see *Clock time*), the expert hypnogram drawn
   over it as a black step line when available (W on top, then R, N1, N2, N3; a gap where the expert label
   is outside W/N1/N2/N3/R), split into figures of `HYPNODENSITY_ROWS_PER_FIG` = 20 rows, read from the
   `_hypnodensity.tsv` files on disk; the pooled non-AASM section; then the table),
