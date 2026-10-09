@@ -191,7 +191,7 @@ def join_values(series):
     vals = [str(x) for x in series]
     return ", ".join(map(html.escape, vals))
 
-#%% get data folder path and file list
+#%% get study folder path and file list
 folder_path = get_folder_path()
 print(f'Selected folder: {folder_path}')
 
@@ -211,11 +211,11 @@ if not edf_files:
 else:
     print(f"\nThere is {len(edf_files)} .edf files in your folder!")
     
-summary_path = f'{folder_path}/summary_inspection'
+summary_path = f'{folder_path}/reports_inspection'
 if not os.path.exists(summary_path):
     os.makedirs(summary_path)
     readme_text = (
-        "# summary_inspection — Output files\n\n"
+        "# reports_inspection — Output files\n\n"
         "This folder is created automatically by the EDF inspection tools (Dream-Toolkit).\n"
         "It contains summary tables (.tsv) and HTML reports generated from the EDF files in the parent study folder.\n\n"
         "## Output files\n\n"
@@ -245,7 +245,7 @@ if not os.path.exists(summary_path):
 #%% check if there is groups and session in the database
 # check if there is a participants.tsv file to get different groups or sessions
 # if there is not a participants.tsv we will try to infer groups from subfolder organization or filename components (additional part from subject number)
-# in ICEBERG, subfolders define groups within the data folder
+# in ICEBERG, subfolders define groups within the study folder
 # in APOMORPHEE, suffixes define nights ("session") 
 table_found = False
 for root, dirs, files in os.walk(folder_path):

@@ -120,6 +120,54 @@ independent of cwd (the EDF tools' `tools/qc_rejected_epochs_lib.py` and the Cur
 `tools_curry/curry_header.py` / `curry_io.py` are found whether Voila is launched from the repo root **or**
 from the tool's own folder) but the repo root is the documented, recommended launch directory.
 
+### Study folder layout
+
+Every tool's first folder picker asks for the **study folder**: the root that holds (or receives)
+`config_param/`, `derivatives/` and the `reports_*/` folders. The recordings are found by a **recursive**
+scan, so they can sit in a subfolder:
+
+```
+my_study/                               <- pick this folder in every tool
+├── data/                               <- recordings + their companions (any sub-folder tree)
+│   ├── sub1.edf, sub1_hypno.txt, *_ScoredEvents_Export.txt / *_event_xml.csv / *.edf.XML
+│   ├── sub1_Hypnogram_remapped.txt     (tool 3)
+│   ├── sub1_Hypnogram_gssc.txt         (tool 3bis)
+│   └── sub1_manual_events.tsv          (tool 8)
+├── config_param/                       <- tools 2, 3, 4 (JSON) + the exclusion registry
+├── derivatives/
+│   ├── autoscoring_gssc/data/          (tool 3bis)
+│   ├── features_macrostructure/data/   (tool 5)
+│   ├── raw_epo/data/                   (tool 7)
+│   ├── rejection_manual/data/          (tool 8)
+│   ├── rejection_auto/data/            (tool 8bis)
+│   └── features_spectral/data/         (tool 9)
+├── reports_inspection/                 <- tool 1
+└── reports_<step>/data/                <- one per tool (3bis, 5, 6, 7, 8, 8bis, 9)
+```
+
+- **Pick the study folder, never `data/`**, in every tool. Tools 1, 2, 3, 3bis, 4 and 6 have no separate
+  output folder: given `data/`, they would write `config_param/` and their reports inside it. Tools 5 and 7
+  have an optional **output folder** that defaults to the study folder; a different one is allowed but
+  warned about (⚠), since tool 7 reads `custom_stages.json` / `event_remap.json` from
+  `<study>/config_param/` but writes the exclusion registry to `<output>/config_param/` (and tool 5bis
+  keeps its registry beside tool 5's outputs).
+- **The outputs mirror the recordings' tree relative to the study folder**: `data/sub1.edf` gives
+  `derivatives/raw_epo/data/sub1_all-epo.fif`. Harmless (tools 8 / 8bis / 9 use explicit folder pickers
+  and recursive globs), and useful with group sub-folders (`data/group1/`, `data/group2/`).
+- **Companions stay beside the recording** by design: the hypnograms are found by suffix next to the EDF,
+  and an annotation belongs to the recording. `derivatives/autoscoring_gssc/` holds only the
+  hypnodensity + parameters.
+- **Exact names**: `config_param` and `derivatives`. Tools 8 / 8bis / 9 find the registry through
+  `find_data_folder` (first ancestor holding `config_param/`, else the parent of `derivatives/` or
+  `reports_*`).
+- **Identifying originals outside the study**: run tool 1bis on them; its `anonymized/` output (written
+  inside the originals folder) becomes `my_study/data/`. Inside the study, the recursive scans would find
+  each participant twice (the original + the anonymized copy under its new name).
+- **Keep the study path short** (Windows 260-character limit): the mirrored `data/` level adds a few
+  characters to already long OneDrive paths.
+- The code keeps its historical names (`fc_data`, `data_root`, `find_data_folder`, `<DATA>` in the tests)
+  for the study folder: the tests drive the widgets by these names.
+
 ### Interactive Voila apps (no-code mode)
 ```bash
 conda activate inspect_edf
@@ -207,7 +255,7 @@ reruns **from the first tool whose fingerprint changed** (a harness change: from
 that tool's and the later tools' outputs (`TOOL_OUTPUTS`) and their own registry rows
 (`TOOL_REGISTRY_SOURCES`). `--fresh-chain` forces a full rerun. A test that writes must therefore work on a
 **copy** (`data_copy` / `inputs_copy` fixtures), never on the chain's folders. Trap: tool 9 writes its data
-beside the **raw-epochs folder** it reads (`derivatives/features_spectral/`), not in the data folder, so a
+beside the **raw-epochs folder** it reads (`derivatives/features_spectral/`), not in the study folder, so a
 test must point it at a copied `raw_epo`.
 
 **Test files**:
@@ -304,7 +352,7 @@ instead of restating them. Only tool-specific deltas are kept inline.
   | database tables (`global_*.tsv`, workbooks) of tools 6, 7, 8, 8bis, 9 | **every** participant, with `participant_excluded` / `participant_exclude_reason` (named so to stay distinct from tool 6's per-channel `exclude`) |
   | database figures / statistics (tool 6 / 9 database reports, tool 7 `global_rejection_by_stage.tsv`, tool 8bis bar plot) | non-excluded participants and kept channels only; the excluded ones are named |
   | an excluded participant's own report | still written, with a red `EXCLUDED: reason` banner (`excluded_banner_html`) |
-- **Participant exclusion registry (`<data_folder>/config_param/participant_exclusions.tsv`)**: one row
+- **Participant exclusion registry (`<study_folder>/config_param/participant_exclusions.tsv`)**: one row
   per decision, `file_id, source, decision, reason, comment, decided_at`, written through
   `tools/participant_selection_lib.py` (a shared module, deliberate exception to the duplicated-helpers
   rule like `qc_rejected_epochs_lib`, imported with the cwd-independent probe `cwd`, `cwd/tools`,
@@ -319,9 +367,10 @@ instead of restating them. Only tool-specific deltas are kept inline.
   else included. Ids compare through `id_key` (normcase). Absent file, header-only file or 0-byte file →
   nobody excluded, no warning. An unreadable registry → everyone included + a `⚠` warning, and
   `write_registry_rows` **refuses to overwrite it** (decisions it could not read). Writes are atomic
-  (temporary file + `os.replace`). The data folder is the one holding `derivatives/` + `reports_*/` (the
-  output folder of tools 5 / 7, the data folder of tool 6, `find_data_folder` from the raw-epochs folder for
-  tools 8 / 8bis / 9). **A decision taken after a tool ran reaches its tables at its next run**: run it again
+  (temporary file + `os.replace`). The study folder is the one holding `derivatives/` + `reports_*/` (the
+  output folder of tools 5 / 7, by default their study folder, the study folder of tool 6,
+  `find_data_folder` from the raw-epochs folder for tools 8 / 8bis / 9; see *How to run → Study folder
+  layout*). **A decision taken after a tool ran reaches its tables at its next run**: run it again
   with *Skip already processed* ticked (nobody is reprocessed, the database tables are rebuilt with the
   current registry, tool 7 included when it has nobody to process), or tool 9's *Re-aggregate only*.
   **Stale-table warning** (tools 6, 7, 8bis, 9): at scan / load, `registry_newer_than(data_folder, *tables)`
@@ -590,7 +639,7 @@ instead of restating them. Only tool-specific deltas are kept inline.
   which has both). Tool 9's Welch path was never affected.
 - **Custom (non-AASM) sleep stages**: a project may intentionally keep stage labels outside the AASM set
   (`W/N1/N2/N3/R`), e.g. `N4` or a movement stage. They are declared **once** in a shared flat JSON
-  `<data_folder>/config_param/custom_stages.json` (`{"custom_stages": ["N4", …]}`, order = display order),
+  `<study_folder>/config_param/custom_stages.json` (`{"custom_stages": ["N4", …]}`, order = display order),
   **written only by `3_remap_hypno`** and **read** by tools 0/6/7/8. Tools 0/6/7/8 each expose an editable
   `Custom stages` field **auto-filled from the JSON on folder/file selection**: a **volatile per-run
   override** that never rewrites the JSON (management stays in tool 3). Three helpers are **duplicated**
@@ -758,7 +807,7 @@ superseded by this and can be archived.
 - `header NOT anonymized (file name looks clean)`: real name in header but file name appears clean. The important case where the file was renamed but the header was forgotten.
 Files where the check cannot be performed (read failures) are already captured in `failed_edf_read.tsv`. The `patient_name` field (raw name sub-field, before cleaning) is also stored as a column in `FULL_summary_table_edf.tsv` for quick cross-reference.
 
-**Outputs** (all written to `<study_folder>/summary_inspection/`, created on first run with a `README.md`):
+**Outputs** (all written to `<study_folder>/reports_inspection/`, created on first run with a `README.md`):
 - `FULL_summary_table_edf.tsv`: all parameters for all channels/files, including `patient_name` column (raw name sub-field from the EDF+ `patient_id` field)
 - `anonymization_check_edf.tsv`, per-file anonymization status. Columns: `subject`, `path`, `patient_id`, `name_subfield`, `patient_id_format`, `header_anonymized`, `name_in_filename`, `anon_warning`
 - `EEG_summary_table.tsv`, `EOG_summary_table.tsv`, `ECG_summary_table.tsv`, `EMG_summary_table.tsv` (only the selected types are written, ECG/EMG only when enabled)
@@ -787,11 +836,11 @@ Writes **header-anonymized copies** of EDF files in batch, so a non-anonymized d
 **Companion files**: files sharing the EDF stem at a separator boundary (next char after the stem is `.`/`_`/`-`/space, so `73` does not match `731_...`) are copied and renamed to the new stem. Their **content is copied unchanged**: verified that Compumedics companions carry no patient name (`.edf.XML` is a `CMPStudyConfig` of scoring/montage settings, `*_event_xml.csv` and `_Hypnogram_*.txt` are event/stage data only). A warning reminds the user to re-check their own export profile.
 
 **Workflow (Voila)**:
-1. Select the data folder → every EDF is scanned (headers only) and classified. An info line reports `N total, M not anonymized, K already anonymized`.
+1. Select the **original EDF folder** (the identifying files, kept outside the study folder) → every EDF is scanned (headers only) and classified. An info line reports `N total, M not anonymized, K already anonymized`.
 2. Review table, one row per file to process: an include checkbox (pre-ticked for non-anonymized files), an editable new-name field, and a colour-coded badge (`name in header AND file name` / `name in header only` / `already anonymized`). Options: anonymize `recording_id` trailing fields (on), skip files already in the output folder / recompute everything (on), also list already-anonymized files (off). **Interruption-safe skip** (see *Skip + cumulative-merge*): a file is skipped only when **both** its anonymized copy **and** its `anonymization_log.tsv` row exist. A copy present without a log row (run interrupted before the end-of-loop log write) is **re-anonymized** with a `⚠` warning to restore the audit trail (copy + header patch is idempotent), rather than skipped and lost forever.
 3. Run → anonymized copies are written and the log is updated.
 
-**Outputs** (under `<study_folder>/anonymized/`, mirroring the EDF sub-folder tree):
+**Outputs** (under `<original_folder>/anonymized/`, mirroring the EDF sub-folder tree; this `anonymized/` folder then becomes the study's `data/`, see *How to run → Study folder layout*):
 - `<subtree>/<new_stem>.edf`: header-anonymized copy (signal bytes identical to the original)
 - `<subtree>/<companions>`: hypnogram / `.edf.XML` / event companions, copied + renamed, content unchanged
 - `anonymization_log.tsv`, one row per processed file. Columns: `original_path`, `anonymized_path`, `renamed`, `patient_id_before`, `patient_id_after`, `recording_id_before`, `recording_id_after`, `name_subfield`, `companions_copied`, `signal_identical`, `size_identical`, `verified_anonymized`, `status`. Merged across runs on the normalized `original_path`.
@@ -831,7 +880,7 @@ produced without using Section 2bis stay byte-identical. Absent/`null` entries m
 consumer must treat that as non-fatal. Analysis tools 6/7 ignore this block (they read only the `remap`
 keys). Only tools that explicitly ask for it (e.g. tool 8's per-epoch inspector) load these channels.
 
-**Section 5: Preview & save JSON**: section 5 exposes a single "Preview & Save" button. Clicking it builds the per-participant dict for the participants configured this session and **merges** it into any existing `<data_folder>/config_param/remap_reref_persubject.json` (entries for re-configured participants are replaced, all others kept), so the file stays the full cumulative configuration. The saved file is sorted by participant id. The on-screen preview lists this session's participants first, then the previous ones, with a note of how many were added/updated and the new total. There is no separate save step. `mne_reref_plan.json` is no longer generated (it was redundant with `remap_reref_persubject.json` which already carries `ref_channels` per participant).
+**Section 5: Preview & save JSON**: section 5 exposes a single "Preview & Save" button. Clicking it builds the per-participant dict for the participants configured this session and **merges** it into any existing `<study_folder>/config_param/remap_reref_persubject.json` (entries for re-configured participants are replaced, all others kept), so the file stays the full cumulative configuration. The saved file is sorted by participant id. The on-screen preview lists this session's participants first, then the previous ones, with a note of how many were added/updated and the new total. There is no separate save step. `mne_reref_plan.json` is no longer generated (it was redundant with `remap_reref_persubject.json` which already carries `ref_channels` per participant).
 
 **Skip + incremental workflow**: like the EDF inspector, folder selection is decoupled from running. Selecting the folder refreshes an info line ("N / M participant(s) already configured": counted against the existing `remap_reref_persubject.json`). The scan runs on an explicit **Run scan** button. A **"Skip participants already configured"** checkbox (checked by default) excludes participants already in the JSON from the scan, so the configurations and every downstream section involve only the new participants, whose entries are merged into the JSON on save (see Section 5). Participant ids and file paths are compared with `os.path.normcase` (case/separator-insensitive). `failed_edf_read.tsv` is merged on file path the same way, so it reflects the current config state rather than only the last scan.
 
@@ -846,7 +895,7 @@ The archived Jupyter version (`tools/jupyter_notebook/2_select&remap_channels_ed
 Interactive tool to harmonize sleep stage labels across a heterogeneous database, converting different scoring conventions (e.g. `0,1,2,3,4` or `W,S1,S2,S3,S4`) to the standard AASM format (`W`, `N1`, `N2`, `N3`, `R`).
 
 **Workflow (5 sections):**
-1. **Scan** (Select data folder, hypnogram suffix, and output suffix → auto-detects files recursively, reports unique label configurations and flags problematic epochs in a **single combined message**) mid-recording `?` epochs and suspicious labels (any label not in `DEFAULT_MAPPING`, e.g. `U`/`M`) are listed together, one aligned row per label (`?` treated as a label), each showing the file count, epoch count, and the **affected file names** (the quoted label is left-padded so the columns align for multi-character labels). Boundary `?` epochs (first/last ~10) are not flagged here: they are mapped in Section 3. Also reports: how many remapped files already exist with the output suffix. A list of `.txt` files matching neither suffix (informational, only when both suffixes are defined). Automatically exports `mid_uncertain_epochs_to_verify.tsv` if mid-recording `?` epochs or unexpected labels are found. If the TSV already exists (e.g. edited manually between sessions), it is loaded automatically and its corrections are pre-applied in memory. The flags are computed on the **original** labels (before applying the TSV), so the pre-corrected epochs still appear in Section 2 (pre-filled) instead of disappearing: the TSV file is never overwritten at scan time. Optional checkbox to exclude participants whose remapped file already exists from all downstream processing.
+1. **Scan** (Select study folder, hypnogram suffix, and output suffix → auto-detects files recursively, reports unique label configurations and flags problematic epochs in a **single combined message**) mid-recording `?` epochs and suspicious labels (any label not in `DEFAULT_MAPPING`, e.g. `U`/`M`) are listed together, one aligned row per label (`?` treated as a label), each showing the file count, epoch count, and the **affected file names** (the quoted label is left-padded so the columns align for multi-character labels). Boundary `?` epochs (first/last ~10) are not flagged here: they are mapped in Section 3. Also reports: how many remapped files already exist with the output suffix. A list of `.txt` files matching neither suffix (informational, only when both suffixes are defined). Automatically exports `mid_uncertain_epochs_to_verify.tsv` if mid-recording `?` epochs or unexpected labels are found. If the TSV already exists (e.g. edited manually between sessions), it is loaded automatically and its corrections are pre-applied in memory. The flags are computed on the **original** labels (before applying the TSV), so the pre-corrected epochs still appear in Section 2 (pre-filled) instead of disappearing: the TSV file is never overwritten at scan time. Optional checkbox to exclude participants whose remapped file already exists from all downstream processing.
 2. **Uncertain and unexpected epoch review**, A **single review widget** (shown whenever any mid-recording `?` or unexpected label is found) navigates all flagged epochs in one flat list, handling both kinds together: mid-recording `?` epochs and epochs carrying a label not in `DEFAULT_MAPPING` (e.g. `U`, `M`).
    - **Show** filter dropdown: *All issues* / *Mid-recording `?`* / one entry per unexpected label, to focus the navigation.
    - ±N context epochs (adjustable slider, default 5). The current epoch in red, already-corrected epochs in green ✓, other still-pending flagged epochs in orange.
@@ -871,7 +920,7 @@ Interactive tool to harmonize sleep stage labels across a heterogeneous database
 
 **Outputs**:
 - One `.txt` file per participant with the output suffix (e.g. `_Hypnogram_remapped.txt`), one label per line
-- `mid_uncertain_epochs_to_verify.tsv`, written to `<data_folder>/` at scan time when mid-recording `?` epochs or unexpected labels are found. Columns: `participant_id`, `epoch_index`, `epoch_time_sec`, `total_epochs`, `original_label` (`?` for mid-recording unscored epochs, or the raw unexpected label e.g. `U`, `M`), `context` (±5 epochs), `corrected_label`. Updated with all corrections after "Corrections done" is clicked. If the file already exists at scan time it is loaded and applied in memory instead of being overwritten. The pre-loaded corrections are shown in a summary panel (as `ep.N: old→new`) and also appear **pre-filled** in the Section 2 review widget (flags are computed on the original labels, so they are not hidden). Corrections whose `original_label` no longer matches the current hypnogram value (re-scored since the TSV was written) are flagged as conflicts and shown in a warning panel in Section 2.
+- `mid_uncertain_epochs_to_verify.tsv`, written to `<study_folder>/` at scan time when mid-recording `?` epochs or unexpected labels are found. Columns: `participant_id`, `epoch_index`, `epoch_time_sec`, `total_epochs`, `original_label` (`?` for mid-recording unscored epochs, or the raw unexpected label e.g. `U`, `M`), `context` (±5 epochs), `corrected_label`. Updated with all corrections after "Corrections done" is clicked. If the file already exists at scan time it is loaded and applied in memory instead of being overwritten. The pre-loaded corrections are shown in a summary panel (as `ep.N: old→new`) and also appear **pre-filled** in the Section 2 review widget (flags are computed on the original labels, so they are not hidden). Corrections whose `original_label` no longer matches the current hypnogram value (re-scored since the TSV was written) are flagged as conflicts and shown in a warning panel in Section 2.
 
 - `config_param/custom_stages.json`: written/merged when the user keeps non-AASM labels as custom stages (see *Custom (non-AASM) stages* above). A flat `{"custom_stages": [...]}` list consumed by tools 0/6/7/8.
 
@@ -885,8 +934,8 @@ expert one where it exists. First, deliberately simple version (more outputs pla
 Curry twin, no batch `.py`. Like tool 5, it knows nothing of exclusions (no registry
 read or write, `ParticipantSelector` called with `excluded=None`).
 
-**Inputs**: the EDF files (recursive scan of the data folder), tool 2's
-`<data>/config_param/remap_reref_persubject.json` (required: an EDF absent from it is listed and not
+**Inputs**: the EDF files (recursive scan of the study folder), tool 2's
+`<study>/config_param/remap_reref_persubject.json` (required: an EDF absent from it is listed and not
 scored) and, optionally, the expert hypnogram (tool 3 format). The expert suffix is auto-detected with the
 tools 6/7 rule (longest among ≥ 50 %), skipping `event` / `summary` / `studylog` and the output suffix;
 empty or missing file = scored without comparison (non-fatal).
@@ -994,7 +1043,7 @@ Interactive tool to **visualize** the scored-event configurations present across
 **Configuration grouping**: files are grouped by their `frozenset` of **unique event labels actually present**, two files with the same unique labels share one configuration even if their event counts/timing differ.
 
 **Workflow (sections):**
-1. **Scan**, select the data folder (recursive `rglob('*.edf')`). Selecting the folder only refreshes an info line **and auto-detects both the TXT and CSV suffixes** (editable `TXT suffix:` / `CSV suffix:` fields, colour-coded detection lines, see *Configurable event suffixes* above), the scan runs on an explicit **Run scan** button. The scan summary reports the per-source counts (`N from TXT, N from CSV, N from XML fallback`). A **"Skip labels already mapped"** checkbox (on by default) hides labels already present in an existing `event_remap.json` (incremental harmonization when a new cohort is added).
+1. **Scan**, select the study folder (recursive `rglob('*.edf')`). Selecting the folder only refreshes an info line **and auto-detects both the TXT and CSV suffixes** (editable `TXT suffix:` / `CSV suffix:` fields, colour-coded detection lines, see *Configurable event suffixes* above), the scan runs on an explicit **Run scan** button. The scan summary reports the per-source counts (`N from TXT, N from CSV, N from XML fallback`). A **"Skip labels already mapped"** checkbox (on by default) hides labels already present in an existing `event_remap.json` (incremental harmonization when a new cohort is added).
 1bis. **(Optional) text/CSV vs XML consistency check**: opt-in button. For every file having both a **primary text source** (the `.txt` if present, else the CSV) **and** the `*.edf.XML`, compares the two `<ScoredEvents>` descriptions **language-robustly** and writes `event_source_mismatch.tsv`. Both sources are first passed through `_canon_events()`: names normalized to the **canonical vocabulary** (`suggest_canonical`, raw-lowercase fallback) so English (XML) and French (`.txt`) labels compare equal, and start times floored to **whole seconds** (the `.txt` truncates clock times to the second, converted via `read_edf_start_datetime`). `_match_events()` then greedily pairs events **within ±`tol` seconds** (editable **`Match tol (s)`** `BoundedIntText`, default **1**, `0` = strict same-second) in two passes: (1) same canonical label within `tol` (nearest wins), (2) any leftover within `tol` → a **co-occurring pair with different labels**. Each event ends up **matched** (same label, within `tol`), **cooccur_difflabel** (paired in time but different canonical label, a candidate same-event whose names are not yet harmonized, e.g. a cross-language pair: the key discovery aid, if the paired labels are unrelated they may instead be two distinct events within `tol`), **only_in_primary** (no counterpart, e.g. an export that omits snoring) or **only_in_xml**. `status = match` only when all three "diff" buckets are empty. The default ±1 s absorbs the common case where the two Compumedics exports round a start one second apart (verified on ICEBERG: 2/53 hypopnea were exactly 1 s off). Opt-in because it reads both files per EDF.
 2. **Visualize configurations**, because two files sharing the same label names can still form distinct configs (a config = the exact set of labels *present*, so a missing label splits it off), the configs are not stacked: a **dropdown** ("Show config:") selects one configuration to detail (its sorted unique labels + file/label counts), and a **"Show file ids" toggle button** (replacing the old `<details>` arrow) shows/hides that config's file-id list in a scrollable box. The global table of every raw label (file count + total occurrences + suggested canonical) is kept below.
 3. **Harmonize labels**: one editable row per unique raw label (combobox pre-filled from `DEFAULT_EVENT_MAPPING`, free text allowed), with an **ignore** toggle (stored as `null`). Filtered by the skip checkbox. Each row is a bordered, column-aligned line for readability (the row layout forces `overflow='hidden'` so the jupyter-widgets default `.widget-box { overflow:auto }` does not raise a stray per-row scrollbar: see CLAUDE.md). A **"Validate mapping & ignores"** button summarizes the choices (N mapped / N ignored / N left empty, warning on empties) and **unlocks** the Section 4 save button (which starts disabled). Editing any row after validating (or re-running the scan / toggling the skip checkbox) re-locks Section 4 and clears the previous save preview, so the saved JSON always reflects the latest Section 3 selection.
@@ -1003,7 +1052,7 @@ Interactive tool to **visualize** the scored-event configurations present across
 
 **`DEFAULT_EVENT_MAPPING`** (editable suggestions, snake_case canonical vocabulary): apnea subtypes kept (`apnea_obstructive` / `apnea_central` / `apnea_mixed`), `hypopnea`, `spo2_desaturation`, arousal subtypes kept (`arousal_respiratory` / `arousal_spontaneous` / `arousal_limb` / `arousal`), limb laterality collapsed (`limb_movement`, `plm`), plus `snore` and `spo2_artifact` (from the French export's `Ronflement` / `Artéfact SpO2`). `suggest_canonical()` matches the English exact dict first (tolerating a trailing `(Left)`/`(Right)` marker), then falls back to **accent-insensitive French substring rules** (`FRENCH_EVENT_RULES`, via `_strip_accents`): informative tokens (`aro spont/res/plm`, `apnee obstructive/centrale/mixte`, `hypopnee`, `desaturation`, `artefact spo2`, `ronflement`, `plm`) so the variable-numbered `Micro-éveil N ARO …` labels still pre-fill. Shared verbatim with the Curry twin (the generator does not touch this block → French mapping benefits Curry directly).
 
-**Outputs** (under `<data_folder>/config_param/`):
+**Outputs** (under `<study_folder>/config_param/`):
 - `event_remap.json`: global flat `{raw_label: canonical_label}` (`null` = ignore), merged across runs
 - `event_source_mismatch.tsv`, only if the 1bis text/CSV-vs-XML check is run. Columns `file_id, primary_source` (`txt`/`csv`)`, match_tol_s` (the ±tolerance used)`, n_primary, n_xml, n_matched, n_cooccur_difflabel, only_in_primary` (per-type counts, e.g. `snore×426`, its total replaces the former `n_only_in_primary` column)`, only_in_xml, cooccur_label_pairs` (e.g. `bidule fr↔foobar en×1`)`, status` (`match` / `MISMATCH` / `missing text/CSV` / `missing XML` / `cannot read EDF start datetime` / `error: …`)
 - `failed_event_read.tsv`: files with no readable event companion (only if any failed)
@@ -1019,7 +1068,7 @@ header**. Definitions follow `tools/sleep_metrics_formulas.txt`. Voila only (no 
 database-level table / workbook / report). It is the documented **exception** to *Feature tools start
 from the clean epochs*: macrostructure needs every scored epoch, not the ones that survived rejection.
 
-**Inputs and what is never read.** Per EDF (recursive scan of the data folder, `file_id` = EDF stem):
+**Inputs and what is never read.** Per EDF (recursive scan of the study folder, `file_id` = EDF stem):
 the remapped hypnogram `{file_id}<hypno suffix>` (one label per line, suffix auto-detected with the
 tool-7 rule (longest suffix among those present for ≥ 50 % of the max count) additionally excluding
 `summary` and `studylog` exports from the selection), the scored events through **tool 7's `load_events`
@@ -1122,8 +1171,9 @@ fail): `spt_consistency` (SPT = TST + WASO + other), `se_range` (0–100), `tst_
 `events_source`, `event_remap`, `unmapped_events`, `event_onsets_in_recording`, `events_outside_window`,
 `odi_rule`, `spo2_channel`, `spo2_units`, `spo2_length`, `spo2_artifact`. `n_warnings` = warnings + fails.
 
-**Sections.** **1** data folder (recursive), optional output folder (default = data folder), event remap
-(auto-pointed to `<data>/config_param/event_remap.json`, used when present even if the chooser is not
+**Sections.** **1** study folder (recursive), optional output folder (default = study folder, a `lbl_out_warn` ⚠ when
+different: tool 5bis would keep its registry beside tool 5's outputs), event remap
+(auto-pointed to `<study>/config_param/event_remap.json`, used when present even if the chooser is not
 clicked), optional participant table (`.csv`/`.tsv`/`.xlsx`, join column), the four auto-detected
 suffixes (hypnogram, summary txt, event TXT, event CSV), custom stages, **Scan** (header + hypnogram
 length + companions + Light/SpO2 channel per EDF, `N / M already processed`, warnings for missing
@@ -1162,7 +1212,7 @@ the report figures and to fill the glossary, never as a diagnostic cut-off, whic
 report both state.
 
 **Data outputs → `<root>/derivatives/features_macrostructure/<subtree>/`** (`<root>` = the output folder,
-default the data folder, `<subtree>` = the EDF folder relative to the data folder):
+default the study folder, `<subtree>` = the EDF folder relative to the study folder):
 `{file_id}_sleep_metrics_checks.tsv` (`file_id, check, status, detail`) and `{file_id}_sleep_metrics.tsv`
 (long: `file_id, group, metric, value, unit, definition_short`, one row per registered metric, NaN when
 not computed, plus the provenance rows `group = provenance`: `lights_source, lights_off_clock,
@@ -1223,12 +1273,12 @@ the other tools through the **exclusion registry** (*Cross-cutting → Participa
 every tool still computes on every participant, flags the excluded ones (`participant_excluded`) and
 leaves them out of its group statistics and figures.
 
-**Input**: `reports_features_macrostructure/global_sleep_metrics.tsv`, found under the chosen data folder
+**Input**: `reports_features_macrostructure/global_sleep_metrics.tsv`, found under the chosen study folder
 (`fc_data`) or picked directly (`fc_table`, takes precedence, for versioned report folders). Metric
 columns = the registered tool-5 metrics present, in `METRICS` order, then every other fully-numeric
 column that is not a provenance key (e.g. the old `slow_sleep_*` columns, or participant-table columns
 such as `age`; never `participant_excluded` / `participant_exclude_reason`), grouped under `other`. The
-data folder (for the registry) = the parent of the table's `reports_features_macrostructure*/` folder.
+study folder (for the registry) = the parent of the table's `reports_features_macrostructure*/` folder.
 `METRICS`, `PROVENANCE_KEYS` and `REFERENCE_RANGES` are **copied
 verbatim from tool 5's setup cell**: keep them in sync (the notebook was generated by pulling the blocks
 out of tool 5).
@@ -1347,13 +1397,13 @@ Both are built from the per-channel `file_rows` already collected for `quality_s
 Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `p99_abs_uV`, `p999_abs_uV`. All numeric metrics (`mean_uV`, `kurtosis`, `skewness` included) appear in the stats tables. HTML is standalone (figures embedded as base64 PNG, no external dependencies).
 
 **Outputs per run**:
-- `<data_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_overview.html`: HTML reports mirror the EDF subfolder structure under `reports_quality_overview/`
-- `<data_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_metrics.tsv`: the **per-file** numeric-metrics table (same columns as `quality_summary.tsv`), written next to the HTML **before** it (so "report exists ⇒ data exists"). This is the durable per-item data and the skip gate's *data present* marker (see *Skip + cumulative-merge*).
-- `<data_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_by_stage.tsv`: the **per-file** by-stage table (same columns as `quality_summary_by_stage.tsv`). Written only when the participant has a valid hypnogram.
-- `<data_folder>/reports_quality_overview/quality_summary.tsv`, all numeric metrics for all channels, cumulative across runs (always at root). Columns: `file_id`, `channel`, `mean_uV`, `std_uV`, `kurtosis`, `skewness`, `p99_abs_uV`, `p999_abs_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `n_peaks`, `suspect_reason`, `exclude` (last two columns). Then `participant_excluded` / `participant_exclude_reason` (exclusion registry, re-read at every rebuild; not to be confused with the per-channel `exclude`). `quality_summary_by_stage.tsv` gains the same two columns. **Regenerated each run from all `*_quality_metrics.tsv` on disk** (`rglob`, sorted by `file_id, channel`) (not an in-memory merge) so a file processed earlier and skipped now is never dropped (interruption-safe).
-- `<data_folder>/reports_quality_overview/dataset_overview.html`: dataset-level statistics and plots (always at root, regenerated each run)
-- `<data_folder>/reports_quality_overview/quality_summary_by_stage.tsv`, key metrics split by sleep stage, one row per `file_id × channel × stage`. Columns: `file_id`, `channel`, `stage`, `mean_uV`, `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `p99_abs_uV`, `p999_abs_uV`. Populated only for participants with a valid hypnogram. **Regenerated from all `*_quality_by_stage.tsv` on disk** (same rule as `quality_summary.tsv`, sorted by `file_id, channel, stage`).
-- `<data_folder>/reports_quality_overview/failed_files.tsv`: files that could not be read (at root)
+- `<study_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_overview.html`: HTML reports mirror the EDF subfolder structure under `reports_quality_overview/`
+- `<study_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_metrics.tsv`: the **per-file** numeric-metrics table (same columns as `quality_summary.tsv`), written next to the HTML **before** it (so "report exists ⇒ data exists"). This is the durable per-item data and the skip gate's *data present* marker (see *Skip + cumulative-merge*).
+- `<study_folder>/reports_quality_overview/<relative_subfolder>/<file_id>_quality_by_stage.tsv`: the **per-file** by-stage table (same columns as `quality_summary_by_stage.tsv`). Written only when the participant has a valid hypnogram.
+- `<study_folder>/reports_quality_overview/quality_summary.tsv`, all numeric metrics for all channels, cumulative across runs (always at root). Columns: `file_id`, `channel`, `mean_uV`, `std_uV`, `kurtosis`, `skewness`, `p99_abs_uV`, `p999_abs_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `n_peaks`, `suspect_reason`, `exclude` (last two columns). Then `participant_excluded` / `participant_exclude_reason` (exclusion registry, re-read at every rebuild; not to be confused with the per-channel `exclude`). `quality_summary_by_stage.tsv` gains the same two columns. **Regenerated each run from all `*_quality_metrics.tsv` on disk** (`rglob`, sorted by `file_id, channel`) (not an in-memory merge) so a file processed earlier and skipped now is never dropped (interruption-safe).
+- `<study_folder>/reports_quality_overview/dataset_overview.html`: dataset-level statistics and plots (always at root, regenerated each run)
+- `<study_folder>/reports_quality_overview/quality_summary_by_stage.tsv`, key metrics split by sleep stage, one row per `file_id × channel × stage`. Columns: `file_id`, `channel`, `stage`, `mean_uV`, `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pct`, `p99_abs_uV`, `p999_abs_uV`. Populated only for participants with a valid hypnogram. **Regenerated from all `*_quality_by_stage.tsv` on disk** (same rule as `quality_summary.tsv`, sorted by `file_id, channel, stage`).
+- `<study_folder>/reports_quality_overview/failed_files.tsv`: files that could not be read (at root)
 
 **End-of-run summary** (printed in the notebook output): participants processed, participants with ≥1 flagged channel, total flagged channels, files failed to load, path to `dataset_overview.html`.
 
@@ -1364,6 +1414,11 @@ Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pc
 Implemented as a Voila notebook with four sections: (1) path configuration, (2) preprocessing and rejection parameters, (3) participant selection, (4) processing loop. **Section 2 is organised into two headed sub-sections**: **Preprocessing** (resampling + notch + bandpass filter) and **Epoch rejection** (peak-to-peak amplitude per stage, flat signal & gradient, 1/f fit quality, and the optional event-based rejection, see below).
 
 **Inputs**:
+- The **study folder** (`fc_edf`, recordings scanned recursively) and an **optional output folder**
+  (`fc_out`): `out_root_path()` = the output folder when picked, else the study folder. It is the root of
+  `derivatives/`, `reports_preprocessing/` and the exclusion registry (`registry_folder()`). An `out_warn` ⚠
+  says when the output folder differs from the study folder: the custom stages and `event_remap.json` come
+  from `<study>/config_param/`, the registry goes to `<output>/config_param/`.
 - `quality_summary.tsv` from Phase 1: **optional** (strongly encouraged). Its `exclude` column pre-fills the per-channel drop selection. Its `FileChooser` shows only `quality_summary.tsv` (`filter_pattern`), not the per-file `*_quality_metrics.tsv` that quality_overview also writes in that folder.
 - `remap_reref_persubject.json` from `2_select&remap_channels_edf`: drives channel remapping and re-referencing per participant, **and is the fallback channel source** for participants absent from `quality_summary.tsv` (see *Section 3 discovery* below)
 - Raw EDF files and remapped hypnograms (default suffix `_Hypnogram_remapped.txt`)
@@ -1580,7 +1635,7 @@ Manual quality control of the epochs that `7_preprocessing_voila` flagged: inspe
 
 **Shared library (`qc_rejected_epochs_lib.py`)**: the analysis + plotting used by both the notebook and the batch live in one module (imported by both) to avoid drift, `METHOD_ORDER`, the **rejection-method colour palette** (single source, see *Cross-cutting*), `DISPLAY_SCALE_UV`, the custom-stage helpers, the Welch-PSD config and the specparam 1/f fit are copied from tool 7 and kept in sync. The **per-epoch flags are authoritative from `epochs.metadata`**, but the **decision** built on them is recomposed from the user's method/stage/event-type selection (`recompute_reject`, see below) rather than read from the stored `reject_flag`. The **per-channel attribution** shown here (which channel drove a flag, margins to threshold) is **recomputed** from the signal with the same formulas + the persisted thresholds (fallback: tool-7 defaults when no params JSON is present). The notebook-only helpers (`recompute_reject`, `plot_psd_overlays_grid`, `plot_epoch_montage`, `plot_epoch_detail`, `load_event_onsets`, `build_manual_decision_row`, `manual_decision_html`) take **optional** parameters with backward-compatible defaults, so the batch twin keeps calling them unchanged. Tool 7 now *does* persist the per-(epoch, channel) boolean masks (`{file_id}_epoch_channel_rejection.tsv`), but tool 8 still recomputes because it needs the **continuous metric values** (p-p, gradient, 1/f MAE/R²) for its plots, not just the booleans: a future refactor could let it read the booleans from that TSV for the attribution while still recomputing the values (see task plan §8.3).
 
-**Section 1: Load + selection**: **three folder pickers** (mirroring 8bis, its reports picker is here too but **optional**, and used only for the per-channel flags, see below): an **optional Data folder** (`fc_data`, holds `derivatives/` + `reports_preprocessing/`) that on selection `reset(path=…)`s the raw picker to `<data>/derivatives`, and a **Raw-epochs folder** (`fc_raw`, holds the tool-7 `*_all-epo.fif`, e.g. `derivatives/raw_epo`). Selecting the raw folder explicitly (instead of one derivatives root scanned recursively) keeps renamed/versioned tool-7 runs apart on the participant dropdown. `find_participants(raw_root)` fills the dropdown. The params JSON + custom stages are read from the fif's folder / the data folder. **Output derivation** (data vs reports split, precomputed at load): decision tables → `raw_root.parent/rejection_manual/<subtree>/` (beside the raw folder), reports → `<data_root>/reports_rejection_manual/<subtree>/` (beside `reports_preprocessing/`), where `<subtree>` is the participant path relative to the raw folder and `data_root` is the selected Data folder or, if unset, derived by finding the `derivatives/` ancestor of the raw folder (its parent). Two additions on top of the pickers:
+**Section 1: Load + selection**: **three folder pickers** (mirroring 8bis, its reports picker is here too but **optional**, and used only for the per-channel flags, see below): an **optional Study folder** (`fc_data`, holds `derivatives/` + `reports_preprocessing/`) that on selection `reset(path=…)`s the raw picker to `<study>/derivatives`, and a **Raw-epochs folder** (`fc_raw`, holds the tool-7 `*_all-epo.fif`, e.g. `derivatives/raw_epo`). Selecting the raw folder explicitly (instead of one derivatives root scanned recursively) keeps renamed/versioned tool-7 runs apart on the participant dropdown. `find_participants(raw_root)` fills the dropdown. The params JSON + custom stages are read from the fif's folder / the study folder. **Output derivation** (data vs reports split, precomputed at load): decision tables → `raw_root.parent/rejection_manual/<subtree>/` (beside the raw folder), reports → `<data_root>/reports_rejection_manual/<subtree>/` (beside `reports_preprocessing/`), where `<subtree>` is the participant path relative to the raw folder and `data_root` is the selected Study folder or, if unset, derived by finding the `derivatives/` ancestor of the raw folder (its parent). Two additions on top of the pickers:
 - **"Already processed" badge**: the scan counts, and the participant dropdown annotates, the files already reviewed manually: "done" = **both** the `rejection_manual/` `_epoch_decision.tsv` **and** a review record (`_epoch_rejection_reviewed.tsv` or `_manualreject_decision.tsv`) on disk, the same data-and-report gate as the toolkit's skip convention. Purely **informative**: it never blocks reloading or re-saving (tool 8 is interactive and handles one participant at a time, re-saving overwrites, which the load summary states explicitly).
 - **Sections 2–4 are cleared on every participant load and every "Apply selection"** (`_reset_sections`, fed by one `_RESET_HOOKS[<section>]` entry per section, keyed so a re-run Jupyter cell replaces its entry): the report output, the navigator (list, slider, labels, `Show` back to `flagged`, filters, a pending Apply-to-all confirmation) and the review output, each with a `Participant X loaded: click "…"` line. Before this, a navigator list built for the previous participant survived until "Start navigator" was clicked again, so a Keep/Reject toggle in between acted on the **wrong epochs** of the new participant. **Unsaved-changes guard** (`_unsaved_guard`): manual Keep/Reject changes live in memory until Section 4 saves them (`S['dirty']`, cleared once the decision record is written), so a Load or Apply that would discard them first only prints `⚠ Unsaved manual changes on X (n epoch(s) changed…)` and a second click goes ahead. Annotations are written immediately and never count as unsaved.
 - **Selection = what counts as "rejected"** (the manual analogue of 8bis's Section 2): checkbox rows for **stages to review** (AASM + custom, all ticked: the review **focus**, not a part of the decision, see below) and **flagging methods** (`METHOD_ORDER`, all ticked, methods absent from the `.fif` are disabled at load), plus (revealed by the `event` method checkbox, per the *checkbox-revealed widgets* rule) one checkbox per **canonical event type**, populated at load from the `.fif`'s `evt_<type>` metadata columns (all ticked). See *Rejection redefinition* below.
@@ -1629,7 +1684,7 @@ the keep/reject decision and is allowed on any epoch (kept, rejected or out-of-s
 writes `{file_id}_manual_events.tsv` **beside the recording** immediately (see *Cross-cutting → Event
 sourcing → Manual annotations* for the file, its location rationale and tool 7's opt-in merge). The folder
 is resolved from the Data-folder picker + the participant subtree (recognised by holding a file named after
-the participant, so it is format-agnostic), falling back to the `.fif` folder with a ⚠ when the Data folder
+the participant, so it is format-agnostic), falling back to the `.fif` folder with a ⚠ when the Study folder
 was not selected. The annotations of the displayed window are drawn on the montage as **dashed** vertical
 lines in `MANUAL_COLOR` (dark violet, outside the six method hues and the three context hues) with their own
 legend entry, and `merge_onsets_for_display` drops the ones tool 7 already merged into `_event_onsets.tsv`
@@ -1672,9 +1727,9 @@ pure **decision + write** tool: it reads tool-7 outputs **read-only** and never 
 scanned recursively, tool 7 is often re-run with different parameters and its outputs renamed/versioned side
 by side, e.g. `raw_epo`, `raw_epo_v2`, `reports_preprocessing_v2`, a recursive `rglob` on `derivatives/`
 would mix every version, duplicating `file_id`s):
-- **Data folder** (`fc_data`, **optional** convenience, first chooser, holds `derivatives/` +
-  `reports_preprocessing/` as in tool 7): on selection it `reset(path=…)`s `fc_raw` to `<data>/derivatives`
-  (where the `raw_epo*` folders sit) and `fc_reports` to `<data>` (parent of the `reports_preprocessing*`
+- **Study folder** (`fc_data`, **optional** convenience, first chooser, holds `derivatives/` +
+  `reports_preprocessing/` as in tool 7): on selection it `reset(path=…)`s `fc_raw` to `<study>/derivatives`
+  (where the `raw_epo*` folders sit) and `fc_reports` to `<study>` (parent of the `reports_preprocessing*`
   folders), so the two choosers below open at the right place. The user still picks the specific
   (possibly versioned) subfolder. It does not select anything on its own.
 - **Raw-epochs folder** (`fc_raw`): holds the tool-7 `{file_id}_all-epo.fif` (e.g. `derivatives/raw_epo`).
@@ -1816,7 +1871,7 @@ epoch and every channel** (*Cross-cutting → Rejected-data policy*): the decisi
 the stage averages and which channels are flagged dropped, so a decision can be revisited without a new
 computation (**Re-aggregate only**, Section 4).
 
-**Section 1: Folders and scan**: an optional **Data folder** (pre-points the others, supplies
+**Section 1: Folders and scan**: an optional **Study folder** (pre-points the others, supplies
 `config_param/custom_stages.json` and the exclusion registry), the required **Raw-epochs folder** (tool 7
 `*_all-epo.fif`, `fc_raw`), the **Decision folder** (`fc_decision`: `rejection_auto` / `rejection_manual`;
 optional, without it every epoch is kept or only those tool 7 did not flag, `cb_exclude_flagged`, with an amber
@@ -2065,7 +2120,7 @@ The recurring deltas:
 
 - **Tool 1: Inspect** (`1_inspect_curry_voila.ipynb`, purpose-built, not generated): per-channel summary from
   `read_curry_header` (no signal read). Adds an **impedance check** with an editable **kΩ threshold**
-  (default 20 kΩ). Outputs to `summary_inspection_curry/`: `FULL_summary_table_curry.tsv`,
+  (default 20 kΩ). Outputs to `reports_inspection_curry/`: `FULL_summary_table_curry.tsv`,
   `impedance_flags_curry.tsv`, `failed_cdt_read.tsv`.
 - **Tool 2: Channel selection & remap**: channel mask is `channel_group == 'EEG'` from the `.dpo`. Section 6
   loads via `read_raw_curry`. Same `remap_reref_persubject.json` output.

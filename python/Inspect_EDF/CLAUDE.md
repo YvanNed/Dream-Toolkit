@@ -55,6 +55,12 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `_epoch_decision.tsv` + `_channel_decision.tsv`): **no `clean-epo.fif` any more**, tool 9 joins them to
   tool 7's `_all-epo.fif`. Tools 5/6/7/8bis/9 use the shared **`ParticipantSelector`** (all / subset;
   Skip applies to a subset too, with an orange warning box), never one checkbox per participant.
+- **Study folder = the root picker** (→ SPEC *How to run → Study folder layout*): every tool's first
+  picker says **Study folder** (never "data folder": `data/` is where the recordings sit), the root holding
+  `config_param/`, `derivatives/`, `reports_*/`; recordings are scanned recursively. Tools 5/7: output folder
+  optional, default = study folder, ⚠ when different (tool 7 `out_root_path()`). Tool 1bis is the exception
+  (original EDF folder, outside the study). Tool 1 writes `reports_inspection/`. Variable names (`fc_data`,
+  `data_root`, `find_data_folder`) stay: the tests drive widgets by name.
 - **Scored events (`load_events`)**: tool 4 reads three Compumedics companions **TXT-first**: the
   `*_ScoredEvents_Export.txt` text export (French, UTF-16-or-UTF-8, no header, clock-time, parsed inline like
   `curry_io._parse_events_txt`), then `*_event_xml.csv`, then the `<ScoredEvents>` of `*.edf.XML`. The scan
@@ -215,9 +221,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   editing the `[H]` block.
 - **Manually reject flagged epochs (`8_reject_manually*`)**: reads tool-7 `{file_id}_all-epo.fif`
   (+ optional params JSON), **never reloads the raw EDF**, **never modifies tool-7 outputs**. **Section 1 =
-  optional data folder + Raw-epochs folder** (like 8bis **minus** the reports picker: tool 8 never reads
+  optional study folder + Raw-epochs folder** (like 8bis **minus** the reports picker: tool 8 never reads
   `reports_preprocessing/`). `find_participants` runs on the chosen raw folder so versioned tool-7 runs stay
-  apart on the participant dropdown. `data_root` = the selected data folder, else the `derivatives/`
+  apart on the participant dropdown. `data_root` = the selected study folder, else the `derivatives/`
   ancestor's parent. An **"already processed" badge** (`_epoch_decision.tsv` **and** a review/decision TSV on
   disk) is informative only: it blocks nothing. The **Exclude this participant** button writes `8_manual`.
   **The decision is RECOMPOSED, not read**: Section 1 checkboxes (methods / event types, all on by

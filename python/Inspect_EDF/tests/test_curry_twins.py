@@ -17,7 +17,7 @@ TWINS = {
         'participant_selector', 'add_exclusion_columns', 'excluded_banner_html', 'read_curry_header'],
     'tools_curry/7_preprocessing_curry_voila.ipynb': [
         'participant_selector', "raw.info['bads'] = bad_present", "'bad_channels'",
-        "'7_manual'", 'n_participants_excluded', 'read_raw_curry'],
+        "'7_manual'", 'n_participants_excluded', 'read_raw_curry', 'def out_root_path'],
     'tools_curry/8_reject_manually_curry_voila.ipynb': [
         'participant_selection_lib', "'8_manual'", '_epoch_decision.tsv', '_channel_decision.tsv'],
     'tools_curry/8bis_reject_automatically_curry_voila.ipynb': [
