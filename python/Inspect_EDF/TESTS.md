@@ -34,6 +34,10 @@ rhythms). No part of the tools is copied or simulated: if a test passes, the not
   around 2.2. A test on a signal the tools find absurd would prove little.
 - **A reference run** ("golden snapshot") is taken once, on code known to be good, before a change. Each
   later run is compared to it, table by table and value by value.
+- **The computer stays awake during a run.** Once the screen turns off, a Windows laptop enters "connected
+  standby" (even on mains power) and pauses the programs: a run then becomes several times slower, and once
+  a notebook waited forever for an answer lost during the pause. A test run therefore asks Windows to keep
+  the screen on until it ends (the power settings are not changed).
 
 ## Three levels: run what the change needs
 
@@ -82,8 +86,8 @@ every per-stage table and every database table must give **the same values**. Th
 new way of working changed the organisation of the data, not the science.
 
 (One deliberate difference is excluded from the comparison: the night thirds now span the whole night
-instead of the kept epochs only. And the power left once the 1/f background is removed (`*_ap_removed_db`)
-is compared to within 0.00001 dB rather than one part in a million: it is the difference of two nearly equal
+instead of the kept epochs only. And the power left once the 1/f background is removed (`*_ap_removed_db`,
+per epoch and in the per-stage summaries such as `*_ap_removed_db_from_log_median`) is compared to within 0.00001 dB rather than one part in a million: it is the difference of two nearly equal
 numbers, often around 0.01 dB, so the last digits of the 1/f fit weigh heavily on it.)
 
 ### 3. A deselected channel is referenced like the others
@@ -194,6 +198,19 @@ The tool 6 variant also documents a deliberate choice: tool 6 measures the signa
 filtering (a high-pass can rescue a channel worth keeping). The filtering smooths the flat tops of a clipped
 channel, so with these options the clipped Fp1 of the synthetic set is no longer flagged.
 
+### 10. Moving code into a shared library changes nothing (before / after check)
+
+The redesign of tool 0 moves the computations of the batch tools into shared libraries (`tools/*_lib.py`)
+that the batch tools and tool 0 both use. Such a move must change **nothing at all** in what the tools
+write, so it gets a stricter check than the comparison with the reference run (which looks at tables and
+settings files only). `tests/refactor_check.py` keeps a copy of everything the test chain wrote just before
+the move, and after the move compares **every file**: tables, settings, the signal and metadata of every
+`.fif` epoch file, the spectrum files, the Excel workbooks, the figures and the HTML reports (once the date
+and time written in them are masked). The expected result is "no difference". Any difference stops the work
+until it is explained. The checker is itself tested (`test_refactor_check.py`, quick level): it must see a
+changed value, setting, report line, figure, array, a missing or an added file, and must not report a mere
+change of date in a report.
+
 ## Smaller checks
 
 | Area | What is checked |
@@ -215,7 +232,8 @@ channel, so with these options the clipped Fp1 of the synthetic set is no longer
 
 - **The look of the notebooks and reports.** Widgets are driven and HTML reports are written, but nobody
   looks at them: layout, colours and figure readability still need a human eye in Voila.
-- **Figures.** Only the tables behind them are compared.
+- **Figures.** Only the tables behind them are compared (except around a move of code into a shared library,
+  where the before / after check of section 10 compares the figures too).
 - **Curry recordings.** The Curry twins are checked for consistency with their EDF original and opened in a
   kernel (quick level), but never run on a recording (the Curry test data is 17 GB).
 - **Tools 0 and 2** are only opened (too interactive for a useful run), **tool 1bis** checks itself.

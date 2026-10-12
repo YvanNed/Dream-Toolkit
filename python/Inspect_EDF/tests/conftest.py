@@ -33,6 +33,30 @@ RUN_ROOT = Path(os.path.realpath(os.environ.get('DTK_TEST_ROOT',
                                                 os.path.join(tempfile.gettempdir(), 'dtk_tests'))))
 
 
+def _keep_windows_awake(on):
+    """Once the screen turns off (on battery or on AC), a Windows laptop enters 'connected standby', which
+    pauses the run: a full run once slowed threefold and a notebook kernel lost its reply, leaving the test
+    waiting forever. Asking Windows to keep the display on prevents it, for this run only (the power settings
+    are untouched). No-op on other systems; a failure here never stops the tests."""
+    if sys.platform != 'win32':
+        return
+    try:
+        import ctypes
+        es_continuous, es_system_required, es_display_required = 0x80000000, 0x00000001, 0x00000002
+        flags = es_continuous | (es_system_required | es_display_required if on else 0)
+        ctypes.windll.kernel32.SetThreadExecutionState(flags)
+    except Exception:
+        pass
+
+
+def pytest_sessionstart(session):
+    _keep_windows_awake(True)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    _keep_windows_awake(False)
+
+
 def pytest_addoption(parser):
     parser.addoption('--fresh-chain', action='store_true', default=False,
                      help='run the test chain from scratch instead of reusing its last run')

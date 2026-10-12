@@ -42,7 +42,8 @@ AP_REMOVED_ATOL_DB = 1e-5
 
 def same(new, old, ignore=('source',), atol=1e-9):
     cols = [c for c in old.columns if c not in ignore]
-    ap_cols = [c for c in cols if c.endswith('_ap_removed_db')]
+    # 'in', not endswith: the per-stage tables aggregate it as e.g. power_ap_removed_db_from_log_median
+    ap_cols = [c for c in cols if '_ap_removed_db' in c]
     other_cols = [c for c in cols if c not in ap_cols]
     new, old = new.reset_index(drop=True), old.reset_index(drop=True)
     diffs = snapshot.compare_tables(new[other_cols], old[other_cols], atol=atol)
