@@ -143,6 +143,53 @@ def test_explorer_writes_only_its_own_files(chain, tmp_path):
     assert steps['action'].tolist() == ['recording loaded', 'rescored hypnogram saved', 'annotation added']
 
 
+def test_step3_lists_every_scored_event(chain, tmp_path):
+    """Step 3 counts every scored event of the companion under its tool-4 label, and per sleep stage."""
+    study = study_copy(chain, tmp_path / 'study')
+    fid = minidb.PARTICIPANTS[chain['dataset']][0]
+    remap = json.loads((study / 'config_param' / 'event_remap.json').read_text(encoding='utf-8'))
+    ev, _src = EIO.load_events(study / f'{fid}.edf')
+    expected = ev['Name'].map(lambda n: remap.get(n) or n).value_counts().to_dict()
+    with NotebookSession(T0) as nb:
+        load_participant(nb, study, fid)
+        nb.click('btn_run3')
+        assert nb.value("STATUS['3']") == 'up_to_date'
+        counts = nb.value("STATE['onsets']['type'].value_counts().to_dict()")
+        html = nb.value("''.join(REPORT_BLOCKS['3'])")
+    assert counts == expected and sum(counts.values()) == len(ev)
+    for typ in expected:
+        assert typ in html
+
+
+@pytest.mark.tool3bis
+def test_step3_gssc_equals_tool3bis(chain, tmp_path):
+    """Tool 0's automatic scoring is tool 3bis's: the scoring read from tool 3bis's outputs, and the scoring
+    redone in tool 0 with the same settings, give tool 3bis's stages, probabilities and kappa."""
+    pytest.importorskip('gssc')
+    if chain['dataset'] != 'synthetic':
+        pytest.skip('one dataset is enough: GSSC is deterministic and the code path is the same')
+    fid = minidb.PARTICIPANTS['synthetic'][0]
+    study = study_copy(chain, tmp_path / 'study')
+    with NotebookSession('tools/3bis_autoscoring_gssc_voila.ipynb') as nb:
+        nb.pick('fc_data', study)
+        nb.click('btn_scan')
+        pipeline.select_subset(nb, [fid], skip=False)
+        nb.click('btn_run')
+    dens = pd.read_csv(next(study.rglob(f'{fid}_hypnodensity.tsv')), sep='\t')
+    kappa_3bis = float(pd.read_csv(next(study.rglob(f'{fid}_autoscoring_comparison.tsv')), sep='\t')['kappa'].iloc[0])
+    probs_3bis = dens[[f'p_{s}' for s in ('W', 'N1', 'N2', 'N3', 'R')]].values
+    with NotebookSession(T0) as nb:
+        load_participant(nb, study, fid)
+        nb.click('btn_run3')
+        for button in ('btn_gssc_read', 'btn_gssc_run'):          # read tool 3bis's, then score here
+            nb.click(button)
+            assert nb.value("list(STATE['gssc']['stages'])") == dens['stage_gssc'].tolist(), button
+            probs = np.array(nb.value("STATE['gssc']['probs'].tolist()"))
+            np.testing.assert_allclose(probs, probs_3bis, atol=6e-5)   # the TSV keeps 4 decimals
+            assert abs(nb.value("STATE['gssc']['result']['kappa']") - kappa_3bis) < 6e-5, button
+        assert nb.value("box_gssc_nav.layout.display") == ''         # the explorer offers the GSSC layer
+
+
 def test_context_channels_match_tool7(chain, tmp_path):
     """The EOG / EMG context traces of the explorer are tool 7's _context-epo.fif companion, sample for
     sample. The test montage has no EOG / EMG, so two EEG channels are declared as context channels."""

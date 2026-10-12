@@ -383,6 +383,15 @@ def hypno_length_status(n_hyp, n_epochs):
     return 'mismatch'
 
 
+def mid_recording_unscored(labels):
+    """Tool 3's Scan rule (3_remap_hypno_voila): the unscored '?' epochs more than 10 epochs away from both
+    ends of the night. A '?' at the very start or end is lights-off / lights-on; one in the middle of the
+    night is an epoch the scorer skipped, to look at. Returns their 0-based indices."""
+    hypno = np.asarray(labels)
+    q_idx = np.where(hypno == '?')[0]
+    return [int(i) for i in q_idx if i > 10 and i < len(hypno) - 10]
+
+
 # ---------------------------------------------------------------------------------------------------------
 # Scored events (from 5_compute_sleep_macrostructure_voila: tool 7's TXT -> CSV -> XML chain, plus the
 # additive Desaturation column of the XML parser)

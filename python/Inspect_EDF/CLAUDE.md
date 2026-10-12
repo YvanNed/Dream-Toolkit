@@ -165,7 +165,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `gssc_combination_logits` **reproduces its loop** (verified identical stages): **gssc is pinned to 0.0.9**,
   re-check that loop before any upgrade. `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for torch ≥ 2.6. The automatic
   hypnogram goes beside the EDF (tool-3 format) and the run refuses an output suffix equal to the expert one.
-  → SPEC §3bis.
+  **Its computation + figures live in `tools/autoscoring_lib.py`** (shared with tool 0's step 3): edit the
+  library, not the notebook. → SPEC §3bis.
 - **Sleep macrostructure (`5_compute_sleep_macrostructure_voila`)**: hypnogram + scored events + **EDF header only**
   (never the epochs, never the EEG signal, single-channel `include=` reads for the optional `Light`/`SpO2`
   only): the documented exception to *feature tools start from the clean epochs*. Binary header read, **not

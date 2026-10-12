@@ -21,6 +21,7 @@ Inspect_EDF/
 ├── tools/
 │   ├── 0_live_explore_1file_voila.ipynb         # One participant through the whole pipeline (Voila GUI, being rebuilt)
 │   ├── edf_io_lib.py                            # Shared EDF reading (header, channel types, hypnogram, events, context), tool 0
+│   ├── autoscoring_lib.py                       # GSSC scoring + figures of tool 3bis, shared with tool 0
 │   ├── 1_inspect_edf_voila.ipynb                # EDF parameter inspector (Voila GUI)
 │   ├── 1_inspect_edf_perdataset.py              # Batch EDF inspection per dataset
 │   ├── 1_inspect_edf_perparticipant.py          # Batch EDF inspection per participant
@@ -242,10 +243,11 @@ a test is added or changed).
 **Which level to run.** At each implementation the level is proposed to the user with a recommendation (a
 change that only adds tests or touches no tool: quick; a change to a tool: standard on that tool and its
 downstream ones; before a merge or after a change to a shared module: full). **Tool markers** `tool0`, `tool1`,
-`tool3`, `tool4`, `tool5`, `tool5bis`, `tool6`, `tool7`, `tool8`, `tool8bis`, `tool9` select the tests of the
+`tool3`, `tool3bis`, `tool4`, `tool5`, `tool5bis`, `tool6`, `tool7`, `tool8`, `tool8bis`, `tool9` select the tests of the
 tools concerned. Selection rule: the modified tool + every tool downstream in the chain
 (5 → 5bis → 6 → 7 → 8bis → 8 → 9) + every tool importing a modified shared module
-(`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0); a change
+(`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0,
+`autoscoring_lib` → 0, 3bis); a change
 to a Curry generator or twin: quick (its notebook executes) + `test_curry_twins.py`. Tool 0 mirrors the
 batch tools, so a change to a tool it mirrors also runs `tool0` (`test_tool0.py` compares them).
 
@@ -281,8 +283,16 @@ test must point it at a copied `raw_epo`.
   `source = manual_tool0`, read back by `load_manual_events` and by the TXT/CSV/XML chain with
   `include_manual`, inspection log + report) and modifies nothing else; the context traces equal tool 7's
   `_context-epo.fif` (tool 7 run on a copy whose JSON declares Fp1 / O1 as EOG-L / EMG, the test montage
-  having no EOG / EMG; float32 tolerance). `test_edf_io_lib.py` (quick): the rules lifted into `edf_io_lib`
-  (tool 7's hypnogram length and suffix choices, tool 2's context guess, tool 1's header table).
+  having no EOG / EMG; float32 tolerance); step 3 counts every scored event under its tool-4 label; step 3's
+  automatic scoring equals tool 3bis's (marker `tool3bis`, synthetic, skipped without gssc: tool 3bis run on a
+  copy for one participant, then tool 0 reads its outputs and scores again: same stages, probabilities within
+  the TSV's 4 decimals, same κ). `test_edf_io_lib.py` (quick): the rules lifted into `edf_io_lib`
+  (tool 7's hypnogram length and suffix choices, tool 3's mid-night `?`, tool 2's context guess, tool 1's
+  header table).
+- `outside_chain.py` (a script): tools outside the chain (tool 3bis today) run on a fresh copy of a chain
+  dataset's inputs in `%TEMP%/dtk_outside_chain/<dataset>/data`, so `refactor_check.py` can compare their
+  outputs before / after a move (`DTK_TEST_ROOT` / `DTK_REFACTOR_ROOT` pointed at that folder and a save
+  folder). `refactor_check` also ignores tool 3bis's `scored_at` date.
 - `test_variants.py` (full, synthetic, each on a light copy: inputs + only the needed outputs): tool 7 10 s
   epochs (then 8bis, 9), resampling to 128 Hz, notch off (50 Hz on sim03 > 10 dB above the chain), custom
   stage N4 (the `.fif` reads back, N4 reaches 8bis and 9); tool 6 resampling + high-pass (the metrics are
@@ -781,7 +791,7 @@ instead of restating them. Only tool-specific deltas are kept inline.
 ### 0. One participant, the whole pipeline (`0_live_explore_1file_voila.ipynb`)
 
 **Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; phase 1 done:
-steps 1-2 + the explorer). Walks **one participant** through every step of the pipeline, each step in its own
+steps 1-3 + the explorer). Walks **one participant** through every step of the pipeline, each step in its own
 tab, every result shown in the app. Purpose: **diagnose a participant** and **train a new user**. It is a
 viewer: it never modifies a recording, a companion or a batch-tool output.
 
@@ -807,7 +817,7 @@ the whole database / what to look at), a status badge, a **Run** button, the res
 |---|---|---|---|
 | 1 Load | 2, 3, 4 | Header-only pre-fill on participant change (channels + detected types, tool 2's entry, context channels, hypnogram candidates, event companions); **Load the recording** reads the signal | done |
 | 2 Header | 1 (1bis check) | Per-channel header table (tool 1's `res_theoretical`, filters), dynamic range ≤ 500 µV flagged on EEG, mixed EEG rates, anonymization verdict (the name itself is never shown) | done |
-| 3 Scoring & events | 3, 3bis, 4 | | phase 2 |
+| 3 Scoring & events | 3, 3bis, 4 | Hypnogram + events overview figure; hypnogram checks (length status, tool 3's mid-night `?` rule `edf_io_lib.mid_recording_unscored`, labels outside AASM / custom / MT, rescored count) and the epoch-by-epoch crosstab of every other hypnogram file of the recording against the one in use (e.g. raw export → tool 3's remapping); events: raw label → tool-4 label (unmapped flagged "tool 7 ignores it"), per type × stage at onset, onsets outside the recording. **Automatic scoring (GSSC, `autoscoring_lib`, imported on first use)**: *Read tool 3bis's scoring* (its `_hypnodensity.tsv` + params, when present) or *Score now with GSSC* (tool 3bis's one-electrode / consensus modes and EOG modes, `score_night`, model loaded once per session); tool 3bis's hypnograms, hypnodensity, agreement (κ, accuracy, F1) with the hypnogram in use (rescorings included), confusion matrix, non-AASM profile | done |
 | 4 Macrostructure | 5, 5bis | | phase 3 |
 | 5 Quality | 6 | | phase 4 |
 | 6 Preprocessing | 7 | | phase 5 |
@@ -815,7 +825,7 @@ the whole database / what to look at), a status badge, a **Run** button, the res
 | 8 Spectral | 9 | | phase 7 |
 
 A step's status is *not run* / *up to date* / **OUT OF DATE** (badge + tab-title mark ✓ / ⚠). Nothing is
-recomputed behind the user's back: a rescoring or an annotation marks steps 4, 6, 7, 8 out of date, re-running
+recomputed behind the user's back: a rescoring or an annotation marks steps 3, 4, 6, 7, 8 out of date, re-running
 step 1 marks 3-8, step 6 marks 7-8, step 7 marks 8 (only steps that have results can become out of date).
 
 **Step 1, loading** (mirrors tool 7): EEG = tool 2's remap when the participant has an entry
@@ -852,7 +862,11 @@ hypnogram (auto-advance optional); **Save** writes `<hypnogram stem>_rescored.tx
 beside the hypnogram (beside the EDF when there is none), never overwriting the original, an existing
 `_rescored.txt` only with *Overwrite* ticked. **Annotations**: tool 8's dialog, written at once with
 `L.save_manual_events` beside the recording, `source = manual_tool0`, so tool 7 (`cb_manual_events`) and tool 8
-read them like tool 8's own.
+read them like tool 8's own. Unsaved rescoring is guarded (`guard_unsaved`): the first reload / participant
+change is refused with a warning, the same action repeated discards it. **GSSC layer** (once step 3 has a
+scoring): GSSC's hypnogram dashed orange on the navigator, `GSSC <stage> (p %)` in the status line (green =
+same as the hypnogram in use, red = different), **Next disagreement** (next W/N1/N2/N3/R epoch where they
+differ) and **Use GSSC's stage** (rescores the current epoch with it): the automatic scoring as a suggestion.
 
 **Inspection report** (`cb_report`, on by default): `<study>/reports_live_explore/<subtree>/` holds
 `{file_id}_inspection_log.tsv` (`file_id, time, step, action, details`, **appended across sessions**: step
@@ -992,7 +1006,7 @@ The archived Jupyter version (`tools/jupyter_notebook/2_select&remap_channels_ed
 Interactive tool to harmonize sleep stage labels across a heterogeneous database, converting different scoring conventions (e.g. `0,1,2,3,4` or `W,S1,S2,S3,S4`) to the standard AASM format (`W`, `N1`, `N2`, `N3`, `R`).
 
 **Workflow (5 sections):**
-1. **Scan** (Select study folder, hypnogram suffix, and output suffix → auto-detects files recursively, reports unique label configurations and flags problematic epochs in a **single combined message**) mid-recording `?` epochs and suspicious labels (any label not in `DEFAULT_MAPPING`, e.g. `U`/`M`) are listed together, one aligned row per label (`?` treated as a label), each showing the file count, epoch count, and the **affected file names** (the quoted label is left-padded so the columns align for multi-character labels). Boundary `?` epochs (first/last ~10) are not flagged here: they are mapped in Section 3. Also reports: how many remapped files already exist with the output suffix. A list of `.txt` files matching neither suffix (informational, only when both suffixes are defined). Automatically exports `mid_uncertain_epochs_to_verify.tsv` if mid-recording `?` epochs or unexpected labels are found. If the TSV already exists (e.g. edited manually between sessions), it is loaded automatically and its corrections are pre-applied in memory. The flags are computed on the **original** labels (before applying the TSV), so the pre-corrected epochs still appear in Section 2 (pre-filled) instead of disappearing: the TSV file is never overwritten at scan time. Optional checkbox to exclude participants whose remapped file already exists from all downstream processing.
+1. **Scan** (Select study folder, hypnogram suffix, and output suffix → auto-detects files recursively, reports unique label configurations and flags problematic epochs in a **single combined message**) mid-recording `?` epochs and suspicious labels (any label not in `DEFAULT_MAPPING`, e.g. `U`/`M`) are listed together, one aligned row per label (`?` treated as a label), each showing the file count, epoch count, and the **affected file names** (the quoted label is left-padded so the columns align for multi-character labels). Boundary `?` epochs (first/last ~10) are not flagged here: they are mapped in Section 3 (the rule, index > 10 and < length − 10, is also in `edf_io_lib.mid_recording_unscored` for tool 0's step 3; tool 3 keeps its inline copy until plan phase 8). Also reports: how many remapped files already exist with the output suffix. A list of `.txt` files matching neither suffix (informational, only when both suffixes are defined). Automatically exports `mid_uncertain_epochs_to_verify.tsv` if mid-recording `?` epochs or unexpected labels are found. If the TSV already exists (e.g. edited manually between sessions), it is loaded automatically and its corrections are pre-applied in memory. The flags are computed on the **original** labels (before applying the TSV), so the pre-corrected epochs still appear in Section 2 (pre-filled) instead of disappearing: the TSV file is never overwritten at scan time. Optional checkbox to exclude participants whose remapped file already exists from all downstream processing.
 2. **Uncertain and unexpected epoch review**, A **single review widget** (shown whenever any mid-recording `?` or unexpected label is found) navigates all flagged epochs in one flat list, handling both kinds together: mid-recording `?` epochs and epochs carrying a label not in `DEFAULT_MAPPING` (e.g. `U`, `M`).
    - **Show** filter dropdown: *All issues* / *Mid-recording `?`* / one entry per unexpected label, to focus the navigation.
    - ±N context epochs (adjustable slider, default 5). The current epoch in red, already-corrected epochs in green ✓, other still-pending flagged epochs in orange.
@@ -1030,6 +1044,14 @@ pip-only, CPU torch from conda-forge), for nights without an expert hypnogram an
 expert one where it exists. First, deliberately simple version (more outputs planned). **Voila only**: no
 Curry twin, no batch `.py`. Like tool 5, it knows nothing of exclusions (no registry
 read or write, `ParticipantSelector` called with `excluded=None`).
+
+**Code location** (tool-0 redesign, phase 2): the computation and the figures live in
+**`tools/autoscoring_lib.py`**, moved verbatim from the notebook's former cell 2, with the guarded GSSC import
+(`GSSC_OK` / `GSSC_MSG` / `GSSC_VERSION` / `TORCH_VERSION`, `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD`) and
+**`score_night`**, the scoring steps of `score_one` (EEG + EOG + `run_gssc`, missing-electrode rule) lifted
+unchanged. The notebook imports them by name (cell 2) and keeps its UI, its writes and its reports; tool 0's
+step 3 calls the same functions. Move proven output-neutral (`tests/outside_chain.py` + `refactor_check.py`:
+86 files, both datasets, no difference). Edit the library, not the notebook, for any scoring or figure change.
 
 **Inputs**: the EDF files (recursive scan of the study folder), tool 2's
 `<study>/config_param/remap_reref_persubject.json` (required: an EDF absent from it is listed and not

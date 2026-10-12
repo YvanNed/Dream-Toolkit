@@ -19,6 +19,11 @@ def test_hypnogram_length_rule_of_tool7():
     assert EIO.hypno_length_status(479, 480) == 'mismatch'
 
 
+def test_mid_recording_question_marks_of_tool3():
+    hyp = ['?'] * 3 + ['W'] * 20 + ['?'] + ['N2'] * 20 + ['?'] * 2
+    assert EIO.mid_recording_unscored(hyp) == [23]         # the ones near both ends are lights off / on
+
+
 def test_hypnogram_suffix_prefers_the_most_specific_and_never_an_event_export():
     edfs = [Path(f'p{i}.edf') for i in range(4)]
     txt = ([Path(f'p{i}_Hypnogram_Export.txt') for i in range(4)]
