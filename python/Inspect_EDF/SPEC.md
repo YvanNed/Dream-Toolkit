@@ -846,7 +846,16 @@ are tool 7's**; built lazily and handed to `qc_rejected_epochs_lib.participant_f
 `load_participant` split), with `compute_psds` for the detail panel.
 
 **Epoch explorer** (an Accordion under the tabs, not a step: it serves both the scoring review upstream of
-steps 4-8 and the look at flagged / rejected epochs downstream of steps 6-7, and gains layers as steps run):
+steps 4-8 and the look at flagged / rejected epochs downstream of steps 6-7, and gains layers as steps run).
+**Layout as tool 8's Section 3**: navigation right above the figures (prev / slider / next / next stage change
+/ epoch n° offset + status line), the figures (navigator, montage, detail panel), the **keep / reject decision
+right under them** (read-only, `box_decision`, hidden until step 7 exists, plan phase 6), then the
+**rescoring** box (stage buttons, GSSC buttons, save) and the **annotation** box, and the **display settings**
+last (signal, spectrogram channel, channel subset, ± context, context traces, scales). The navigator is drawn
+at the montage's width (12 in, 14 on a dense montage) with its left / right margins (17 % / 84 %); both are
+rendered without a tight bounding box (`fig_to_png(tight=False)`, the montage's bottom margin widened for its
+time axis) and stretched to the page width (`FIG_LAYOUT`, max 1500 px), so the spectrogram and the traces line
+up and the traces get bigger. Content:
 the navigator (tool 0's own: 30 s-window spectrogram of a chosen channel, p5-p99 colour range, log guarded with
 `np.where(sxx > 0, sxx, nan)`, hypnogram line, scored-event ticks coloured by family, manual annotations,
 rescored epochs, cursor), tool 8's montage (`plot_epoch_montage`: fixed clinical scales, editable per type,
