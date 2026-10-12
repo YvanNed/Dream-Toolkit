@@ -4,6 +4,8 @@ Shared analysis + report helpers for Tool 8 — Interactive QC of rejected epoch
 Consumed by:
   - 8_reject_manually_voila.ipynb  (interactive, per-participant QC + manual override)
   - 8_reject_manually_batch.py      (database-level Section-2 report, no interaction)
+  - 0_live_explore_1file_voila.ipynb (epoch explorer: montage, detail panel, annotations; feeds its own
+                                      in-memory epochs through participant_from_epochs)
 
 Reads the outputs written by 7_preprocessing_voila for one participant:
   - {file_id}_all-epo.fif                    all epochs + per-epoch rejection metadata (MNE)
@@ -294,6 +296,13 @@ def load_participant(fif_path):
     flagged). They are dropped from the analysis here, so tools 8 / the batch see exactly the channels
     tool 7 flagged; the list is returned so a decision table can record them as dropped."""
     epochs = mne.read_epochs(str(fif_path), preload=True, verbose=False)
+    return participant_from_epochs(epochs)
+
+
+def participant_from_epochs(epochs):
+    """The dict of load_participant, built from an Epochs object already in memory: tool 0 epochs the
+    recording itself (like tool 7) and feeds it to the same display code as tool 8. The metadata must
+    carry 'stage' and 'reject_flag'. The bad channels are dropped from `epochs` in place, as above."""
     bad_channels = list(epochs.info['bads'])
     if bad_channels:
         epochs.drop_channels(bad_channels)

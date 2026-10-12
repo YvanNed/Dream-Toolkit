@@ -227,6 +227,7 @@ change of date in a report.
 | Participant selector | Skip applies in both modes; a subset with already-processed participants shows the warning; the add box only offers participants not yet selected; pasted and clicked ids switch to subset mode; unknown ids are refused; a rescan drops vanished ids |
 | Registry details | Ids match regardless of case; no temporary file is left behind; rewriting the same decisions does not touch the file (so it never looks "changed") |
 | Curry versions | The Curry twins of tools 6, 7, 8 and 8bis are valid Python and contain the new features of their EDF original (they are generated, not run, see below) |
+| Tool 0 | On every participant, loading gives exactly tool 7's epochs, sleep stages, EEG channels and scored events; the EOG / EMG traces are tool 7's, sample for sample; the header step flags the ±50 µV Fp1 like tool 1; rescoring and annotations write only their documented files (the annotation in tool 8's format, read back by tool 7's event reading) and touch nothing else in the study |
 
 ## What the tests do not check
 
@@ -236,7 +237,8 @@ change of date in a report.
   where the before / after check of section 10 compares the figures too).
 - **Curry recordings.** The Curry twins are checked for consistency with their EDF original and opened in a
   kernel (quick level), but never run on a recording (the Curry test data is 17 GB).
-- **Tools 0 and 2** are only opened (too interactive for a useful run), **tool 1bis** checks itself.
+- **Tool 2** is only opened (too interactive for a useful run), **tool 1bis** checks itself. Tool 0 is
+  checked step by step as its steps are built (tool-0 redesign).
 - **Every option.** The variants cover the main options of tools 6 to 9, not every combination.
 - **The science of the methods.** The tests prove the tools compute what they computed before, or what a
   change intends. Whether a threshold or a method is the right choice for a study remains a scientific

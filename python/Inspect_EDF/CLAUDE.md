@@ -13,7 +13,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **EDF headers = header-only custom binary parser**: read headers with the hand-written binary parser
   (robust to encoding edge cases), **never** for signal data. Derive `sampling_frequency =
   samples_per_record / duration_data_record` (the 8-byte field is samples *per record*, not the rate).
-  Keep in sync across `1_inspect_edf*`, `2_select&remap_channels_edf*`, `0_live_explore_1file*`.
+  Keep in sync across `1_inspect_edf*`, `2_select&remap_channels_edf*` and `tools/edf_io_lib.py` (tool 0).
 - **Signal = MNE, export = edfio**: load signal with `mne.io.read_raw_edf()` (never pyedflib). Write EDF
   with `edfio.EdfSignal()`/`edfio.Edf()` directly (not `mne.export.export_raw()`) for per-channel
   physical-range control.
@@ -23,7 +23,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 
 **Channel typing** (→ SPEC *Cross-cutting procedures* + §1)
 - **`detect_channel_types`**: classify non-EEG channels by transducer type OR name (incl. `chin|menton`
-  for EMG). Reuse the helper from `0_live_explore_1file`, pre-filled as an editable selection so the user
+  for EMG). Import it from `tools/edf_io_lib.py`, pre-filled as an editable selection so the user
   can correct misses. Tool 1 inspects EEG/EOG/ECG/EMG with the same *transducer-type OR curated
   name-list* convention, **default selection = EEG + EOG** (ECG/EMG opt-in) in the Voila app and both batch scripts.
 - **Context channels declared once in tool 2 (`2_select&remap_channels_edf*`, Section 2bis)**: identifies,
@@ -38,7 +38,13 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   twin is **regenerated** via `tools_curry/_make_tool2_curry.py` (new code passes through, no generator
   edit needed). Re-run it after editing the EDF Voila.
 - **`get_phys_bounds_uV`**: scale MNE's physical bounds by `units[ch]*1e6`, otherwise mV channels
-  (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tools 0 & 6: **keep in sync**.
+  (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tool 6 and `edf_io_lib`:
+  **keep in sync** (until tool 6 imports it, plan phase 4).
+- **Tool-0 redesign = shared libraries** (`tools/plan_tool0_redesign.md`, in progress on branch
+  `tool0-redesign`): tool 0 never re-implements a computation, it imports the batch tools' code from
+  `tools/*_lib.py` (`edf_io_lib` = EDF reading). Code is moved **verbatim**, and every move is proven
+  output-neutral with `tests/refactor_check.py` (save before / compare after: every file of the chain).
+  `tests/test_tool0.py` compares tool 0 with the batch tool it mirrors. → SPEC §0 + *Tests*.
 
 **Shared conventions** (→ SPEC *Cross-cutting procedures*)
 - **Rejected data is computed, flagged, left out of the outputs** (→ SPEC *Cross-cutting → Rejected-data
@@ -77,7 +83,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `Start` seconds** (two suffix widgets: Event TXT + Event CSV). Its Curry twin mirrors the whole chain,
   swapping only `read_edf_start_datetime` for a `.cdt`-header read, so `_make_tool7_curry.py`'s match
   strings (`OLD_STARTDT`, the cell-4 detection loop vars) must track any edit to tool 7's event section.
-  Re-run the generator. **Tool 0 is unchanged** (CSV-first/XML-fallback). Re-run
+  Re-run the generator. **Tool 0 imports tool 5's copy of the chain from `edf_io_lib`**. Re-run
   `tools_curry/_make_tool4_curry.py` after editing the EDF Voila.
   Labels harmonized to canonical via `config_param/event_remap.json`. → SPEC *Cross-cutting → Event sourcing* + §4.
 - **Manual annotations (`{id}_manual_events.tsv`, tool 8)**: events added by hand in tool 8's navigator go
@@ -86,7 +92,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   `_event_onsets.tsv`'s, so the two concatenate. Tool 7 **appends** them only when `cb_manual_events` is
   ticked (**off by default** → byte-identical). Their labels are already canonical, so
   `augment_remap_for_manual` identity-maps **only** the rows tagged `Source='manual'` (an unmapped *scored*
-  label must stay unmapped). Tools 0/4 untouched. Re-run both Curry generators. → SPEC *Cross-cutting →
+  label must stay unmapped). Tool 0's explorer writes the same file (`source = manual_tool0`); tool 4
+  untouched. Re-run both Curry generators. → SPEC *Cross-cutting →
   Event sourcing → Manual annotations* + §8.
 - **Per-event-type persistence (tool 7 → 8bis/8)**: when event flagging runs on a file that has events, tool 7
   writes two **optional/additive** sidecars beside `_epoch_channel_rejection.tsv`: `{id}_event_epoch_flags.tsv`
@@ -97,8 +104,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   byte-identical**. Format-agnostic → pass through the Curry generator (re-run `_make_tool7_curry.py`).
 - **Rejection-method palette = single source in `qc_rejected_epochs_lib.HEATMAP_COLORS`** (CVD-validated,
   index 0 `none` dark, `multiple` cyan, `CTX_COLOR` deliberately outside the six method hues). Duplicated
-  **verbatim** in tool 7's `plot_rejection_heatmap` and in tool 0 (whose array is shorter, has no
-  `event` and uses a different order → remap per method, never copy-paste). 8bis imports the lib. Six
+  **verbatim** in tool 7's `plot_rejection_heatmap`. 8bis and tool 0 import the lib. Six
   categories can't be told apart by colour alone → always ship a legend / method-coloured labels. Changing
   it changes rendered PNGs. Re-run the Curry generators. → SPEC *Cross-cutting → Rejection-method colour palette*.
 - **Event onsets (tool 7 → tool 8)**: tool 7 persists `{file_id}_event_onsets.tsv` (`type`, `onset_s`,
@@ -127,8 +133,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **Flat/dead-epoch colour scaling (`plot_hypnospectrogram()`)**: exclude near-zero (dead-epoch) columns
   from the vmin/vmax percentiles and render them grey, **then cap the colour span
   (`vmin = max(vmin, vmax − 45)`)** so a continuum of partly-flat/clipped low-power epochs can't drag
-  `vmin` and wash the plot to red (clean channels span < 45 dB → untouched, still byte-identical). Keep
-  both in sync across tools 0 and 6 (+ tool 6's Curry twin via `_make_tool6_curry.py`). → SPEC
+  `vmin` and wash the plot to red (clean channels span < 45 dB → untouched, still byte-identical). Lives in
+  tool 6 (+ its Curry twin via `_make_tool6_curry.py`); tool 0 gets it from `quality_lib` (plan phase 4). → SPEC
   *Cross-cutting → Flat/dead-epoch colour scaling*.
 - **Time-series display cap for DC-coupled data**: DC sources (Curry `.cdt`, any DC export with no
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
