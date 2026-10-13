@@ -319,9 +319,20 @@ test must point it at a copied `raw_epo`.
 **Keeping Windows awake**: `conftest.py` calls `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
 ES_DISPLAY_REQUIRED)` at `pytest_sessionstart` and resets it at `pytest_sessionfinish` (no-op elsewhere, never
 fatal). Without it, a laptop whose screen turns off enters *connected standby* (even on AC, Kernel-Power events
-506/507), which paused a full run (3× slower) and left an nbclient kernel waiting forever (`nbdriver` runs
-cells with `timeout=None`). Measured with the PC awake: both chains from scratch + `test_pipeline.py` = 8 min,
-full suite with the chains reused = 17 min.
+506/507), which paused a full run (3× slower) and left an nbclient kernel waiting forever. Measured with the
+PC awake: both chains from scratch + `test_pipeline.py` = 8 min, full suite with the chains reused = 17 min.
+
+**No silent hang (`nbdriver`)**: even with the PC awake, a cell occasionally waited forever (seen 4 times, in
+tools 5, 5bis and 8, never reproducible alone). A `py-spy dump` of a hung run showed both sides idle: the
+kernel had finished the cell, the client sat in its event loop. The reply was queued but zmq's single
+asynchronous wake-up was lost. nbclient waits with one `get_msg(timeout=None)`, so it never looked again.
+`nbdriver.py` therefore wraps the shell and iopub channels' `get_msg` (`_repoll_channel`): it polls in
+`REPOLL_S` (2 s) rounds up to the caller's deadline, and each new poll reads the socket's real state
+(pyzmq checks `EVENTS` on entry), so a queued reply is picked up at the next round. Two lesser
+guards: the Selector event loop on Windows (`asyncio.WindowsSelectorEventLoopPolicy()`, zmq's native loop,
+no extra selector thread; it alone did not cure the hangs) and `timeout=CELL_TIMEOUT_S` (1800 s, the
+slowest real cells take a few minutes), so any other hang fails its test after 30 min instead of stopping
+the run. Changing `nbdriver.py` changes `BASE_DEPS`, so the chain reruns once.
 
 `nbdriver.click_labelled(description)` clicks a button built inside a callback (no global name), found by
 its label like a user would (the most recent `Button` with that description).

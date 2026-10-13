@@ -38,6 +38,10 @@ rhythms). No part of the tools is copied or simulated: if a test passes, the not
   standby" (even on mains power) and pauses the programs: a run then becomes several times slower, and once
   a notebook waited forever for an answer lost during the pause. A test run therefore asks Windows to keep
   the screen on until it ends (the power settings are not changed).
+- **A run never waits forever.** Even with the computer awake, a test occasionally waited forever: the
+  notebook had finished and its answer had arrived, but the signal meant to wake the test up was lost. The
+  test now looks for the answer again every 2 seconds instead of waiting for that signal. As a last safety
+  net, a step still running after 30 minutes fails its test instead of blocking the whole run.
 
 ## Three levels: run what the change needs
 
