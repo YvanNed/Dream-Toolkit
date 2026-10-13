@@ -7,7 +7,8 @@ MOVED VERBATIM from tool 5: its constants and helpers (cell 1), computations (ce
 (cell 4), plus `compute_recording`, the computation part of its `process_participant` lifted unchanged. The
 TXT -> CSV -> XML scored-event chain is edf_io_lib's (it was tool 5's copy, identical). Every metric is
 declared once, in METRICS: add a metric there, never ad hoc. The policies (OTHER_STAGE_POLICY,
-EVENT_COUNT_WINDOW) are set here, once for every tool.
+EVENT_COUNT_WINDOW) are set here, once for every tool. The last section builds tool 5's per-recording report
+(the night with its scored events, the metrics, the checks), shown as well by tool 0's steps 3 and 4.
 """
 import os
 import re
@@ -17,6 +18,7 @@ import difflib
 import datetime
 import unicodedata
 import xml.etree.ElementTree as ET
+from html import escape as _html_escape
 from pathlib import Path
 
 import numpy as np
@@ -1414,7 +1416,8 @@ def compute_recording(p, cfg, custom_stages, event_remap, subject, hypno_suffix,
     `cfg`: tool 5's parameters (get_params); `subject`: its participant-table row or None;
     `phase(name, add)`: progress callback (tool 5's progress bar), None = silent; `stages`: a hypnogram
     to use instead of the file (tool 0: the hypnogram in use, rescorings included). A fatal step raises.
-    Returns a dict: metrics, checks, provenance, lights, extras, event_info, cls, stages, header."""
+    Returns a dict: metrics, checks, provenance, lights, extras, event_info, cls, stages, header, events (the
+    scored events as read, Name / Start / Duration, or None)."""
     if phase is None:
         phase = lambda name, add: None
     fid = p['file_id']
@@ -1454,6 +1457,7 @@ def compute_recording(p, cfg, custom_stages, event_remap, subject, hypno_suffix,
     event_info = {'enabled': cfg['events'] or cfg['odi'], 'source': None, 'n_total': 0,
                   'n_outside': 0, 'n_bad_onset': 0, 'n_unmapped': 0}
     odi_rule = ''
+    events_df = None                    # returned for the night figure of the per-recording report
     if cfg['events'] or cfg['odi']:
         remap = event_remap
         events_df, source = load_events(p['edf'], evt_txt_suffix, evt_csv_suffix)
@@ -1525,4 +1529,193 @@ def compute_recording(p, cfg, custom_stages, event_remap, subject, hypno_suffix,
         'recording_start': header['start_dt'].strftime('%Y-%m-%d %H:%M:%S'),
         'edf_duration_min': round(header['duration_s'] / 60, 2), 'n_warnings': n_warn}
     return {'metrics': metrics, 'checks': checks, 'provenance': provenance, 'lights': lights,
-            'extras': extras, 'event_info': event_info, 'cls': cls, 'stages': stages, 'header': header}
+            'extras': extras, 'event_info': event_info, 'cls': cls, 'stages': stages, 'header': header,
+            'events': events_df}
+
+
+# =============================================================================
+# Per-recording report: the night at a glance (tool 5's {file_id}_macrostructure_report.html, tool 0's steps
+# 3 and 4)
+# =============================================================================
+# Colour family of the scored events (matched by substring of the toolkit label, case-insensitive)
+EVENT_COLORS = [('apnea', '#c0392b'), ('hypopnea', '#e67e22'), ('arousal', '#f1c40f'),
+                ('desat', '#2980b9'), ('limb', '#27ae60'), ('plm', '#27ae60'), ('movement', '#27ae60')]
+OTHER_EVENT_COLOR = '#8e44ad'
+UNMAPPED_EVENT_COLOR = '#9e9e9e'
+REPORT_SHOWN_PROVENANCE = ['lights_source', 'lights_off_clock', 'lights_on_clock', 'sleep_onset_rule',
+                           'sleep_onset_epoch', 'event_source', 'n_events_total', 'n_unmapped_events',
+                           'n_events_outside_window', 'light_channel', 'spo2_channel', 'n_warnings']
+CHECK_ORDER = {'fail': 0, 'warning': 1, 'info': 2, 'ok': 3}
+
+
+def event_family(name):
+    """(family shown in the legends, its colour) of a scored-event label of the toolkit vocabulary."""
+    low = str(name).lower()
+    for key, col in EVENT_COLORS:
+        if key in low:
+            return ('limb / movement' if col == '#27ae60' else key), col
+    return 'other', OTHER_EVENT_COLOR
+
+
+def events_for_display(events_df, event_remap):
+    """The scored events (load_events: Name / Start / Duration) with their toolkit label (tool 4's
+    event_remap.json; an unmapped name keeps its own name, `mapped` False): columns type, raw_label, mapped,
+    onset_s, duration_s. None when there is no event."""
+    if events_df is None or not len(events_df):
+        return None
+    remap = event_remap or {}
+    canon = [remap.get(n) for n in events_df['Name']]
+    return pd.DataFrame({'type': [c if isinstance(c, str) and c else str(n) for c, n in zip(canon, events_df['Name'])],
+                         'raw_label': events_df['Name'].astype(str).values,
+                         'mapped': [isinstance(c, str) and bool(c) for c in canon],
+                         'onset_s': pd.to_numeric(events_df['Start'], errors='coerce').values,
+                         'duration_s': pd.to_numeric(events_df['Duration'], errors='coerce').values})
+
+
+def plot_night_overview(stages, custom_stages, events=None, manual=None, lights=None, extras=None, epoch_s=30,
+                        title='', manual_color='#8e24aa'):
+    """The night at a glance: the hypnogram (grey line, REM red and the custom stages in their colour, all at
+    the line's own width) and, under it on the same time axis, one row per scored-event type (a bar per event,
+    as long as its duration; an event type not mapped by tool 4 in grey, it is counted in no index).
+    `events`: events_for_display's table. `manual`: manual annotations (onset_s), drawn as triangles on their
+    own row. `lights` / `extras` (compute_recording): the time in bed shaded (lights-off to lights-on, the
+    window the event indices count over), sleep onset and the end of the sleep period."""
+    from quality_lib import custom_stage_style, REM_COLOR      # the toolkit's hypnogram conventions
+    stages = np.asarray(stages)
+    n = len(stages)
+    rows = []                                                      # (label, colour, events of the row)
+    if events is not None and len(events):
+        for typ, cnt in events['type'].value_counts().items():
+            g = events[events['type'] == typ]
+            mapped = bool(g['mapped'].iloc[0]) if 'mapped' in g.columns else True
+            col = event_family(typ)[1] if mapped else UNMAPPED_EVENT_COLOR
+            rows.append((f'{typ} ({cnt})' + ('' if mapped else ', not mapped'), col, g))
+    has_manual = manual is not None and len(manual) > 0
+    n_rows = max(1, len(rows) + (1 if has_manual else 0))
+    fig, (ax0, ax1) = plt.subplots(2, 1, figsize=(13, 2.4 + 0.3 * n_rows), sharex=True,
+                                   gridspec_kw={'height_ratios': [2.2, max(0.9, 0.3 * n_rows)], 'hspace': 0.08})
+    stage_y, colors, ytp, ytl = custom_stage_style(custom_stages)
+    hours = np.arange(n + 1) * epoch_s / 3600
+    if lights is not None:
+        for ax in (ax0, ax1):
+            ax.axvspan(lights['off_idx'] * epoch_s / 3600, lights['on_idx'] * epoch_s / 3600, color='#fff3cd', zorder=0,
+                       label=f"in bed (lights-off / on from: {lights['source']})" if ax is ax0 else None)
+    y = np.array([stage_y.get(s, np.nan) for s in stages], dtype=float)
+    ax0.step(hours, np.append(y, y[-1] if n else np.nan), where='post', color='#555555', lw=1.1, zorder=2)
+    for st in ['R'] + list(custom_stages):
+        for i in np.where(stages == st)[0]:
+            ax0.plot(hours[i:i + 2], [stage_y[st]] * 2, color=REM_COLOR if st == 'R' else colors[st], lw=1.1,
+                     solid_capstyle='butt', zorder=3)
+    if extras and extras.get('onset_idx_abs') is not None:
+        ax0.axvline(extras['onset_idx_abs'] * epoch_s / 3600, color='#2e7d32', lw=1.5, label='sleep onset')
+    if extras and extras.get('last_sleep_idx_abs') is not None:
+        ax0.axvline((extras['last_sleep_idx_abs'] + 1) * epoch_s / 3600, color='#6a1b9a', lw=1.5, ls='--',
+                    label='end of the sleep period')
+    ax0.set_yticks(ytp)
+    ax0.set_yticklabels(ytl, fontsize=8)
+    ax0.set_ylim(min(ytp) - 0.6, max(ytp) + 0.6)
+    if title:
+        ax0.set_title(title, loc='left', fontsize=10)
+    if lights is not None or extras:
+        ax0.legend(fontsize=8, loc='upper right', framealpha=0.9)
+    names = []
+    for r, (label, col, g) in enumerate(rows):
+        w = np.nan_to_num(g['duration_s'].astype(float).values) / 3600
+        ax1.barh(np.full(len(g), r), np.maximum(w, 0.004), left=g['onset_s'].astype(float).values / 3600,
+                 height=0.6, color=col)
+        names.append(label)
+    if has_manual:
+        ax1.plot(pd.to_numeric(manual['onset_s'], errors='coerce').values / 3600, np.full(len(manual), len(rows)),
+                 linestyle='none', marker='v', color=manual_color, markersize=7)
+        names.append(f'manual annotations ({len(manual)})')
+    ax1.set_yticks(range(len(names)))
+    ax1.set_yticklabels(names, fontsize=8)
+    ax1.set_ylim(n_rows - 0.5, -0.5)
+    ax1.set_xlim(0, hours[-1] if n else 1)
+    ax1.set_xlabel('Time from recording start (h)')
+    if not names:
+        ax1.text(0.5, 0.5, 'no scored event', transform=ax1.transAxes, ha='center', va='center', color='#888')
+    fig.subplots_adjust(left=0.16, right=0.98)
+    return fig
+
+
+def recording_metrics_html(metrics, saved=None):
+    """One recording's registered metrics (METRICS order) with the indicative ranges of tool 5 / 5bis (a value
+    outside its range is shaded). `saved` {metric: value}: an extra column comparing with a saved table (tool 0
+    compares with tool 5's)."""
+    head = '<tr><th>metric</th><th>value</th><th>unit</th><th>indicative range</th>'
+    head += '<th>tool 5 on disk</th></tr>' if saved is not None else '</tr>'
+    rows = []
+    for key, label, unit, group, definition in METRICS:
+        if key not in metrics:
+            continue                                   # not computed (option off)
+        v = metrics[key]
+        ok = v is not None and np.isfinite(float(v))
+        rng, rng_txt, style = REFERENCE_RANGES.get(key), '', ''
+        if rng:
+            low, high, note = rng
+            rng_txt = f'<span title="{_html_escape(note)}">{low}-{high}</span>'
+            if ok and not (low <= float(v) <= high):
+                style = ' style="background:#e8e8e8;"'   # light grey: the night figure's yellow is time in bed
+        cells = (f'<td title="{_html_escape(definition)}">{_html_escape(label)}</td><td><b>{float(v):.1f}</b></td>'
+                 if ok else f'<td title="{_html_escape(definition)}">{_html_escape(label)}</td><td>NaN</td>')
+        cells += f'<td>{unit}</td><td>{rng_txt}</td>'
+        if saved is not None:
+            try:
+                sv = float(saved.get(key, np.nan))
+            except (TypeError, ValueError):
+                sv = np.nan
+            same = (not ok and np.isnan(sv)) or (ok and np.isfinite(sv) and abs(round(float(v), 4) - sv) < 1e-6)
+            cells += '<td style="color:#1b5e20;">✓ same</td>' if same else f'<td style="color:#c62828;">≠ {sv}</td>'
+        rows.append(f'<tr{style}>{cells}</tr>')
+    return ('<p><small>Hover a metric for its definition and a range for its source. Grey = outside the '
+            'indicative range of a healthy adult (indicative only: it depends on age).</small></p>'
+            '<table style="border-collapse:collapse;font-size:0.9em;">' + head + ''.join(rows) + '</table>')
+
+
+def recording_checks_html(checks):
+    """One recording's consistency checks, failures first."""
+    chk = sorted(checks, key=lambda c: CHECK_ORDER.get(c['status'], 9))
+    rows = ''.join(f'<tr><td style="color:{STATUS_COLORS.get(c["status"], "#333")};"><b>{c["status"]}</b></td>'
+                   f'<td>{_html_escape(str(c["check"]))}</td><td>{_html_escape(str(c["detail"]))}</td></tr>'
+                   for c in chk)
+    return f'<table style="font-size:0.9em;">{rows}</table>'
+
+
+def recording_provenance_html(provenance):
+    """Where one recording's numbers come from (lights source, sleep-onset rule, event source...)."""
+    rows = ''.join(f'<tr><td>{k}</td><td>{_html_escape(str(provenance.get(k, "")))}</td></tr>'
+                   for k in REPORT_SHOWN_PROVENANCE)
+    return f'<table style="font-size:0.9em;">{rows}</table>'
+
+
+def recording_reports_html(reports_dir):
+    """Links from the database report to every per-recording report found under `reports_dir` (globbed from
+    disk, like every database table, so a recording processed in an earlier run keeps its link)."""
+    reports_dir = Path(reports_dir)
+    files = sorted(reports_dir.rglob('*_macrostructure_report.html'), key=lambda f: f.name.lower())
+    if not files:
+        return '<p><i>(no per-recording report yet)</i></p>'
+    links = ''.join(f'<li><a href="{f.relative_to(reports_dir).as_posix()}">'
+                    f'{_html_escape(f.name[:-len("_macrostructure_report.html")])}</a></li>' for f in files)
+    return ('<p>One report per recording: the night with its scored events, the metrics with their ranges, the '
+            f'checks.</p><ul style="columns:4;">{links}</ul>')
+
+
+def recording_report_items(fid, r, custom_stages, event_remap):
+    """The items of tool 5's {file_id}_macrostructure_report.html (save_report_html): the night figure, the
+    metrics with their ranges, the checks and the provenance."""
+    events = events_for_display(r.get('events'), event_remap)
+    fig = plot_night_overview(r['stages'], custom_stages, events=events, lights=r['lights'], extras=r['extras'],
+                              title=f'{fid}: hypnogram and scored events (shaded: time in bed, where the indices '
+                                    'count the events)')
+    ahi = r['metrics'].get('ahi')
+    ahi_html = None
+    if ahi is not None and np.isfinite(float(ahi)):
+        band = next(lbl for lo, hi, lbl in AHI_SEVERITY_BANDS if float(ahi) >= lo and (hi is None or float(ahi) < hi))
+        ahi_html = f'<p>AHI {float(ahi):.1f}/h: <b>{band}</b> (AASM severity bands).</p>'
+    return [('fig', 'The night', fig),
+            ('html', 'Apnea-hypopnea severity', ahi_html),
+            ('html', 'Metrics', recording_metrics_html(r['metrics'])),
+            ('html', 'Checks', recording_checks_html(r['checks'])),
+            ('html', 'Where the numbers come from', recording_provenance_html(r['provenance']))]
