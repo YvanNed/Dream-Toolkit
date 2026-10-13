@@ -23,6 +23,7 @@ Inspect_EDF/
 │   ├── edf_io_lib.py                            # Shared EDF reading (header, channel types, hypnogram, events, context), tool 0
 │   ├── autoscoring_lib.py                       # GSSC scoring + figures of tool 3bis, shared with tool 0
 │   ├── macrostructure_lib.py                    # Tool 5's metric registry, computations + figures, shared with 5bis and 0
+│   ├── quality_lib.py                           # Tool 6's signal-quality metrics, computation + figures, shared with 0
 │   ├── 1_inspect_edf_voila.ipynb                # EDF parameter inspector (Voila GUI)
 │   ├── 1_inspect_edf_perdataset.py              # Batch EDF inspection per dataset
 │   ├── 1_inspect_edf_perparticipant.py          # Batch EDF inspection per participant
@@ -248,8 +249,8 @@ downstream ones; before a merge or after a change to a shared module: full). **T
 tools concerned. Selection rule: the modified tool + every tool downstream in the chain
 (5 → 5bis → 6 → 7 → 8bis → 8 → 9) + every tool importing a modified shared module
 (`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0, 5, 5bis,
-`autoscoring_lib` → 0, 3bis, `macrostructure_lib` → 0, 5, 5bis; `chaincache.TOOL_DEPS` lists them for tools 5 /
-5bis); a change
+`autoscoring_lib` → 0, 3bis, `macrostructure_lib` → 0, 5, 5bis, `quality_lib` → 0, 6 (+ the tool-6 Curry twin,
+which copies it); `chaincache.TOOL_DEPS` lists them for tools 5 / 5bis / 6); a change
 to a Curry generator or twin: quick (its notebook executes) + `test_curry_twins.py`. Tool 0 mirrors the
 batch tools, so a change to a tool it mirrors also runs `tool0` (`test_tool0.py` compares them).
 
@@ -289,14 +290,17 @@ test must point it at a copied `raw_epo`.
   automatic scoring equals tool 3bis's (marker `tool3bis`, synthetic, skipped without gssc: tool 3bis run on a
   copy for one participant, then tool 0 reads its outputs and scores again: same stages, probabilities within
   the TSV's 4 decimals, same κ); step 4 equals tool 5 (marker `tool5`, both datasets: every registered metric
-  and the lights source of every participant, against tool 5's `_sleep_metrics.tsv`). `test_edf_io_lib.py`
+  and the lights source of every participant, against tool 5's `_sleep_metrics.tsv`); step 5 equals tool 6
+  (marker `tool6`, both datasets: every column of tool 6's `_quality_metrics.tsv` and `_quality_by_stage.tsv`,
+  flags included, for every participant, on tool 6's default hypnogram suffix and thresholds). `test_edf_io_lib.py`
   (quick): the rules lifted into `edf_io_lib`
   (tool 7's hypnogram length and suffix choices, tool 3's mid-night `?`, tool 2's context guess, tool 1's
   header table).
-- `outside_chain.py` (a script): tools outside the chain (tool 3bis today) run on a fresh copy of a chain
-  dataset's inputs in `%TEMP%/dtk_outside_chain/<dataset>/data`, so `refactor_check.py` can compare their
-  outputs before / after a move (`DTK_TEST_ROOT` / `DTK_REFACTOR_ROOT` pointed at that folder and a save
-  folder). `refactor_check` also ignores tool 3bis's `scored_at` date.
+- `outside_chain.py` (a script): what the chain does not run, on a fresh copy of a chain dataset's inputs in
+  `%TEMP%/dtk_outside_chain/<dataset>/data`, so `refactor_check.py` can compare its outputs before / after a
+  move (`DTK_TEST_ROOT` / `DTK_REFACTOR_ROOT` pointed at that folder and a save folder): `3bis` (tool 3bis,
+  the default) and `6variant` (tool 6 with resampling to 128 Hz + high-pass 0.5 Hz, options the chain leaves
+  off), e.g. `outside_chain.py 6variant`. `refactor_check` also ignores tool 3bis's `scored_at` date.
 - `test_variants.py` (full, synthetic, each on a light copy: inputs + only the needed outputs): tool 7 10 s
   epochs (then 8bis, 9), resampling to 128 Hz, notch off (50 Hz on sim03 > 10 dB above the chain), custom
   stage N4 (the `.fif` reads back, N4 reaches 8bis and 9); tool 6 resampling + high-pass (the metrics are
@@ -704,8 +708,8 @@ instead of restating them. Only tool-specific deltas are kept inline.
   stages stack **below N3** on every hypnogram axis (`N3=0 → -1, -2, …` in declaration order). The
   step-line stays gray with **REM in red** (YASA convention) and each custom stage in a fixed non-red
   palette (`#8dd3c7, #ffffb3, #bebada, #80b1d3, #fdb462, #b3de69, #fccde5, #d9d9d9`). Because
-  `yasa.plot_spectrogram` / `yasa.Hypnogram` **hard-reject** any non-AASM label, tool 6 (and tool 0 through
-  `quality_lib` from plan phase 4) plots the
+  `yasa.plot_spectrogram` / `yasa.Hypnogram` **hard-reject** any non-AASM label, tool 6 (and tool 0, both
+  through `quality_lib`) plots the
   hypnospectrogram with a custom **`plot_hypnospectrogram()`** that keeps YASA's stage-agnostic
   spectrogram core (`from yasa.plotting import spectrogram_lspopt`) and draws the hypnogram band itself:
   no new dependency (`spectrogram_lspopt` ships with the already-required `yasa`). Reading the JSON is
@@ -737,8 +741,8 @@ instead of restating them. Only tool-specific deltas are kept inline.
     they stay x-aligned) exposes it: e.g. the ×0.01 dead channel `734 C3` sits at −55…−23 dB vs a healthy
     channel's −15…+18 dB, an ~40 dB downward shift visible at a glance. This is a display-only change
     (it re-lays-out every per-channel figure, clean ones included, on purpose). The numeric `std_uV` /
-    "All electrodes" figures remain the primary catch for globally-bad channels. Present in **tool 6**
-    (tool 0 gets it through `quality_lib`, plan phase 4: its former monolithic copy is gone). Applied to the **across-channel median** spectrogram of tool 6's
+    "All electrodes" figures remain the primary catch for globally-bad channels. Lives in
+    **`quality_lib`** (tool 6 and tool 0's step 5 import it, the tool-6 Curry twin gets a copy). Applied to the **across-channel median** spectrogram of tool 6's
     Overview (see §6), the very same criterion yields *majority-of-channels* semantics for free: a
     column is greyed only when most channels are dead at that epoch, since that is what makes the
     median drop: no separate majority-vote code. The tool-8 *navigator* spectrogram is a separate plot
@@ -752,8 +756,8 @@ instead of restating them. Only tool-specific deltas are kept inline.
   hard fixed window, so clean low-amplitude channels still auto-zoom below the cap and the shared
   cross-channel scale is kept. Applied to the per-channel + butterfly time series **and** the histogram
   X-axis (`x_lim_hist` follows `y_lim_ts`). Currently **Curry-only** (injected by
-  `tools_curry/_make_tool6_curry.py`, block "cap time-series y-limit…": re-run the generator after
-  editing). The EDF tools keep the uncapped autoscale on purpose (full range helps spot export clipping).
+  `tools_curry/_make_tool6_curry.py` into the twin's copy of `quality_lib.display_limits`, block "cap
+  time-series y-limit…": re-run the generator after editing). The EDF tools keep the uncapped autoscale on purpose (full range helps spot export clipping).
   Extend the same cap to any future DC-source tool.
 - **Physical bounds in µV (`get_phys_bounds_uV`)**: MNE stores an EDF channel's physical range as
   `physical_max + offset` in `raw._raw_extras` (not explicit `physical_min`/`physical_max`). The
@@ -764,8 +768,9 @@ instead of restating them. Only tool-specific deltas are kept inline.
   declared in mV (typical for Compumedics EOG/EMG/ECG, `physical_max = 1.0 mV`) is compared against a
   1.0 µV bound (1000× too small) so `bounds_pct` flags ~98–100 % of a perfectly healthy signal. EEG
   (declared in µV) stays unaffected, which kept the bug latent until non-EEG channels were added.
-  Defined in `6_quality_overview_voila`, **duplicated** in `tools/edf_io_lib.py` until tool 6 imports it
-  (plan phase 4): keep in sync.
+  Defined in `6_quality_overview_voila`, **duplicated** in `tools/edf_io_lib.py` (with tool 6's
+  bounds-reading lines, `phys_bounds_for_remap`, used by tool 0's step 5) until tool 6 reads the EDF through
+  `edf_io_lib` (plan phase 8, its Curry generator replaces that load block): keep in sync.
   (Verified on ICEBERG 117: EOG/EMG/ECG `bounds_pct` 97–98 % → <0.4 %, EEG unchanged.)
 - **EOG/EMG/ECG channel-type detection (`detect_channel_types`)**: non-EEG channels are classified by
   **transducer type OR channel name**: EOG = transducer `EOG` / name `eog`. ECG = transducer
@@ -806,8 +811,8 @@ instead of restating them. Only tool-specific deltas are kept inline.
 
 ### 0. One participant, the whole pipeline (`0_live_explore_1file_voila.ipynb`)
 
-**Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; phase 1 done:
-steps 1-4 + the explorer). Walks **one participant** through every step of the pipeline, each step in its own
+**Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; done: steps 1-5 +
+the explorer). Walks **one participant** through every step of the pipeline, each step in its own
 tab, every result shown in the app. Purpose: **diagnose a participant** and **train a new user**. It is a
 viewer: it never modifies a recording, a companion or a batch-tool output.
 
@@ -835,14 +840,14 @@ the whole database / what to look at), a status badge, a **Run** button, the res
 | 2 Header | 1 (1bis check) | Per-channel header table (tool 1's `res_theoretical`, filters), dynamic range ≤ 500 µV flagged on EEG, mixed EEG rates, anonymization verdict (the name itself is never shown) | done |
 | 3 Scoring & events | 3, 3bis, 4 | Hypnogram + events overview figure; hypnogram checks (length status, tool 3's mid-night `?` rule `edf_io_lib.mid_recording_unscored`, labels outside AASM / custom / MT, rescored count) and the epoch-by-epoch crosstab of every other hypnogram file of the recording against the one in use (e.g. raw export → tool 3's remapping); events: raw label → tool-4 label (unmapped flagged "tool 7 ignores it"), per type × stage at onset, onsets outside the recording. **Automatic scoring (GSSC, `autoscoring_lib`, imported on first use)**: *Read tool 3bis's scoring* (its `_hypnodensity.tsv` + params, when present) or *Score now with GSSC* (tool 3bis's one-electrode / consensus modes and EOG modes, `score_night`, model loaded once per session); tool 3bis's hypnograms, hypnodensity, agreement (κ, accuracy, F1) with the hypnogram in use (rescorings included), confusion matrix, non-AASM profile | done |
 | 4 Macrostructure | 5, 5bis | `macrostructure_lib.compute_recording` with tool 5's default parameters (sleep-onset rule, ODI / T90 options exposed), on the hypnogram in use (`stages=None` = tool 5 reads the file when nothing is rescored, else the file with the rescored epochs replaced), the study's participant table (`participants.tsv/.csv/.xlsx` at the study root, join column guessed like tool 5) and summary-txt suffix (tool 5's rule). Shows the overview (hypnogram, time in bed shaded with its lights source, sleep onset, end of the sleep period), the AHI severity band, the `METRICS` table with the indicative ranges (out-of-range shaded) and a **"tool 5 on disk" column** (✓ same / ≠ value, read from `{file_id}_sleep_metrics.tsv` when tool 5 has run), tool 5's checks, the provenance, and tool 5bis's last decision for the participant (`participant_selection.tsv`). A recording tool 5 cannot compute shows tool 5's error ("listed in sleep_metrics_failed.tsv") | done |
-| 5 Quality | 6 | | phase 4 |
+| 5 Quality | 6 | Tool 6's run for this participant, `quality_lib`'s functions in tool 6's order: optional resampling then high-pass (`prepare_signal`, on a copy: the explorer's signal is never filtered), tool 6's hypnogram rules (`hypno_vector`, `check_hypno_length`) on the hypnogram file **whole** with the rescored epochs replaced (the scoring done here when there is no file), the EDF physical range of each channel (`edf_io_lib.phys_bounds_for_remap`: tool 6's bounds lines, header only), `compute_channel_metrics` (tool 6's thresholds and defaults exposed), `display_limits`, `compute_channel_spectrograms`. Shows tool 6's overview box (suspicious channels and why, hypnogram warning, what was analysed), the per-channel table (tool 6's columns, flagged rows shaded) with a **"tool 6 on disk" column** (✓ same / ≠ the columns that differ, against `{file_id}_quality_metrics.tsv` when tool 6 has run), the per-stage std / p99.9 / flat tables, and tool 6's Overview figures (butterfly, median spectrogram, PSD, distributions, averaged metrics, pooled and per-electrode metrics). **One channel**: a dropdown (the first flagged channel pre-selected) shows tool 6's channel section (metrics with the interpretation column, histogram, PSD, time series, spectrogram); **Show in the explorer** puts the navigator spectrogram on that channel. The inspection report keeps the tables and the first two overview figures | done |
 | 6 Preprocessing | 7 | | phase 5 |
 | 7 Decision | 8bis (8) | decision source: live 8bis rule or the tool 8 / 8bis tables on disk; feeds step 8 + the explorer | phase 6 |
 | 8 Spectral | 9 | | phase 7 |
 
 A step's status is *not run* / *up to date* / **OUT OF DATE** (badge + tab-title mark ✓ / ⚠). Nothing is
-recomputed behind the user's back: a rescoring marks steps 3, 4, 6, 7, 8 out of date, an annotation 3, 6, 7, 8
-(tool 5 never reads the manual annotations), re-running
+recomputed behind the user's back: a rescoring marks steps 3-8 out of date, an annotation 3, 6, 7, 8
+(tools 5 and 6 never read the manual annotations), re-running
 step 1 marks 3-8, step 6 marks 7-8, step 7 marks 8 (only steps that have results can become out of date).
 
 **Step 1, loading** (mirrors tool 7): EEG = tool 2's remap when the participant has an entry
@@ -1499,9 +1504,27 @@ a value keeps it, `Missing value excludes` behaves, and the notebook executes cl
 *(Stable tool: formerly “Phase 1” of the preprocessing pipeline.)*
 Implemented as `tools/6_quality_overview_voila.ipynb`. Produces one `mne.Report` HTML per participant. For each EEG channel: signal amplitude histogram with Savitzky-Golay smooth + peak detection, time series, metrics table, and a YASA hypnospectrogram (0.1–40 Hz bandpass applied per-channel just before plotting). Flags suspect channels for priority inspection. At the end of each run, generates `dataset_overview.html`: a single-page dataset-level summary with statistics and distribution plots per electrode, consumed by Phase 2 to identify channels to exclude.
 
+**Shared library (`tools/quality_lib.py`, tool-0 redesign phase 4)**: the computation and the figures live in
+the library, **moved verbatim** and shared with tool 0's step 5 (same code, same numbers). It holds (a) the
+former shared-function cell: `compute_signal_metrics`, `flag_channel`, `HIST_CLIP_PCT`, the per-channel and
+overlay figures, `build_avg_metrics_html`, `METRIC_INTERPRETATIONS`, the custom-stage helpers, the
+hypnospectrogram functions, `OVERVIEW_KEY_METRICS` / `OVERVIEW_METRIC_LABELS` and the two per-participant
+"All electrodes" figures; (b) the computation lines of `run_analysis`, lifted into six functions whose
+progress-bar updates became optional callbacks (`status`, `on_channel`) and whose prints a `warn` callback:
+`hypno_vector` (labels → stage codes + the 10 % rule), `prepare_signal` (resampling then high-pass),
+`check_hypno_length`, `compute_channel_metrics` (every channel, whole night + per stage → the rows of the two
+per-file TSVs), `display_limits`, `compute_channel_spectrograms`. The notebook keeps the UI, the EDF reading
+(load block, `drop_suffix_duplicates`, `adapt_remap_dict_to_suffixes`, `get_phys_bounds_uV`: tool 6 switches to
+`edf_io_lib` in plan phase 8), the report assembly, the Skip / cumulative logic and `generate_dataset_overview`
+(dataset level, not needed by tool 0). Every output is identical to before the move (`refactor_check` on the
+whole chain, plus the resampling + high-pass variant through `tests/outside_chain.py 6variant`). **Edit the
+library, never a notebook, then re-run `_make_tool6_curry.py`**: the Curry twin does not import the library, its
+generator **copies it into the twin's cell 1** in place of the import and strips `bounds_pct` from that copy
+(see *Curry twin* below).
+
 **Signal preparation (analysis only, not saved)**: a UI section (named *Signal preparation*, **not** *Preprocessing*, to make clear nothing is written to disk, unlike tool 7, the transforms are applied transiently, only to compute the overview). When the **config JSON is selected** (`update_acq_info`, registered on `fc_config`, needs both the folder and the config), an **acquisition scan** reads the EDF headers directly (byte parser `read_edf_sf_highpass`, the same header approach as `1_inspect_edf`, **no MNE**) and reports, grouped by unique value with file counts, each file's **sampling frequency** and **acquisition high-pass** **restricted to the selected channels** (the config `remap` keys, matched against the header channel labels, falls back to all channels for a file absent from the config). The value shown is **all distinct values** among the kept channels (joined by ` / `), **not** the most common one, so a montage whose EEG channels ended up at **different sampling frequencies (or high-passes) because of a bad export** is made visible, not hidden: such a mixed entry is rendered in red with a ⚠ and a "check the export!" note. Sampling frequency comes from the montage channels (MNE's file-level `info['sfreq']` would instead be the *max*, biased by faster non-EEG channels such as a 512 Hz ECG), and the high-pass is the `HP:` value of the `prefiltering` header field (`none/DC` when absent). Two optional transforms follow, applied per file **in this order**: (1) **resampling** (`raw.resample(target_freq, npad='auto')`, default **OFF**, `cb_resample`/`txt_target_freq`, guarded to never upsample) then (2) **high-pass** (`raw.filter(l_freq=…, h_freq=None)`, default **OFF**, `hp_check`/`hp_freq`, used to harmonise a heterogeneous dataset to a common corner (choose a target ≥ the max acquisition high-pass shown) or to centre DC-coupled data). Resampling is applied **before** the high-pass: `raw.resample` already anti-aliases (FFT method), so resampling first introduces no aliasing, and any resampling edge transients stay at the recording ends (wake). The order does **not** change the result: both transforms are linear, so the signal interior is identical to <0.2 µV either way (verified empirically), and the resampler's anti-alias step rings identically on an abrupt amplitude change regardless of order (a low-corner high-pass does not touch the sharp edge that produces the ring). High-passing the already-downsampled signal is chosen purely because it runs on far fewer samples (markedly faster). Both are analysis-only: no filtered/resampled signal is saved, only the resulting metrics/plots reflect them. Off by default keeps results byte-identical. **Every metric, the sample-level clipping detectors included (`flat_pct`, `bounds_pct`, `hist_extreme_pct`), is computed on the transformed signal, deliberately** (user decision, 2026-10-05): a high-pass can rescue a channel worth keeping, and the overview must judge the signal the analysis will use. The price, measured by the tool-6 variant test: filtering smooths clipping plateaus, so on synthetic data a channel clipped at ±50 µV (`bounds_pct` 2.28 %, `flat_pct` 4.9 % unfiltered) drops to 0.02 % / 2.6 % after resampling to 128 Hz + a 0.5 Hz high-pass and is no longer flagged. Tool 1 still reports the narrow physical range from the header. On the **Curry twin** the high-pass defaults **ON** (0.1 Hz, DC-coupled data has no hardware high-pass) and the acquisition scan reads the Curry header via MNE (`read_raw_curry`), reporting the high-pass as `none/DC`.
 
-**Per-participant pipeline progress bar**: below the participants bar (`i/N`) a second bar spans the *current participant's whole pipeline* in arbitrary "time-cost" units (`COST_LOAD_DATA` + optional `COST_HIGHPASS`/`COST_RESAMPLE`, `COST_ANALYSE_CH`×channels, `COST_RENDER_CH`×channels). It advances continuously (no per-channel reset) through three phases, **Load** (data → resample → high-pass sub-ticks), **Per-channel** (one tick per analysed channel), **Report** (one tick per rendered channel), with a 3-segment legend **glued directly under the bar** (`VBox([progress_ch, phase_legend])`, the legend drawn with no top border and square top corners so it reads as the bar's own labelled track) whose segment widths are proportional to those costs (≈ each phase's share of the run time). The `progress_ch_label` also names the current activity (`loading EDF signal…`, `high-pass 0.5 Hz…`, `analysing C3…`, `building report…`).
+**Per-participant pipeline progress bar**: below the participants bar (`i/N`) a second bar spans the *current participant's whole pipeline* in arbitrary "time-cost" units (`COST_LOAD_DATA` + optional `COST_HIGHPASS`/`COST_RESAMPLE`, `COST_ANALYSE_CH`×channels, `COST_RENDER_CH`×channels). It advances continuously (no per-channel reset) through three phases, **Load** (data, then one tick once the optional resampling + high-pass are done), **Per-channel** (one tick per analysed channel), **Report** (one tick per rendered channel), with a 3-segment legend **glued directly under the bar** (`VBox([progress_ch, phase_legend])`, the legend drawn with no top border and square top corners so it reads as the bar's own labelled track) whose segment widths are proportional to those costs (≈ each phase's share of the run time). The `progress_ch_label` also names the current activity (`loading EDF signal…`, `high-pass 0.5 Hz…`, `analysing C3…`, `building report…`).
 
 **EDF scan**: recursive (`rglob('*.edf')`), so datasets organized in subfolders (e.g. `group1/`, `group2/`) are fully covered without needing to run the tool per subfolder.
 
@@ -1523,14 +1546,14 @@ Implemented as `tools/6_quality_overview_voila.ipynb`. Produces one `mne.Report`
 
 The dots of the pooled boxplots (here and in `dataset_overview.html`'s `_scatter_with_flag`) are jittered horizontally with a **fixed seed** (`np.random.default_rng(0)`, since 2026-10-12): two runs give byte-identical reports, which the before / after check (`tests/refactor_check.py`, see *Tests*) requires.
 
-Both are built from the per-channel `file_rows` already collected for `quality_summary.tsv` (no recomputation), returned as matplotlib `Figure`s (added via `report.add_figure`, unlike the dataset-level functions which embed base64 `<img>`), and wrapped in non-fatal `try/except`. `KEY_METRICS`/`LABELS` were lifted to the module-level `OVERVIEW_KEY_METRICS`/`OVERVIEW_METRIC_LABELS` so `generate_dataset_overview` and these two functions share one source of truth. **Curry twin**: the generator (`_make_tool6_curry.py`) removes `bounds_pct` from `OVERVIEW_KEY_METRICS`/`OVERVIEW_METRIC_LABELS` (DC-coupled data has no EDF bounds), so the per-participant figures drop the bounds subplot too. The functions and their Overview wiring otherwise pass through unchanged. Because the Curry generator addresses cells by index, this code lives **inside the existing shared-functions cell** (no new notebook cell) to keep the indices stable.
+Both are built from the per-channel `file_rows` already collected for `quality_summary.tsv` (no recomputation), returned as matplotlib `Figure`s (added via `report.add_figure`, unlike the dataset-level functions which embed base64 `<img>`), and wrapped in non-fatal `try/except`. `KEY_METRICS`/`LABELS` were lifted to the module-level `OVERVIEW_KEY_METRICS`/`OVERVIEW_METRIC_LABELS` so `generate_dataset_overview` and these two functions share one source of truth. **Curry twin**: the generator (`_make_tool6_curry.py`) removes `bounds_pct` from `OVERVIEW_KEY_METRICS`/`OVERVIEW_METRIC_LABELS` (DC-coupled data has no EDF bounds), so the per-participant figures drop the bounds subplot too. The functions and their Overview wiring otherwise pass through unchanged. They live in `quality_lib`, which the generator copies into the twin's shared-functions cell (cell 1, addressed by index: no new notebook cell).
 
 **Across-channel median spectrogram** (`All channels: spectrogram`, Overview section): summarises the night's spectral structure for the whole montage, useful on dense 32/64-channel montages where reading one spectrogram per channel is impractical. **All channels are kept, flagged ones included**, like every other Overview plot. The other Overview plots are *overlays*, where a bad channel is an extra aberrant curve *beside* the good ones and the reader sees both. A spectrogram average is a single *aggregate* image with no such escape, so the robustness has to come from the estimator: the **median across channels of the dB spectrogram** tolerates up to half the channels being aberrant, which is what makes "keep everything" compatible with "still readable". Deliberately **not** normalised per channel (a dead channel has ~zero variance, so a z-score would explode instead of being absorbed) and taken in **dB, not linear power** (a linear mean is driven by the noisiest channels, the median of log-power is the scale-robust quantity, and absolute dB is the meaningful unit when inspecting *raw* data). The figure title reports the channel count and how many of them are flagged. Regional (frontal/central/posterior) panels were considered and rejected: the per-channel spectrograms already carry the topographic detail, and region assignment by channel name fails silently on non-10-20 exports.
 
 - **`Sxx` computed once, used twice**: the median needs every channel's spectrogram simultaneously, so the stack is held in memory anyway (**~260 MB float32** on 58 ch / 7.9 h / 512 Hz, ~295 MB on 44 ch / 11.8 h / 1024 Hz, ~410 MB on 77 ch / 9.4 h / 2048 Hz). Given that, a dedicated pass placed **just before the Overview section is built** computes each channel's dB spectrogram into a `ch_sxx` cache, and the per-channel report figures **reuse** it: recomputing would cost ~8 min per file on a dense montage for no benefit. `plot_hypnospectrogram()` is therefore split into **`compute_hypnospectrogram_sxx()`** (signal → `(f, t, Sxx_dB)`) + **`render_hypnospectrogram()`** (`(f, t, Sxx_dB)` → Figure), with `plot_hypnospectrogram()` kept as a thin wrapper with an **unchanged signature**. Verified: the original function, the new wrapper, the explicit compute+render pair, and a float32 round-trip all produce **bit-identical PNGs** (float32 costs ≤ 1.5e-5 dB, four orders of magnitude below the ~0.2 dB colormap step). Failure to compute one channel's `Sxx` is non-fatal: that channel's report section shows a "computation failed" note and the median simply excludes it.
 - **Frequency resolution is set by the 30 s window (1/30 Hz), not by `sfreq`**: the 0.5–40 Hz band always yields ~1186 bins, so **resampling shrinks the compute time (~6× from 1024 → 256 Hz) but not the stack size**. Frequency binning is the fallback if a much denser montage ever makes the stack too large.
 - **Progress bar**: the spectrogram cost moves from the *Report* phase to the middle phase, which now covers per-channel metrics **then** the spectrogram pass (`COST_ANALYSE_CH = 1`, new `COST_SPECTRO_CH = 3`, `COST_RENDER_CH` lowered 3 → 2). The 3-segment legend still matches the three chronological phases.
-- **Tool 0** no longer carries its own copy (tool-0 redesign): from plan phase 4 it imports tool 6's functions from `quality_lib`, so tool 6's `render_hypnospectrogram()` is the only body to edit.
+- **Tool 0** no longer carries its own copy (tool-0 redesign): its step 5 imports tool 6's functions from `quality_lib`, so `quality_lib.render_hypnospectrogram()` is the only body to edit.
 
 **Metrics table (interpretation column)**: for `Flat signal (%)`, `At EDF bounds (%)`, and `Extreme histogram (%)`, the interpretation cell shows the actual threshold value used for that run (read from the widget at run time, e.g. "flag if > 3.5%"), making each report self-documenting. The three threshold-based entries are generated dynamically inside `run_analysis` via a local `interpretations` dict that overrides the static `METRIC_INTERPRETATIONS` dict.
 
@@ -2300,6 +2323,12 @@ The recurring deltas:
 - **Tool 6: Quality overview**: drops `bounds_pct` and `get_phys_bounds_uV`. Keeps flat/std/n_peaks/percentiles/
   histograms/PSD/time-series/hypnospectrogram. Same `reports_quality_overview/` outputs (minus the bounds
   column). Memory note: EEG channels are picked before `load_data()` to avoid holding the full multi-GB file.
+  Since the tool-0 redesign (phase 4) the EDF notebook imports `tools/quality_lib.py`: the generator **copies
+  the library into the twin's cell 1** in place of `from quality_lib import (...)` and applies its `bounds_pct`
+  removals and the ±500 µV display cap to that copy (the twin stays standalone, no tools/ import). Its new
+  Curry load block sets `phys_bounds_by_name, final_to_orig = {}, {}` (unused once `bounds_pct` is stripped,
+  kept for `compute_channel_metrics`' signature). Checked at the move: every definition of the former twin is
+  AST-identical in the new one, only `run_analysis` changed, as in the EDF notebook.
 - **Tool 7: Preprocessing + epoch rejection**: Curry load block (recipe step 3). Event-based rejection reads the
   scored events via the **shared TXT-first / CSV / XML** `load_events` chain (the twin swaps only
   `read_edf_start_datetime` for a `.cdt`-header read, the `_events_df_from_txt/csv/xml` parsers + dispatcher

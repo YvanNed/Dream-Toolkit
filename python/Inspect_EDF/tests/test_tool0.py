@@ -3,8 +3,9 @@ participant: it shares their code (tools/*_lib.py, see tools/plan_tool0_redesign
 compared with the chain outputs of the batch tool it mirrors, on a copy of the study inputs (tool 0 writes
 its report and annotations into the study folder, never into the chain's).
 
-Phase 1: step 1 (loading: channels, hypnogram, events, context channels) against tool 7, step 2 (header)
-against tool 1's known answer, and the explorer's writes (rescoring, annotations, inspection report)."""
+Step 1 (loading: channels, hypnogram, events, context channels) against tool 7, step 2 (header) against tool
+1's known answer, the explorer's writes (rescoring, annotations, inspection report), step 3 against tool 3bis,
+step 4 against tool 5, step 5 against tool 6."""
 import json
 import shutil
 from pathlib import Path
@@ -214,6 +215,39 @@ def test_step4_equals_tool5(chain, tmp_path):
                     assert np.isnan(expected), (fid, key)
                 else:
                     assert abs(value - expected) < 1e-9, (fid, key, value, expected)
+
+
+@pytest.mark.tool6
+def test_step5_equals_tool6(chain, tmp_path):
+    """Step 5 is tool 6's computation: every metric and flag of every channel, over the whole night and per
+    stage, equals tool 6's {file_id}_quality_metrics.tsv and _quality_by_stage.tsv, on the same hypnogram
+    (tool 6's default suffix) and with tool 6's default thresholds."""
+    study = study_copy(chain, tmp_path / 'study')
+    reports = Path(chain['data'], 'reports_quality_overview')
+    with NotebookSession(T0) as nb:
+        for fid in minidb.PARTICIPANTS[chain['dataset']]:
+            nb.pick('fc_data', study)
+            nb.set('dd_part', fid)
+            nb.run("dd_hypno.value = '_Hypnogram_remapped.txt' if '_Hypnogram_remapped.txt' in dd_hypno.options "
+                   "else NONE")
+            nb.click('btn_run1')
+            assert nb.value("STATUS['1']") == 'up_to_date', nb.widget_text()[-1500:]
+            nb.click('btn_run5')
+            assert nb.value("STATUS['5']") == 'up_to_date', nb.widget_text()[-1500:]
+            for key, suffix, sort in (('rows', '_quality_metrics.tsv', ['channel']),
+                                      ('stage_rows', '_quality_by_stage.tsv', ['channel', 'stage'])):
+                mine = pd.DataFrame(nb.value(f"STATE['quality'][{key!r}]"))
+                found = list(reports.rglob(f'{fid}{suffix}'))
+                if not found:                      # tool 6 writes no per-stage table without a valid hypnogram
+                    assert mine.empty, (fid, key)
+                    continue
+                ref = pd.read_csv(found[0], sep='\t', dtype={'file_id': str})
+                if 'suspect_reason' in ref.columns:
+                    ref['suspect_reason'] = ref['suspect_reason'].fillna('')
+                assert list(mine.columns) == list(ref.columns), (fid, key)
+                pd.testing.assert_frame_equal(mine.sort_values(sort).reset_index(drop=True),
+                                              ref.sort_values(sort).reset_index(drop=True),
+                                              check_dtype=False, rtol=1e-9, atol=1e-12, obj=f'{fid} {key}')
 
 
 def test_context_channels_match_tool7(chain, tmp_path):

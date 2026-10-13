@@ -309,6 +309,28 @@ def get_phys_bounds_uV(extras, ch_idx):
     return -phys_max + 2 * offset, phys_max
 
 
+def phys_bounds_for_remap(edf_path, remap):
+    """Tool 6's 'physical bounds before channel manipulation' (lines of its load block), from the header only:
+    ({original channel name: (phys_min_uV, phys_max_uV)}, {harmonised name: original name}), the two dicts
+    quality_lib.compute_channel_metrics takes for bounds_pct. Same read as tool 6 (`include=` the original
+    names of the tool-2 remap). Tool 6 keeps its own copy of these lines until it reads the EDF through this
+    library (plan phase 8): its Curry generator replaces that load block."""
+    raw = mne.io.read_raw_edf(str(edf_path), preload=False, encoding='latin-1', include=list(remap.keys()),
+                              verbose=False)
+    extras = raw._raw_extras[0]
+    phys_bounds_by_name = {}
+    for idx, ch in enumerate(raw.ch_names):
+        base = ch.rsplit('-', 1)[0] if (ch.endswith('-0') or ch.endswith('-1')) else ch
+        phys_bounds_by_name[base] = get_phys_bounds_uV(extras, idx)
+    raw, _ = drop_suffix_duplicates(raw)
+    remap_adapted = adapt_remap_dict_to_suffixes(raw, remap)
+    final_to_orig = {}
+    for orig, new in remap_adapted.items():
+        base = orig.rsplit('-', 1)[0] if (orig.endswith('-0') or orig.endswith('-1')) else orig
+        final_to_orig[new] = base
+    return phys_bounds_by_name, final_to_orig
+
+
 def read_eeg_raw(edf_path, remap):
     """Tool 7's EEG read ([load] + [B]): `include=` evaluated AT READ TIME with the original names of the
     tool-2 remap (excludes faster off-montage channels, which avoids MNE's partial-read AssertionError and

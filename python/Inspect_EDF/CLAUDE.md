@@ -38,8 +38,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   twin is **regenerated** via `tools_curry/_make_tool2_curry.py` (new code passes through, no generator
   edit needed). Re-run it after editing the EDF Voila.
 - **`get_phys_bounds_uV`**: scale MNE's physical bounds by `units[ch]*1e6`, otherwise mV channels
-  (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tool 6 and `edf_io_lib`:
-  **keep in sync** (until tool 6 imports it, plan phase 4).
+  (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tool 6's load block and
+  `edf_io_lib` (`get_phys_bounds_uV` + `phys_bounds_for_remap`, tool 0's step 5): **keep in sync** (until tool 6
+  reads the EDF through `edf_io_lib`, plan phase 8).
 - **Tool-0 redesign = shared libraries** (`tools/plan_tool0_redesign.md`, in progress on branch
   `tool0-redesign`): tool 0 never re-implements a computation, it imports the batch tools' code from
   `tools/*_lib.py` (`edf_io_lib` = EDF reading). Code is moved **verbatim**, and every move is proven
@@ -134,13 +135,13 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   from the vmin/vmax percentiles and render them grey, **then cap the colour span
   (`vmin = max(vmin, vmax − 45)`)** so a continuum of partly-flat/clipped low-power epochs can't drag
   `vmin` and wash the plot to red (clean channels span < 45 dB → untouched, still byte-identical). Lives in
-  tool 6 (+ its Curry twin via `_make_tool6_curry.py`); tool 0 gets it from `quality_lib` (plan phase 4). → SPEC
+  `tools/quality_lib.py` (tools 6 and 0 import it, the Curry twin gets a copy). → SPEC
   *Cross-cutting → Flat/dead-epoch colour scaling*.
 - **Time-series display cap for DC-coupled data**: DC sources (Curry `.cdt`, any DC export with no
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
   never a fixed window. Currently **Curry-only**. EDF tools keep the uncapped autoscale on purpose (full
   range helps spot export clipping). Extend to any future DC-source tool.
-- **Distribution `n_peaks` histogram = robust-clipped**: in tool 6 the histogram feeding the Savitzky-Golay
+- **Distribution `n_peaks` histogram = robust-clipped**: in tool 6 (`quality_lib`) the histogram feeding the Savitzky-Golay
   curve + `find_peaks` is bounded to robust percentiles (`HIST_CLIP_PCT`, **uniform EDF + Curry**) so rare
   extremes don't over-smooth the curve into a dome/flat line on DC data. `hist_extreme_pct` stays on a
   **separate full-range** histogram (only `n_peaks` changes, now more sensitive). Passes through the Curry
@@ -326,6 +327,10 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   wholesale-replaces (e.g. tool 7's Curry load block, event loader, or `[H]` context reader), in which case
   the change must be mirrored in the generator. (`8bis` is the exception: format-agnostic, so
   `_make_tool8bis_curry.py` is a **verbatim copy + retitle**.)
+- **Tool 6's computation = `tools/quality_lib.py`** (shared with tool 0's step 5): edit the library, never the
+  notebook. The Curry twin does **not** import it: `_make_tool6_curry.py` **copies the library into the twin's
+  cell 1** in place of the import, then strips `bounds_pct` and adds the ±500 µV cap on that copy (its match
+  strings target the library's text): re-run the generator after editing the lib too. → SPEC §6 + *Curry 9*.
 - **Canonical launch cwd = repo root, and shared-module imports must be cwd-independent**: every tool is run
   from `Inspect_EDF/` (see SPEC *How to run*), but the shared-module import must still resolve from either
   cwd. The Curry twins (1,2,4,6,7) probe `cwd`, `cwd/tools_curry`, `dirname(cwd)/tools_curry` for
