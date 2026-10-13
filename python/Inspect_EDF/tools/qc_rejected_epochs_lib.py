@@ -995,9 +995,9 @@ def plot_channel_flag_heatmap(P, pair_flags, methods_sel, in_scope, badness_pct=
     hypno_y = np.array([stage_y.get(s, floor) for s in stages])
     ax_hyp.step(np.arange(n_ep + 1), np.append(hypno_y, hypno_y[-1]), where='post',
                 color='#555555', lw=1.0)
-    for ei in range(n_ep):                                          # REM in red (YASA convention)
+    for ei in range(n_ep):                  # REM in red at the line's width (the toolkit's discreet convention)
         if stages[ei] == 'R':
-            ax_hyp.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=2.0,
+            ax_hyp.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=1.0,
                         solid_capstyle='butt')
     ax_hyp.set_yticks(ytick_pos); ax_hyp.set_yticklabels(ytick_labels, fontsize=6)
     ax_hyp.set_xlim(0, n_ep); ax_hyp.set_xticks([])
@@ -1700,9 +1700,9 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     ax = axes[0]
     xs = np.arange(n_ep + 1)
     ax.step(xs, np.append(hypno_y, hypno_y[-1]), where='post', color='#555555', lw=1.0)
-    for ei in range(n_ep):
+    for ei in range(n_ep):                  # REM in red at the line's width (the toolkit's discreet convention)
         if stages[ei] == 'R':
-            ax.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=2.0,
+            ax.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=1.0,
                     solid_capstyle='butt')
     ax.set_yticks(ytick_pos)
     ax.set_yticklabels(ytick_labels, fontsize=7)

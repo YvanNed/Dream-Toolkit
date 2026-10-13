@@ -389,18 +389,19 @@ def _hypno_rows(extra):
 
 def _step_hypno(ax, labels, title, extra=(), custom_stages=()):
     """Hypnogram as in tools 6/7 (grey line, REM red); `extra` = non-AASM labels drawn as their own rows
-    below N3, each highlighted in its custom-stage colour."""
+    below N3, each highlighted in its custom-stage colour. REM and the extra rows at the line's own width
+    (the toolkit's discreet convention)."""
     rows = _hypno_rows(extra)
     y = np.array([rows.get(s, np.nan) for s in labels], dtype=float)
     ax.step(_hours(len(y)), np.append(y, y[-1] if len(y) else np.nan), where='post',
             color=HYPNO_LINE_COLOR, lw=1.2)
     rem = y == HYPNO_Y['R']
     for i in np.where(rem)[0]:
-        ax.plot(_hours(len(y))[i:i + 2], [y[i], y[i]], color=HYPNO_REM_COLOR, lw=2.5,
+        ax.plot(_hours(len(y))[i:i + 2], [y[i], y[i]], color=HYPNO_REM_COLOR, lw=1.2,
                 solid_capstyle='butt')
     for s in extra:
         for i in np.where(y == rows[s])[0]:
-            ax.plot(_hours(len(y))[i:i + 2], [y[i], y[i]], lw=2.5, solid_capstyle='butt',
+            ax.plot(_hours(len(y))[i:i + 2], [y[i], y[i]], lw=1.2, solid_capstyle='butt',
                     color=non_aasm_color(s, list(custom_stages)))
     ax.set_yticks(list(rows.values()))
     ax.set_yticklabels(list(rows.keys()))
@@ -433,15 +434,19 @@ def plot_hypnograms(gssc, expert, file_id, custom_stages=(), start_dt=None):
 
 
 def _overlay_expert(ax, expert, n_epochs, lw=0.9, x0=0.0):
-    """Expert hypnogram as a black step line over a hypnodensity (W on top, N3 at the bottom).
-    Epochs whose expert label is not W/N1/N2/N3/R (MT, custom, '?') leave a gap. Returns True if drawn."""
+    """Expert hypnogram as a black step line over a hypnodensity (W on top, N3 at the bottom), REM in red at
+    the line's width. Epochs whose expert label is not W/N1/N2/N3/R (MT, custom, '?') leave a gap. Returns
+    True if drawn."""
     if expert is None:
         return False
     labels = np.asarray(expert)[:n_epochs]
     if not np.isin(labels, STAGES).any():
         return False
     y = np.array([OVERLAY_Y.get(s, np.nan) for s in labels], dtype=float)
-    ax.step(x0 + _hours(len(y)), np.append(y, y[-1]), where='post', color='black', lw=lw)
+    x = x0 + _hours(len(y))
+    ax.step(x, np.append(y, y[-1]), where='post', color='black', lw=lw)
+    for i in np.where(labels == 'R')[0]:
+        ax.plot(x[i:i + 2], [y[i], y[i]], color=HYPNO_REM_COLOR, lw=lw, solid_capstyle='butt')
     return True
 
 

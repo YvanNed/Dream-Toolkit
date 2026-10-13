@@ -446,15 +446,18 @@ def compute_hypnospectrogram_sxx(sig_uV, sf, fmin=0.5, fmax=40):
     return f, t, Sxx
 
 
-def render_hypnospectrogram(f, t, Sxx, hypno_labels, custom_stages, trimperc=2.5):
-    """Draw the hypnogram strip + spectrogram from an already-computed dB spectrogram.
-    Split out of plot_hypnospectrogram so the Overview median spectrogram reuses the exact
-    same rendering (colour scaling, dead-epoch greying) as the per-channel figures.
-    Returns a Figure."""
-    from matplotlib.colors import Normalize
+# --- Display conventions of every hypnogram / hypnospectrogram of the toolkit -------------------------------
+REM_COLOR = '#c0392b'          # REM in red on every hypnogram, at the line's own width (the usual PSG convention)
+SPECTROGRAM_CMAP = 'viridis'   # the palette of every hypnospectrogram (tool 6, tool 0's navigator and step 5)
+DEAD_EPOCH_COLOR = '#d9d9d9'   # spectrogram columns without signal (flat / disconnected epochs)
 
-    hypno_labels = np.asarray(hypno_labels)
-    stage_y, stage_colors, ytick_pos, ytick_labels = custom_stage_style(custom_stages)
+
+def spectrogram_colour_scale(Sxx, trimperc=2.5):
+    """Colour scale of a dB spectrogram (frequency x time columns), robust to flat / disconnected stretches:
+    the dead columns are left out of the percentiles and drawn grey, the span is capped at 45 dB. Shared by
+    every hypnospectrogram (tool 6's figures, tool 0's navigator). Returns (Sxx with the dead columns set to
+    NaN, the Normalize, the colormap)."""
+    from matplotlib.colors import Normalize
 
     # Flat / disconnected epochs (whole 30 s columns) have near-zero power -> extreme negative
     # dB; left in, they drag the percentile colour scale down and wash the plot to one colour,
@@ -473,25 +476,37 @@ def render_hypnospectrogram(f, t, Sxx, hypno_labels, custom_stages, trimperc=2.5
     vmin = max(vmin, vmax - 45)   # cap colour span (dB): real EEG structure fits within ~35 dB, so a few degraded low-power epochs can't stretch the scale and wash the plot to one colour
     norm = Normalize(vmin=vmin, vmax=vmax)
     Sxx[:, ~valid] = np.nan   # dead epochs rendered as the colormap 'bad' colour
-    spec_cmap = plt.get_cmap('RdBu_r').copy()
-    spec_cmap.set_bad('#d9d9d9')
+    spec_cmap = plt.get_cmap(SPECTROGRAM_CMAP).copy()
+    spec_cmap.set_bad(DEAD_EPOCH_COLOR)
+    return Sxx, norm, spec_cmap
+
+
+def render_hypnospectrogram(f, t, Sxx, hypno_labels, custom_stages, trimperc=2.5):
+    """Draw the hypnogram strip + spectrogram from an already-computed dB spectrogram.
+    Split out of plot_hypnospectrogram so the Overview median spectrogram reuses the exact
+    same rendering (colour scaling, dead-epoch greying) as the per-channel figures.
+    Returns a Figure."""
+    hypno_labels = np.asarray(hypno_labels)
+    stage_y, stage_colors, ytick_pos, ytick_labels = custom_stage_style(custom_stages)
+    Sxx, norm, spec_cmap = spectrogram_colour_scale(Sxx, trimperc)
 
     fig, (ax0, ax1) = plt.subplots(
         nrows=2, figsize=(10, 4.2),
         gridspec_kw={'height_ratios': [1, 2], 'hspace': 0.1}
     )
 
-    # Hypnogram strip: one y per 30s epoch; gray line, REM red, each custom stage in its colour.
+    # Hypnogram strip: one y per 30s epoch; black line, REM red, each custom stage in its colour, all at the
+    # line's own width (discreet).
     n_ep = len(hypno_labels)
     ep_hours = np.arange(n_ep + 1) * 30 / 3600
     y = np.array([stage_y.get(s, np.nan) for s in hypno_labels], dtype=float)
     y_step = np.append(y, y[-1] if n_ep else np.nan)
     ax0.step(ep_hours, y_step, where='post', color='k', lw=1.0)
     for s in (['R'] + list(custom_stages)):
-        col = 'red' if s == 'R' else stage_colors.get(s)
+        col = REM_COLOR if s == 'R' else stage_colors.get(s)
         for ei in np.where(hypno_labels == s)[0]:
             ax0.plot([ep_hours[ei], ep_hours[ei + 1]], [stage_y[s], stage_y[s]],
-                     color=col, lw=2.2, solid_capstyle='butt')
+                     color=col, lw=1.0, solid_capstyle='butt')
     ax0.set_yticks(ytick_pos)
     ax0.set_yticklabels(ytick_labels, fontsize=8)
     ax0.set_ylim(min(ytick_pos) - 0.8, max(ytick_pos) + 0.8)
@@ -511,7 +526,7 @@ def render_hypnospectrogram(f, t, Sxx, hypno_labels, custom_stages, trimperc=2.5
     # absolute dB axis exposes it -- its whole scale sits tens of dB below a healthy channel's.
     # Attached to both axes so the hypnogram strip stays aligned with the spectrogram.
     cbar = fig.colorbar(im, ax=[ax0, ax1], pad=0.02, fraction=0.046, aspect=30)
-    cbar.set_label('Power [dB]', fontsize=9)
+    cbar.set_label('Power (dB, µV²/Hz)', fontsize=9)
     cbar.ax.tick_params(labelsize=8)
     return fig
 
