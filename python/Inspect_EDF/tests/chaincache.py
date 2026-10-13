@@ -33,10 +33,11 @@ BASE_DEPS = [HERE / 'nbdriver.py', HERE / 'pipeline.py', HERE / 'minidb.py', HER
              HERE / 'chaincache.py', TOOLS / 'generate_test_data.py']
 LIB_PSL, LIB_QC = TOOLS / 'participant_selection_lib.py', TOOLS / 'qc_rejected_epochs_lib.py'
 LIB_MACRO, LIB_EIO = TOOLS / 'macrostructure_lib.py', TOOLS / 'edf_io_lib.py'
+LIB_QUAL = TOOLS / 'quality_lib.py'
 TOOL_DEPS = {
     '5': [TOOLS / '5_compute_sleep_macrostructure_voila.ipynb', LIB_PSL, LIB_MACRO, LIB_EIO],
     '5bis': [TOOLS / '5bis_exclude_sleep_macrostructure_voila.ipynb', LIB_PSL, LIB_MACRO, LIB_EIO],
-    '6': [TOOLS / '6_quality_overview_voila.ipynb', LIB_PSL],
+    '6': [TOOLS / '6_quality_overview_voila.ipynb', LIB_PSL, LIB_QUAL],
     '7': [TOOLS / '7_preprocessing_voila.ipynb', LIB_PSL],
     '8bis': [TOOLS / '8bis_reject_automatically_voila.ipynb', LIB_PSL, LIB_QC],
     '8': [TOOLS / '8_reject_manually_voila.ipynb', LIB_PSL, LIB_QC],
