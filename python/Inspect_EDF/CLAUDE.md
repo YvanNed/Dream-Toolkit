@@ -134,9 +134,13 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **Flat/dead-epoch colour scaling (`plot_hypnospectrogram()`)**: exclude near-zero (dead-epoch) columns
   from the vmin/vmax percentiles and render them grey, **then cap the colour span
   (`vmin = max(vmin, vmax − 45)`)** so a continuum of partly-flat/clipped low-power epochs can't drag
-  `vmin` and wash the plot to red (clean channels span < 45 dB → untouched, still byte-identical). Lives in
-  `tools/quality_lib.py` (tools 6 and 0 import it, the Curry twin gets a copy). → SPEC
-  *Cross-cutting → Flat/dead-epoch colour scaling*.
+  `vmin` and squeeze the sleep structure into a few colours (clean channels span < 45 dB → untouched). One
+  function, `quality_lib.spectrogram_colour_scale`, colours **every** hypnospectrogram (tool 6, tool 0's step 5
+  and explorer navigator; the Curry twin gets a copy). → SPEC *Cross-cutting → Flat/dead-epoch colour scaling*.
+- **Display conventions = one style everywhere** (2026-10-13): REM in red **at the hypnogram line's own
+  width** (never bold; custom stages too) on every hypnogram (tools 0, 3bis, 5, 6, 7, 8, 8bis + twins); every
+  hypnospectrogram in `viridis` with a colour scale `dB (µV²/Hz)`; scored events coloured by family
+  (`macrostructure_lib.EVENT_COLORS`). A new figure follows them. → SPEC *Cross-cutting → Display conventions*.
 - **Time-series display cap for DC-coupled data**: DC sources (Curry `.cdt`, any DC export with no
   clipping) → cap the shared amplitude limit at `y_lim = min(max_p999, 500.0)` (`DISPLAY_YLIM_UV = 500.0`),
   never a fixed window. Currently **Curry-only**. EDF tools keep the uncapped autoscale on purpose (full
@@ -177,8 +181,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   Lights source order txt → `Light` channel → participant table → bounds with `lights_source` provenance and
   the *last-ON-before-first-sleep / first-ON-after-last-sleep* rule. `hypopnea*`/`arousal*` matched by prefix.
   Unmapped labels **not counted** + warned. Uses tool 7's event chain from `edf_io_lib` (its XML parser gains an
-  additive `Desaturation` column). Skip marker = `{file_id}_sleep_metrics.tsv` (checks TSV written first). Globals
-  globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc. **Registry,
+  additive `Desaturation` column). Per recording: checks TSV, metrics TSV, then **last** a
+  `{file_id}_macrostructure_report.html` (the night with its scored events, the metrics, the checks; linked from
+  the database report); skip gate = metrics TSV **and** that report. Globals globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc. **Registry,
   computations (`compute_recording`) and figures live in `tools/macrostructure_lib.py`** (shared with 5bis and
   tool 0): edit the library, not the notebook.
 - **Participant selection (`5bis_exclude_sleep_macrostructure_voila`)**: reads only tool 5's `global_sleep_metrics.tsv`,

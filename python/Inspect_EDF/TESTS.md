@@ -213,7 +213,10 @@ the move, and after the move compares **every file**: tables, settings, the sign
 and time written in them are masked). The expected result is "no difference". Any difference stops the work
 until it is explained. The tools that are not part of the chain (tool 3bis, the automatic scoring), and the
 options the chain leaves off when the moved code depends on them (tool 6 with resampling and high-pass), are
-run for this check on a copy of the test nights (`tests/outside_chain.py`). The checker is itself tested (`test_refactor_check.py`, quick level): it must see a
+run for this check on a copy of the test nights (`tests/outside_chain.py`). The same check serves a change
+meant to alter only figures (e.g. the 2026-10-13 harmonization of the hypnogram and spectrogram colours):
+every table must stay identical, and each figure or report that differs must be one the change announced.
+The checker is itself tested (`test_refactor_check.py`, quick level): it must see a
 changed value, setting, report line, figure, array, a missing or an added file, and must not report a mere
 change of date in a report.
 
@@ -225,6 +228,7 @@ change of date in a report.
 | Every tool | No Python error appears in any tool's output during the chain |
 | Every tool | Every reference file is owned by a tool (none escapes the comparison) |
 | Tool 5bis | Validating writes the criteria exclusions to the registry; a new validation replaces them but keeps the manual decisions; a forced inclusion is refused without a comment; the exclusion columns are never mistaken for sleep metrics |
+| Tool 5 | One report per recording (the night with its scored events, the metrics, the checks), each linked from the database report; a recording whose report is missing counts as not processed: it is the only one run again |
 | Tool 6 | The quality tables flag the excluded participants; `dataset_overview.html` counts only the others and names the excluded one; the excluded participant's report shows the banner |
 | Tool 7 | Deselected channels are in the `.fif` (marked bad) and in the settings file, absent from the flagging tables; the per-stage summary is pooled over the non-excluded participants only; a manual exclusion needs a reason; a re-run with nobody to process still refreshes the tables |
 | Tool 8bis | The decision tables keep exactly the epochs and channels the former cleaned copy held; tool-7 deselected channels are recorded as dropped; an event-count threshold excludes a participant, a re-run without it lifts the exclusion |

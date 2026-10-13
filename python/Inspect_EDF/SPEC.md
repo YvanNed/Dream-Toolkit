@@ -292,7 +292,10 @@ test must point it at a copied `raw_epo`.
   the TSV's 4 decimals, same κ); step 4 equals tool 5 (marker `tool5`, both datasets: every registered metric
   and the lights source of every participant, against tool 5's `_sleep_metrics.tsv`); step 5 equals tool 6
   (marker `tool6`, both datasets: every column of tool 6's `_quality_metrics.tsv` and `_quality_by_stage.tsv`,
-  flags included, for every participant, on tool 6's default hypnogram suffix and thresholds). `test_edf_io_lib.py`
+  flags included, for every participant, on tool 6's default hypnogram suffix and thresholds).
+  `test_subset_selection.py` also checks tool 5's per-recording report: one per participant with its
+  sections, linked from the database report, and part of the skip gate (a recording whose report was deleted
+  is the only one reprocessed). `test_edf_io_lib.py`
   (quick): the rules lifted into `edf_io_lib`
   (tool 7's hypnogram length and suffix choices, tool 3's mid-night `?`, tool 2's context guess, tool 1's
   header table).
@@ -467,7 +470,8 @@ instead of restating them. Only tool-specific deltas are kept inline.
     "report ⇒ data" always holds going forward, and every cumulative/aggregated table is rebuilt by
     **globbing the per-item files on disk**, never from an in-memory list keyed on the current run's
     `attempted_ids`. This closes the failure where an interrupted-then-skipped item's rows were lost
-    forever. Tool 6 markers: `{file_id}_quality_metrics.tsv`. Tool 7 skip marker: `{file_id}_epoch_channel_rejection.tsv`
+    forever. Tool 5 markers: `{file_id}_sleep_metrics.tsv` + `{file_id}_macrostructure_report.html`. Tool 6
+    markers: `{file_id}_quality_metrics.tsv`. Tool 7 skip marker: `{file_id}_epoch_channel_rejection.tsv`
     (the per-(epoch, channel) TSV (gated so files processed by an older version, which lack it, are
     reprocessed and back-filled, its `global_epoch_rejection.tsv` is globbed from disk like
     `global_rejection_by_stage.tsv`, excluding the global file itself since it shares the
@@ -707,7 +711,8 @@ instead of restating them. Only tool-specific deltas are kept inline.
   and `custom_stage_style(custom_stages) -> (stage_y, stage_colors, ytick_pos, ytick_labels)`. Custom
   stages stack **below N3** on every hypnogram axis (`N3=0 → -1, -2, …` in declaration order). The
   step-line stays gray with **REM in red** (YASA convention) and each custom stage in a fixed non-red
-  palette (`#8dd3c7, #ffffb3, #bebada, #80b1d3, #fdb462, #b3de69, #fccde5, #d9d9d9`). Because
+  palette (`#8dd3c7, #ffffb3, #bebada, #80b1d3, #fdb462, #b3de69, #fccde5, #d9d9d9`), all at the line's own
+  width (see *Display conventions* below). Because
   `yasa.plot_spectrogram` / `yasa.Hypnogram` **hard-reject** any non-AASM label, tool 6 (and tool 0, both
   through `quality_lib`) plots the
   hypnospectrogram with a custom **`plot_hypnospectrogram()`** that keeps YASA's stage-agnostic
@@ -715,7 +720,11 @@ instead of restating them. Only tool-specific deltas are kept inline.
   no new dependency (`spectrogram_lspopt` ships with the already-required `yasa`). Reading the JSON is
   non-fatal (`[]` on absent/corrupt). An unregistered non-AASM label keeps the old behaviour (warning +
   per-stage exclusion), never a crash.
-  - **Flat/dead-epoch colour scaling**: YASA's percentile-based colormap range (`np.percentile(Sxx_dB,
+  - **Flat/dead-epoch colour scaling** (`quality_lib.spectrogram_colour_scale`, since 2026-10-13 the colour
+    rule of **every** hypnospectrogram: tool 6's figures, tool 0's step 5 and its explorer navigator; the
+    reds below describe the former `RdBu_r` palette, on today's `viridis` the same failure squeezes the sleep
+    structure into the top colours, measured on a night with a 20 % gap: vmin −66 dB with a plain p5–p99,
+    −24 dB with this rule): YASA's percentile-based colormap range (`np.percentile(Sxx_dB,
     [trimperc, 100-trimperc])` over all pixels) washes the spectrogram out (uniform red, dead-epoch
     stripes) once the fraction of **fully-flat 30 s epochs** (spectrogram columns, **not** the
     channel's sample-level `flat_pct`) exceeds `trimperc` (2.5 %): a flat/disconnected epoch has
@@ -737,7 +746,7 @@ instead of restating them. Only tool-specific deltas are kept inline.
     unaffected. **Absolute-dB colorbar** (`render_hypnospectrogram`, tool 6 per-channel + median):
     because the colour scale is *relative* (auto-scaled per channel), a **globally attenuated / low-gain**
     channel looks structurally normal: the within-channel greying/blue logic can't reveal a uniform
-    problem. A `Power [dB]` colorbar (attached to **both** the hypnogram strip and spectrogram axes so
+    problem. A `Power (dB, µV²/Hz)` colorbar (attached to **both** the hypnogram strip and spectrogram axes so
     they stay x-aligned) exposes it: e.g. the ×0.01 dead channel `734 C3` sits at −55…−23 dB vs a healthy
     channel's −15…+18 dB, an ~40 dB downward shift visible at a glance. This is a display-only change
     (it re-lays-out every per-channel figure, clean ones included, on purpose). The numeric `std_uV` /
@@ -745,9 +754,25 @@ instead of restating them. Only tool-specific deltas are kept inline.
     **`quality_lib`** (tool 6 and tool 0's step 5 import it, the tool-6 Curry twin gets a copy). Applied to the **across-channel median** spectrogram of tool 6's
     Overview (see §6), the very same criterion yields *majority-of-channels* semantics for free: a
     column is greyed only when most channels are dead at that epoch, since that is what makes the
-    median drop: no separate majority-vote code. The tool-8 *navigator* spectrogram is a separate plot
-    (floored at −120 dB, p5–p99) and is left as-is. Diagnostic scripts:
-    `tools/simple_hypnospectro_yasa_vs_fix.py` and `tools/compare_flat_spectrogram_fix.{py,ipynb}`.
+    median drop: no separate majority-vote code. Tool 0's explorer navigator (30 s windows, 50 % overlap)
+    uses the same function since 2026-10-13 (it had a plain p5–p99, not robust to a data gap). Diagnostic
+    scripts: `tools/simple_hypnospectro_yasa_vs_fix.py` and `tools/compare_flat_spectrogram_fix.{py,ipynb}`.
+- **Display conventions (hypnograms, spectrograms, events)**, harmonized on 2026-10-13 (user request), the
+  same in every tool:
+  - **REM in red (`#c0392b`) at the hypnogram line's own width** (discreet, the usual PSG convention),
+    the custom stages in their colour at that width too: tools 0 (steps 3-4, explorer navigator), 3bis
+    (expert and GSSC hypnograms, the expert line over the hypnodensity), 5 (night figure), 6
+    (`render_hypnospectrogram`), 7 (preprocessing report), 8 (`qc_rejected_epochs_lib`: flag heatmap and
+    review strip), 8bis (decision figure) and their Curry twins. One constant: `quality_lib.REM_COLOR`
+    (the notebooks and `autoscoring_lib` write the same value).
+  - **One hypnospectrogram palette, `viridis`** (`quality_lib.SPECTROGRAM_CMAP`, tool 0's former choice; tool
+    6 had `RdBu_r`), dead columns grey (`DEAD_EPOCH_COLOR`), the colour rule above, and **a colour scale on
+    each** labelled `dB (µV²/Hz)` (tool 6's per-channel / median figures, tool 0's navigator).
+  - **Scored events**: one colour per family (`macrostructure_lib.EVENT_COLORS` / `event_family`: apnea red,
+    hypopnea orange, arousal yellow, desaturation blue, limb / movement green, other violet), an event type
+    not mapped by tool 4 grey on tool 5's night figure.
+  The categorical colour images (flag / decision heatmaps of tools 7, 8, 8bis) are not spectrograms: they
+  keep their method / decision legends.
 - **Time-series display cap for DC-coupled data (±500 µV physiological ceiling)**: DC-coupled recordings
   (Curry `.cdt`, and any acquisition exported in DC with no clipping) carry no export clipping, so slow
   drift or artefacts can push the p99.9-based autoscale far past physiological range and crush the real
@@ -838,8 +863,8 @@ the whole database / what to look at), a status badge, a **Run** button, the res
 |---|---|---|---|
 | 1 Load | 2, 3, 4 | Header-only pre-fill on participant change (channels + detected types, tool 2's entry, context channels, hypnogram candidates, event companions); **Load the recording** reads the signal | done |
 | 2 Header | 1 (1bis check) | Per-channel header table (tool 1's `res_theoretical`, filters), dynamic range ≤ 500 µV flagged on EEG, mixed EEG rates, anonymization verdict (the name itself is never shown) | done |
-| 3 Scoring & events | 3, 3bis, 4 | Hypnogram + events overview figure; hypnogram checks (length status, tool 3's mid-night `?` rule `edf_io_lib.mid_recording_unscored`, labels outside AASM / custom / MT, rescored count) and the epoch-by-epoch crosstab of every other hypnogram file of the recording against the one in use (e.g. raw export → tool 3's remapping); events: raw label → tool-4 label (unmapped flagged "tool 7 ignores it"), per type × stage at onset, onsets outside the recording. **Automatic scoring (GSSC, `autoscoring_lib`, imported on first use)**: *Read tool 3bis's scoring* (its `_hypnodensity.tsv` + params, when present) or *Score now with GSSC* (tool 3bis's one-electrode / consensus modes and EOG modes, `score_night`, model loaded once per session); tool 3bis's hypnograms, hypnodensity, agreement (κ, accuracy, F1) with the hypnogram in use (rescorings included), confusion matrix, non-AASM profile | done |
-| 4 Macrostructure | 5, 5bis | `macrostructure_lib.compute_recording` with tool 5's default parameters (sleep-onset rule, ODI / T90 options exposed), on the hypnogram in use (`stages=None` = tool 5 reads the file when nothing is rescored, else the file with the rescored epochs replaced), the study's participant table (`participants.tsv/.csv/.xlsx` at the study root, join column guessed like tool 5) and summary-txt suffix (tool 5's rule). Shows the overview (hypnogram, time in bed shaded with its lights source, sleep onset, end of the sleep period), the AHI severity band, the `METRICS` table with the indicative ranges (out-of-range shaded) and a **"tool 5 on disk" column** (✓ same / ≠ value, read from `{file_id}_sleep_metrics.tsv` when tool 5 has run), tool 5's checks, the provenance, and tool 5bis's last decision for the participant (`participant_selection.tsv`). A recording tool 5 cannot compute shows tool 5's error ("listed in sleep_metrics_failed.tsv") | done |
+| 3 Scoring & events | 3, 3bis, 4 | Hypnogram + events overview figure (tool 5's night figure, `macrostructure_lib.plot_night_overview`, with the manual annotations); hypnogram checks (length status, tool 3's mid-night `?` rule `edf_io_lib.mid_recording_unscored`, labels outside AASM / custom / MT, rescored count) and the epoch-by-epoch crosstab of every other hypnogram file of the recording against the one in use (e.g. raw export → tool 3's remapping); events: raw label → tool-4 label (unmapped flagged "tool 7 ignores it"), per type × stage at onset, onsets outside the recording. **Automatic scoring (GSSC, `autoscoring_lib`, imported on first use)**: *Read tool 3bis's scoring* (its `_hypnodensity.tsv` + params, when present) or *Score now with GSSC* (tool 3bis's one-electrode / consensus modes and EOG modes, `score_night`, model loaded once per session); tool 3bis's hypnograms, hypnodensity, agreement (κ, accuracy, F1) with the hypnogram in use (rescorings included), confusion matrix, non-AASM profile | done |
+| 4 Macrostructure | 5, 5bis | `macrostructure_lib.compute_recording` with tool 5's default parameters (sleep-onset rule, ODI / T90 options exposed), on the hypnogram in use (`stages=None` = tool 5 reads the file when nothing is rescored, else the file with the rescored epochs replaced), the study's participant table (`participants.tsv/.csv/.xlsx` at the study root, join column guessed like tool 5) and summary-txt suffix (tool 5's rule). Shows tool 5's per-recording report (the same `macrostructure_lib` pieces): the night figure (hypnogram, time in bed shaded with its lights source, sleep onset, end of the sleep period, one row per scored-event type), the AHI severity band, the `METRICS` table with the indicative ranges (out-of-range rows light grey, `recording_metrics_html`) and a **"tool 5 on disk" column** (✓ same / ≠ value, read from `{file_id}_sleep_metrics.tsv` when tool 5 has run), tool 5's checks, the provenance, and tool 5bis's last decision for the participant (`participant_selection.tsv`). A recording tool 5 cannot compute shows tool 5's error ("listed in sleep_metrics_failed.tsv") | done |
 | 5 Quality | 6 | Tool 6's run for this participant, `quality_lib`'s functions in tool 6's order: optional resampling then high-pass (`prepare_signal`, on a copy: the explorer's signal is never filtered), tool 6's hypnogram rules (`hypno_vector`, `check_hypno_length`) on the hypnogram file **whole** with the rescored epochs replaced (the scoring done here when there is no file), the EDF physical range of each channel (`edf_io_lib.phys_bounds_for_remap`: tool 6's bounds lines, header only), `compute_channel_metrics` (tool 6's thresholds and defaults exposed), `display_limits`, `compute_channel_spectrograms`. Shows tool 6's overview box (suspicious channels and why, hypnogram warning, what was analysed), the per-channel table (tool 6's columns, flagged rows shaded) with a **"tool 6 on disk" column** (✓ same / ≠ the columns that differ, against `{file_id}_quality_metrics.tsv` when tool 6 has run), the per-stage std / p99.9 / flat tables, and tool 6's Overview figures (butterfly, median spectrogram, PSD, distributions, averaged metrics, pooled and per-electrode metrics). **One channel**: a dropdown (the first flagged channel pre-selected) shows tool 6's channel section (metrics with the interpretation column, histogram, PSD, time series, spectrogram); **Show in the explorer** puts the navigator spectrogram on that channel. The inspection report keeps the tables and the first two overview figures | done |
 | 6 Preprocessing | 7 | | phase 5 |
 | 7 Decision | 8bis (8) | decision source: live 8bis rule or the tool 8 / 8bis tables on disk; feeds step 8 + the explorer | phase 6 |
@@ -878,9 +903,12 @@ at the montage's width (12 in, 14 on a dense montage) with its left / right marg
 rendered without a tight bounding box (`fig_to_png(tight=False)`, the montage's bottom margin widened for its
 time axis) and stretched to the page width (`FIG_LAYOUT`, max 1500 px), so the spectrogram and the traces line
 up and the traces get bigger. Content:
-the navigator (tool 0's own: 30 s-window spectrogram of a chosen channel, p5-p99 colour range, log guarded with
-`np.where(sxx > 0, sxx, nan)`, hypnogram line, scored-event ticks coloured by family, manual annotations,
-rescored epochs, cursor), tool 8's montage (`plot_epoch_montage`: fixed clinical scales, editable per type,
+the navigator (tool 0's own: 30 s-window spectrogram of a chosen channel, log guarded with
+`np.where(sxx > 0, sxx, nan)`, coloured with tool 6's rule `quality_lib.spectrogram_colour_scale` (viridis,
+dead columns grey, robust to a data gap) and a colour scale `dB (µV²/Hz)` in the right margin; the hypnogram
+as a white line, REM red at the line's width; **the scored events in their own thin strip above the
+spectrogram** (ticks coloured by family, manual annotations as violet triangles: they no longer hide the low
+frequencies); rescored epochs; cursor; a one-row legend above the strip), tool 8's montage (`plot_epoch_montage`: fixed clinical scales, editable per type,
 context channels, scored onsets + manual annotations via `merge_onsets_for_display`, channel subset modes) and
 detail panel (`plot_epoch_detail`: PSD against the same-stage epochs + per-channel metric table). Epoch identity
 as in tool 8: `Epoch i (#N, clock)` via `L.epoch_labels` (editable offset), and the same clock row under the
@@ -896,7 +924,8 @@ beside the hypnogram (beside the EDF when there is none), never overwriting the 
 `L.save_manual_events` beside the recording, `source = manual_tool0`, so tool 7 (`cb_manual_events`) and tool 8
 read them like tool 8's own. Unsaved rescoring is guarded (`guard_unsaved`): the first reload / participant
 change is refused with a warning, the same action repeated discards it. **GSSC layer** (once step 3 has a
-scoring): GSSC's hypnogram dashed orange on the navigator, `GSSC <stage> (p %)` in the status line (green =
+scoring): GSSC's hypnogram dashed orange on the navigator (in its legend; **"Show it on the navigator"**
+checkbox `cb_gssc_nav`, on by default, in the GSSC row), `GSSC <stage> (p %)` in the status line (green =
 same as the hypnogram in use, red = different), **Next disagreement** (next W/N1/N2/N3/R epoch where they
 differ) and **Use GSSC's stage** (rescores the current epoch with it): the automatic scoring as a suggestion.
 
@@ -1165,7 +1194,7 @@ refuses an output suffix equal to the expert one):
 - `reports_autoscoring_gssc/<subtree>/{id}_autoscoring_comparison.tsv` (one row: epoch counts,
   `accuracy, kappa, f1_<stage>, mean_confidence, scoring_mode, eeg_used, eog_used, status`),
   `{id}_confusion.tsv` (long `file_id, expert, gssc, n`, removed when no comparison is possible) and
-  `{id}_autoscoring_report.html` (parameters, hypnograms expert/GSSC (grey line, REM red, as tools 6/7),
+  `{id}_autoscoring_report.html` (parameters, hypnograms expert/GSSC (grey line, REM red at the line's width, as every tool),
   hypnodensity with the expert hypnogram as a black line over it (stage names on the right axis),
   agreement table, confusion matrix, then the non-AASM section when present). Stage colours = the toolkit's
   `BASE_STAGE_COLORS`.
@@ -1215,8 +1244,8 @@ WASO, SE (+ SME), latency to N1/N2/N3/REM, stage duration and % of TST, AHI with
 OAI/CAI/MAI/HI sub-indices, PLM index, arousal index**, and optionally **ODI** and **T90 / T88**, from the
 **complete scored hypnogram** (tool 3), the **scored events** (tool 4's `event_remap.json`) and the **EDF
 header**. Definitions follow `tools/sleep_metrics_formulas.txt`. Voila only (no batch
-`.py`, no Curry twin, **no per-participant HTML report**: the outputs are per-recording TSVs plus one
-database-level table / workbook / report). It is the documented **exception** to *Feature tools start
+`.py`, no Curry twin): the outputs are per-recording TSVs + a **per-recording report** (since 2026-10-13, see
+*Per-recording report* below) plus one database-level table / workbook / report. It is the documented **exception** to *Feature tools start
 from the clean epochs*: macrostructure needs every scored epoch, not the ones that survived rejection.
 
 **Code location** (tool-0 redesign, phase 3): the constants and helpers (former setup cell: `METRICS`,
@@ -1343,11 +1372,13 @@ length + companions + Light/SpO2 channel per EDF, `N / M already processed`, war
 hypnograms, length mismatches > 1, missing remap, paths > 245 characters). **2** epoch length, lights
 source + column / channel names, sleep-onset rule, events on/off, ODI and T90 checkboxes (revealed
 parameter boxes derive their initial `display` from the checkbox). **3** the shared participant selector
-(*Cross-cutting → Participant selector*; all or a subset, `Skip already processed`, marker =
-`{file_id}_sleep_metrics.tsv`). **4** run with two progress bars
+(*Cross-cutting → Participant selector*; all or a subset, `Skip already processed`, processed =
+`{file_id}_sleep_metrics.tsv` **and** `{file_id}_macrostructure_report.html` on disk; a table without its
+report is counted in one scan warning and reprocessed). **4** run with two progress bars
 (*Header / Hypnogram / Lights / Events / SpO2 / Write*), per-recording `try/except` (fatal → `failed`,
-non-fatal → check row), `_sleep_metrics_checks.tsv` written **before** `_sleep_metrics.tsv` (the marker
-is written last), then the database outputs rebuilt by **globbing the per-recording TSVs from disk**
+non-fatal → check row), `_sleep_metrics_checks.tsv` written **before** `_sleep_metrics.tsv`, then the
+per-recording report **last** (non-fatal: a failure is a ⚠ line and the recording is reprocessed next
+time), then the database outputs rebuilt by **globbing the per-recording TSVs from disk**
 (workbook and report non-fatal). **5** comparison with a reference table: one row per participant, id
 column dropdown, one row per metric with a reference-column dropdown (auto-guessed by
 `guess_metric_mapping`: an alias dictionary per metric, `%` normalised to `pct` so `N3 %` cannot match
@@ -1390,6 +1421,21 @@ n_hypopnea, oai, cai, mai, hi, ahi` [respiratory], `n_plm, plm_index` [plm], `n_
 [arousal], `n_desaturation, odi` [odi] and `t90_min, t90_pct_tst, t88_sleep_min, spo2_mean_pct, spo2_nadir_pct,
 spo2_artifact_pct` [spo2]. All are declared once in the `METRICS` registry (the single source for the TSV,
 the glossary, the workbook and the report).
+**Per-recording report → `<root>/reports_features_macrostructure/<subtree>/{file_id}_macrostructure_report.html`**
+(since 2026-10-13, user request; `macrostructure_lib.recording_report_items` + `save_report_html`): **the
+night** (`plot_night_overview`: the hypnogram, REM red at the line's width, the time in bed shaded with its
+lights source, sleep onset and the end of the sleep period, and under it **one row per scored-event type**
+with its count, a bar per event as long as its duration, an event type not mapped by tool 4 grey and
+labelled "not mapped"), the AHI severity band, the metrics with their indicative ranges
+(`recording_metrics_html`, out-of-range rows shaded light grey `#e8e8e8`: the figure's yellow is the time in
+bed, user choice), the checks (`recording_checks_html`) and where the numbers
+come from (`recording_provenance_html`). The events come from `compute_recording`'s new `events` key (the
+table as read, additive: nothing else changes) through `events_for_display` (toolkit label from
+`event_remap.json`, `mapped` flag). The same figure and tables are tool 0's step 4 (its step 3 uses the
+figure with the manual annotations, without the lights). The database report links every per-recording
+report (*Per-recording reports* section, `recording_reports_html`, globbed from disk). Kept per recording
+rather than in the database report: one figure per night would make that report heavy and force re-reading
+every hypnogram and event file at every run.
 **Database outputs → `<root>/reports_features_macrostructure/`**: **`global_sleep_metrics.tsv`** (the
 table for statistics: `file_id` + every metric column as float in `METRICS` order + every provenance
 column as text + the participant-info columns joined on the right, rebuilt from the per-recording files
@@ -1397,7 +1443,8 @@ at every run and by Section 5), `global_sleep_metrics_checks.tsv`, `sleep_metric
 `sleep_metrics`, `checks`, `glossary`, `parameters`, `failed`, openpyxl absence non-fatal),
 `sleep_metrics_database_report.html` (summary, time-in-bed overview per recording coloured by lights
 source with the sleep period overlaid, metric distributions with the indicative bands shaded (AHI/ODI
-with the severity bands), checks summary, participant table, comparison section when run, glossary,
+with the severity bands), checks summary, participant table, links to the per-recording reports,
+comparison section when run, glossary,
 **References**, **Where to look**), `sleep_metrics_failed.tsv` (always rewritten, header only when nothing failed) and
 `comparison_with_reference.tsv` (`file_id, metric, ours, reference, ref_column, diff, tol, status` with
 `status` ∈ match / mismatch / missing_ours / missing_reference / missing_both / not_in_reference_table).
