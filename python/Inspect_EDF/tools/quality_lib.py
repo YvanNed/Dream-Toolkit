@@ -490,10 +490,13 @@ def render_hypnospectrogram(f, t, Sxx, hypno_labels, custom_stages, trimperc=2.5
     stage_y, stage_colors, ytick_pos, ytick_labels = custom_stage_style(custom_stages)
     Sxx, norm, spec_cmap = spectrogram_colour_scale(Sxx, trimperc)
 
-    fig, (ax0, ax1) = plt.subplots(
-        nrows=2, figsize=(10, 4.2),
-        gridspec_kw={'height_ratios': [1, 2], 'hspace': 0.1}
-    )
+    # Two rows (hypnogram strip, spectrogram) and a thin right column for the colour scale, used only beside
+    # the spectrogram: both plots keep the same width (aligned in time) and the scale is the spectrogram's height.
+    fig = plt.figure(figsize=(10, 4.2))
+    grid = fig.add_gridspec(2, 2, height_ratios=[1, 2], width_ratios=[1, 0.022], hspace=0.1, wspace=0.03)
+    ax0 = fig.add_subplot(grid[0, 0])
+    ax1 = fig.add_subplot(grid[1, 0])
+    cax = fig.add_subplot(grid[1, 1])
 
     # Hypnogram strip: one y per 30s epoch; black line, REM red, each custom stage in its colour, all at the
     # line's own width (discreet).
@@ -524,8 +527,7 @@ def render_hypnospectrogram(f, t, Sxx, hypno_labels, custom_stages, trimperc=2.5
     # Colorbar in absolute dB. The per-channel colour scale is relative (auto-scaled to each
     # channel), so a globally attenuated / low-gain channel looks structurally normal; showing the
     # absolute dB axis exposes it -- its whole scale sits tens of dB below a healthy channel's.
-    # Attached to both axes so the hypnogram strip stays aligned with the spectrogram.
-    cbar = fig.colorbar(im, ax=[ax0, ax1], pad=0.02, fraction=0.046, aspect=30)
+    cbar = fig.colorbar(im, cax=cax)
     cbar.set_label('Power (dB, µV²/Hz)', fontsize=9)
     cbar.ax.tick_params(labelsize=8)
     return fig
