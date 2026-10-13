@@ -175,14 +175,16 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   convention** (in TIB, out of TST/WASO, `SPT = TST + WASO + other`, `OTHER_STAGE_POLICY` commented alt).
   Lights source order txt → `Light` channel → participant table → bounds with `lights_source` provenance and
   the *last-ON-before-first-sleep / first-ON-after-last-sleep* rule. `hypopnea*`/`arousal*` matched by prefix.
-  Unmapped labels **not counted** + warned. Copies tool 7's event chain (its XML parser gains an additive
-  `Desaturation` column). Skip marker = `{file_id}_sleep_metrics.tsv` (checks TSV written first). Globals
-  globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc.
+  Unmapped labels **not counted** + warned. Uses tool 7's event chain from `edf_io_lib` (its XML parser gains an
+  additive `Desaturation` column). Skip marker = `{file_id}_sleep_metrics.tsv` (checks TSV written first). Globals
+  globbed. Every metric is declared once in the `METRICS` registry: add there, never ad hoc. **Registry,
+  computations (`compute_recording`) and figures live in `tools/macrostructure_lib.py`** (shared with 5bis and
+  tool 0): edit the library, not the notebook.
 - **Participant selection (`5bis_exclude_sleep_macrostructure_voila`)**: reads only tool 5's `global_sleep_metrics.tsv`,
   writes a decision record (`participant_selection.tsv`) beside it **and the registry**: Validate replaces all
   `5bis_criteria` rows, Section 3 saves `5bis_manual` exclusions / forced inclusions at once. Tool 5 stays
-  decision-free. `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **verbatim copies of tool 5's**: edit
-  both notebooks together. The unicorn GIF on Validate is deliberate (`SHOW_UNICORN`). → SPEC §5bis.
+  decision-free. `METRICS` / `PROVENANCE_KEYS` / `REFERENCE_RANGES` are **imported from
+  `macrostructure_lib`** (no copy any more). The unicorn GIF on Validate is deliberate (`SHOW_UNICORN`). → SPEC §5bis.
 - **Preprocessing (`7_preprocessing`)**: `METHOD_ORDER` is the single source of truth so optional
   additions (event rejection, notch, resample, configurable 1/f fit range) keep event/feature-free runs
   **byte-compatible**. Writes the `{file_id}_preprocessing_params.json` sidecar (thresholds actually used

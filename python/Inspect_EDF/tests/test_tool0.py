@@ -190,6 +190,32 @@ def test_step3_gssc_equals_tool3bis(chain, tmp_path):
         assert nb.value("box_gssc_nav.layout.display") == ''         # the explorer offers the GSSC layer
 
 
+@pytest.mark.tool5
+def test_step4_equals_tool5(chain, tmp_path):
+    """Step 4 is tool 5's computation: every registered metric and the lights source of every participant
+    equal tool 5's {file_id}_sleep_metrics.tsv (4 decimals, as tool 5 writes them)."""
+    study = study_copy(chain, tmp_path / 'study')
+    with NotebookSession(T0) as nb:
+        for fid in minidb.PARTICIPANTS[chain['dataset']]:
+            load_participant(nb, study, fid)
+            nb.click('btn_run4')
+            assert nb.value("STATUS['4']") == 'up_to_date', nb.widget_text()[-1500:]
+            mine = nb.value("{k: (None if v is None or not np.isfinite(float(v)) else round(float(v), 4))"
+                            " for k, v in STATE['macro']['metrics'].items()}")
+            lights = nb.value("STATE['macro']['lights']['source']")
+            saved = pd.read_csv(next(Path(chain['data'], 'derivatives', 'features_macrostructure')
+                                     .rglob(f'{fid}_sleep_metrics.tsv')), sep='\t')
+            ref = dict(zip(saved['metric'], saved['value']))
+            assert lights == ref['lights_source'], fid
+            assert mine, fid
+            for key, value in mine.items():
+                expected = float(ref[key])
+                if value is None:
+                    assert np.isnan(expected), (fid, key)
+                else:
+                    assert abs(value - expected) < 1e-9, (fid, key, value, expected)
+
+
 def test_context_channels_match_tool7(chain, tmp_path):
     """The EOG / EMG context traces of the explorer are tool 7's _context-epo.fif companion, sample for
     sample. The test montage has no EOG / EMG, so two EEG channels are declared as context channels."""

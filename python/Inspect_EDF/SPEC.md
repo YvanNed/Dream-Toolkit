@@ -22,6 +22,7 @@ Inspect_EDF/
 │   ├── 0_live_explore_1file_voila.ipynb         # One participant through the whole pipeline (Voila GUI, being rebuilt)
 │   ├── edf_io_lib.py                            # Shared EDF reading (header, channel types, hypnogram, events, context), tool 0
 │   ├── autoscoring_lib.py                       # GSSC scoring + figures of tool 3bis, shared with tool 0
+│   ├── macrostructure_lib.py                    # Tool 5's metric registry, computations + figures, shared with 5bis and 0
 │   ├── 1_inspect_edf_voila.ipynb                # EDF parameter inspector (Voila GUI)
 │   ├── 1_inspect_edf_perdataset.py              # Batch EDF inspection per dataset
 │   ├── 1_inspect_edf_perparticipant.py          # Batch EDF inspection per participant
@@ -246,8 +247,9 @@ downstream ones; before a merge or after a change to a shared module: full). **T
 `tool3`, `tool3bis`, `tool4`, `tool5`, `tool5bis`, `tool6`, `tool7`, `tool8`, `tool8bis`, `tool9` select the tests of the
 tools concerned. Selection rule: the modified tool + every tool downstream in the chain
 (5 → 5bis → 6 → 7 → 8bis → 8 → 9) + every tool importing a modified shared module
-(`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0,
-`autoscoring_lib` → 0, 3bis); a change
+(`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0, 5, 5bis,
+`autoscoring_lib` → 0, 3bis, `macrostructure_lib` → 0, 5, 5bis; `chaincache.TOOL_DEPS` lists them for tools 5 /
+5bis); a change
 to a Curry generator or twin: quick (its notebook executes) + `test_curry_twins.py`. Tool 0 mirrors the
 batch tools, so a change to a tool it mirrors also runs `tool0` (`test_tool0.py` compares them).
 
@@ -286,7 +288,9 @@ test must point it at a copied `raw_epo`.
   having no EOG / EMG; float32 tolerance); step 3 counts every scored event under its tool-4 label; step 3's
   automatic scoring equals tool 3bis's (marker `tool3bis`, synthetic, skipped without gssc: tool 3bis run on a
   copy for one participant, then tool 0 reads its outputs and scores again: same stages, probabilities within
-  the TSV's 4 decimals, same κ). `test_edf_io_lib.py` (quick): the rules lifted into `edf_io_lib`
+  the TSV's 4 decimals, same κ); step 4 equals tool 5 (marker `tool5`, both datasets: every registered metric
+  and the lights source of every participant, against tool 5's `_sleep_metrics.tsv`). `test_edf_io_lib.py`
+  (quick): the rules lifted into `edf_io_lib`
   (tool 7's hypnogram length and suffix choices, tool 3's mid-night `?`, tool 2's context guess, tool 1's
   header table).
 - `outside_chain.py` (a script): tools outside the chain (tool 3bis today) run on a fresh copy of a chain
@@ -508,9 +512,10 @@ instead of restating them. Only tool-specific deltas are kept inline.
   `curry_header`/`rec_start_from_header`), so a Curry dataset shipping a `_event_xml.csv` is picked up too.
   **Tool 0** imports tool 5's copy of the chain from `edf_io_lib` (TXT → CSV → XML, DataFrame with real
   onsets, + the `Desaturation` column), labels translated with `event_remap.json` for display.
-  **Tool 5** copies tool 7's chain verbatim (TXT → CSV → XML, DataFrame with real onsets). Its copy of
-  `_events_df_from_xml` adds an **additive `Desaturation` column** (the XML `<Desaturation>` depth in %, NaN
-  elsewhere) for the ODI threshold: tool 7 is unchanged.
+  **Tool 5** uses tool 7's chain (TXT → CSV → XML, DataFrame with real onsets), whose `_events_df_from_xml`
+  gains an **additive `Desaturation` column** (the XML `<Desaturation>` depth in %, NaN elsewhere) for the ODI
+  threshold: tool 7 is unchanged. Since the tool-0 redesign (phase 3) tool 5 imports this chain from
+  `edf_io_lib` (through `macrostructure_lib`); its former copy was identical, checked function by function.
   - **Event-onset sidecar (`{file_id}_event_onsets.tsv`, tool 7 → tool 8)**: alongside the per-epoch event
     flags, tool 7 persists the **onset of every scored event** that maps to a canonical type, columns
     `type`, `onset_s` (seconds from recording start), `duration_s`, via `build_event_onsets(events_df,
@@ -791,7 +796,7 @@ instead of restating them. Only tool-specific deltas are kept inline.
 ### 0. One participant, the whole pipeline (`0_live_explore_1file_voila.ipynb`)
 
 **Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; phase 1 done:
-steps 1-3 + the explorer). Walks **one participant** through every step of the pipeline, each step in its own
+steps 1-4 + the explorer). Walks **one participant** through every step of the pipeline, each step in its own
 tab, every result shown in the app. Purpose: **diagnose a participant** and **train a new user**. It is a
 viewer: it never modifies a recording, a companion or a batch-tool output.
 
@@ -818,14 +823,15 @@ the whole database / what to look at), a status badge, a **Run** button, the res
 | 1 Load | 2, 3, 4 | Header-only pre-fill on participant change (channels + detected types, tool 2's entry, context channels, hypnogram candidates, event companions); **Load the recording** reads the signal | done |
 | 2 Header | 1 (1bis check) | Per-channel header table (tool 1's `res_theoretical`, filters), dynamic range ≤ 500 µV flagged on EEG, mixed EEG rates, anonymization verdict (the name itself is never shown) | done |
 | 3 Scoring & events | 3, 3bis, 4 | Hypnogram + events overview figure; hypnogram checks (length status, tool 3's mid-night `?` rule `edf_io_lib.mid_recording_unscored`, labels outside AASM / custom / MT, rescored count) and the epoch-by-epoch crosstab of every other hypnogram file of the recording against the one in use (e.g. raw export → tool 3's remapping); events: raw label → tool-4 label (unmapped flagged "tool 7 ignores it"), per type × stage at onset, onsets outside the recording. **Automatic scoring (GSSC, `autoscoring_lib`, imported on first use)**: *Read tool 3bis's scoring* (its `_hypnodensity.tsv` + params, when present) or *Score now with GSSC* (tool 3bis's one-electrode / consensus modes and EOG modes, `score_night`, model loaded once per session); tool 3bis's hypnograms, hypnodensity, agreement (κ, accuracy, F1) with the hypnogram in use (rescorings included), confusion matrix, non-AASM profile | done |
-| 4 Macrostructure | 5, 5bis | | phase 3 |
+| 4 Macrostructure | 5, 5bis | `macrostructure_lib.compute_recording` with tool 5's default parameters (sleep-onset rule, ODI / T90 options exposed), on the hypnogram in use (`stages=None` = tool 5 reads the file when nothing is rescored, else the file with the rescored epochs replaced), the study's participant table (`participants.tsv/.csv/.xlsx` at the study root, join column guessed like tool 5) and summary-txt suffix (tool 5's rule). Shows the overview (hypnogram, time in bed shaded with its lights source, sleep onset, end of the sleep period), the AHI severity band, the `METRICS` table with the indicative ranges (out-of-range shaded) and a **"tool 5 on disk" column** (✓ same / ≠ value, read from `{file_id}_sleep_metrics.tsv` when tool 5 has run), tool 5's checks, the provenance, and tool 5bis's last decision for the participant (`participant_selection.tsv`). A recording tool 5 cannot compute shows tool 5's error ("listed in sleep_metrics_failed.tsv") | done |
 | 5 Quality | 6 | | phase 4 |
 | 6 Preprocessing | 7 | | phase 5 |
 | 7 Decision | 8bis (8) | decision source: live 8bis rule or the tool 8 / 8bis tables on disk; feeds step 8 + the explorer | phase 6 |
 | 8 Spectral | 9 | | phase 7 |
 
 A step's status is *not run* / *up to date* / **OUT OF DATE** (badge + tab-title mark ✓ / ⚠). Nothing is
-recomputed behind the user's back: a rescoring or an annotation marks steps 3, 4, 6, 7, 8 out of date, re-running
+recomputed behind the user's back: a rescoring marks steps 3, 4, 6, 7, 8 out of date, an annotation 3, 6, 7, 8
+(tool 5 never reads the manual annotations), re-running
 step 1 marks 3-8, step 6 marks 7-8, step 7 marks 8 (only steps that have results can become out of date).
 
 **Step 1, loading** (mirrors tool 7): EEG = tool 2's remap when the participant has an entry
@@ -1196,11 +1202,23 @@ header**. Definitions follow `tools/sleep_metrics_formulas.txt`. Voila only (no 
 database-level table / workbook / report). It is the documented **exception** to *Feature tools start
 from the clean epochs*: macrostructure needs every scored epoch, not the ones that survived rejection.
 
+**Code location** (tool-0 redesign, phase 3): the constants and helpers (former setup cell: `METRICS`,
+`METRIC_INFO`, `METRIC_KEYS`, `PROVENANCE_KEYS`, `REFERENCE_RANGES` / `_SOURCES`, `REFERENCES`,
+`AHI_SEVERITY_BANDS`, `OTHER_STAGE_POLICY`, `EVENT_COUNT_WINDOW`, `COST_*`), the computations (former cell 3)
+and the figures / HTML helpers (former cell 4) live in **`tools/macrostructure_lib.py`**, moved verbatim, plus
+**`compute_recording(p, cfg, custom_stages, event_remap, subject, hypno_suffix, evt_txt_suffix, evt_csv_suffix,
+phase=None, stages=None)`**: the computation part of `process_participant` lifted unchanged (header,
+hypnogram, lights, macrostructure, events, ODI, T90, checks, provenance; writes nothing; `phase` = the progress
+callback, `stages` = a hypnogram replacing the file, used by tool 0 for the rescored one). The notebook imports
+its names explicitly (first cell) and keeps the UI, the per-recording writes, the database tables and
+reports. The output folder names (`DATA_DIRNAME`, `REPORTS_DIRNAME`) stay in the notebook. Move proven
+output-neutral (`refactor_check`, whole chain, both datasets). Edit the library for any metric or policy.
+
 **Inputs and what is never read.** Per EDF (recursive scan of the study folder, `file_id` = EDF stem):
 the remapped hypnogram `{file_id}<hypno suffix>` (one label per line, suffix auto-detected with the
 tool-7 rule (longest suffix among those present for ≥ 50 % of the max count) additionally excluding
 `summary` and `studylog` exports from the selection), the scored events through **tool 7's `load_events`
-chain copied verbatim** (TXT → CSV → `.edf.XML`, the `.txt` clock times converted with
+chain** (`edf_io_lib`, TXT → CSV → `.edf.XML`, the `.txt` clock times converted with
 `read_edf_start_datetime`), and the **EDF header only**: `read_edf_header_info()` is a hand-written
 binary read of the fixed header (offsets 168/176 start date-time with the 2-digit-year rule, 184 header
 size, 236 record count, 244 record duration, 252 channel count, then the 16-byte labels) giving the start
@@ -1407,9 +1425,9 @@ columns = the registered tool-5 metrics present, in `METRICS` order, then every 
 column that is not a provenance key (e.g. the old `slow_sleep_*` columns, or participant-table columns
 such as `age`; never `participant_excluded` / `participant_exclude_reason`), grouped under `other`. The
 study folder (for the registry) = the parent of the table's `reports_features_macrostructure*/` folder.
-`METRICS`, `PROVENANCE_KEYS` and `REFERENCE_RANGES` are **copied
-verbatim from tool 5's setup cell**: keep them in sync (the notebook was generated by pulling the blocks
-out of tool 5).
+`METRICS`, `METRIC_KEYS`, `METRIC_INFO`, `PROVENANCE_KEYS` and `REFERENCE_RANGES` are **imported from
+`tools/macrostructure_lib.py`** (tool 5's library) since the tool-0 redesign (phase 3): the two tools can no
+longer disagree. They used to be verbatim copies (checked identical before the switch).
 
 **Criteria (Section 2)**: one row per metric in an accordion per group: enable checkbox, `exclude if <`
 and `exclude if >` (`widgets.Text`, blank = no bound, `,` accepted as decimal separator, invalid text
