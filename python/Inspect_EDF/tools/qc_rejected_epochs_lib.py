@@ -1204,7 +1204,7 @@ def select_montage_channels(P, ei, thresholds, mode='all', n_worst=16, neighbour
 
 
 def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, title_method=None,
-                       scales=None, show_channels=None, number_label=None, manual=None):
+                       scales=None, show_channels=None, number_label=None, manual=None, clock_start=None):
     """Stacked montage of epoch `ei` (± `context` epochs), MNE-raw-plot style. EEG channels on top
     (current-epoch trace coloured by its recomputed flagging method, steepest-gradient jump boxed), then
     the optional EOG/EMG/ECG context traces below — **each channel TYPE on its own FIXED amplitude scale**
@@ -1221,7 +1221,10 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
     `number_label`: optional '(#124 - 23:23:54)' string appended to the epoch number in the title, so the
         montage names the epoch the way the scoring software does; None (default) -> classic title.
     `manual`: optional DataFrame of manual annotations (load_manual_events) drawn as DASHED vertical
-        lines, distinct from the solid scored-event lines; None (default) -> none drawn."""
+        lines, distinct from the solid scored-event lines; None (default) -> none drawn.
+    `clock_start`: optional recording-start datetime (`P['meas_date']`): adds a discreet clock-time row
+        (HH:MM:SS at the epoch boundaries) under the time axis, so the reviewer knows where the window sits in
+        the night without looking up; None (default) -> classic figure."""
     data, sf, ch_all = P['data_uV'], P['sfreq'], P['ch_names']
     stages, meta = P['stages'], P['meta']
     n_ep, n_ch_all, n_t = data.shape
@@ -1392,6 +1395,23 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
         handles.append(Line2D([0], [0], color=MANUAL_COLOR, lw=1.5, ls='--', label='manual annotation'))
     ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(1.005, 1.0), fontsize=7, framealpha=0.9)
     fig.subplots_adjust(left=0.17, right=0.84, top=0.93, bottom=0.08)
+    # Clock time under the seconds axis (optional), at the epoch boundaries of the window: small and grey, so
+    # the seconds axis stays the main one. Placed once the margins are final (its offset is in axes fraction).
+    if clock_start is not None:
+        try:
+            # just under the seconds' tick labels (the epoch boundaries fall on 0 / 30 / 60 s ticks), the
+            # 'Time (s)' label pushed one line lower
+            ax_h_in = ax.get_position().height * fig.get_figheight()
+            clock_ax = ax.secondary_xaxis(-0.27 / ax_h_in)
+            bounds = [k * n_t / sf for k in range(len(idxs) + 1)]
+            clock_ax.set_xticks(bounds)
+            clock_ax.set_xticklabels([(clock_start + pd.to_timedelta(win_start + b, unit='s')).strftime('%H:%M:%S')
+                                      for b in bounds], fontsize=7, color='0.45')
+            clock_ax.tick_params(axis='x', colors='0.45', length=0, pad=1)
+            clock_ax.spines['bottom'].set_visible(False)
+            ax.set_xlabel('Time (s)', labelpad=15)
+        except Exception:
+            pass                        # a clock that cannot be drawn must never cost the montage
     return fig
 
 

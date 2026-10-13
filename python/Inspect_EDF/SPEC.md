@@ -867,7 +867,8 @@ the navigator (tool 0's own: 30 s-window spectrogram of a chosen channel, p5-p99
 rescored epochs, cursor), tool 8's montage (`plot_epoch_montage`: fixed clinical scales, editable per type,
 context channels, scored onsets + manual annotations via `merge_onsets_for_display`, channel subset modes) and
 detail panel (`plot_epoch_detail`: PSD against the same-stage epochs + per-channel metric table). Epoch identity
-as in tool 8: `Epoch i (#N, clock)` via `L.epoch_labels` (editable offset). **Trace colours are a preview**:
+as in tool 8: `Epoch i (#N, clock)` via `L.epoch_labels` (editable offset), and the same clock row under the
+montage's time axis (`clock_start`, montage bottom margin 0.8 in). **Trace colours are a preview**:
 tool 7's time-domain criteria at tool 7's **default** thresholds (`L.DEFAULT_THRESHOLDS`) on the displayed
 signal, said so in the panel; step 6 will provide the real flags. Signal: **as recorded** or a **display
 band-pass 0.3-35 Hz** (rebuilds the displayed epochs, never reaches a computation). Navigation: prev / next,
@@ -1807,7 +1808,13 @@ lengths number the **scored** epoch and suffix the sub-epoch (`#124.2`). `epoch_
 meas_date, offset) -> (number, elapsed, clock)` lives in the shared lib; **`epoch_idx` itself stays the
 0-based MNE index everywhere** (it is the join key with tools 7/8bis/9), the number is display + additive
 columns (`epoch_number`, `onset_s`, `clock_time` in the reviewed TSV, `epoch_number_offset` in the decision
-record).
+record). **Clock row under the montage** (2026-10-12, user request): `plot_epoch_montage(..., clock_start=)`
+draws a discreet second row under the seconds axis, the clock time `HH:MM:SS` (seconds included: two epoch
+boundaries 30 s apart would otherwise show the same minute) at the epoch boundaries of the window, 7-pt grey,
+`Time (s)` moved one line lower, so the reviewer reads where the window sits in the night without looking up.
+Tool 8 (+ its Curry twin) and tool 0's explorer pass `P['meas_date']`; `clock_start=None` (default) keeps the
+classic figure, and a failure to draw it never costs the montage. Display only: no output file changes (the
+montage is in no report).
 
 **Review tracking ("changed" vs "merely seen"**: an override marked a *changed* decision, but nothing
 distinguished an epoch **confirmed** after inspection from one **never opened**) the two are very different
