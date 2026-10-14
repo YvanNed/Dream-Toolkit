@@ -48,13 +48,9 @@ try:
 except Exception:
     HAS_SPECPARAM = False
 
-# Optional PSD smoothing before the 1/f fit (honours tool 7's psd_smoothing sidecar block).
-try:
-    from statsmodels.nonparametric.smoothers_lowess import lowess
-    HAS_LOWESS = True
-except Exception:
-    HAS_LOWESS = False
-    lowess = None
+# PSD smoothing before the 1/f fit (honours tool 7's psd_smoothing sidecar block): tool 7's own functions,
+# from preprocessing_lib (tool-0 redesign phase 5; they were a verbatim copy here).
+from preprocessing_lib import smooth_psd_median, smooth_psd_lowess
 
 mne.set_log_level('ERROR')
 
@@ -423,57 +419,6 @@ def merge_onsets_for_display(onsets, manual):
 # ---------------------------------------------------------------------------
 # Spectral analysis (Welch PSD + specparam 1/f fit) — same config as tool 7
 # ---------------------------------------------------------------------------
-# --- PSD smoothing helpers (copied VERBATIM from 7_preprocessing_voila — keep in sync) ---------
-def smooth_psd_median(psds_uV2, freqs, span_hz=3.0):
-    """Running-median smooth of each (epoch, channel) linear PSD along frequency.
-    Reproduces oscip.smooth_spectrum_median (MATLAB movmedian over a span given in Hz): a centred
-    median filter that removes narrow spikes (residual line-noise harmonics, single-bin artefacts)
-    BEFORE the LOWESS mean smoothing. The Hz span is converted to a point count
-    (span_pts = round(span_hz / freq_res)); pandas rolling(center=True, min_periods=1) matches
-    MATLAB's truncated-window edge behaviour. Non-fatal: a failing (epoch, channel) is left as-is."""
-    freqs = np.asarray(freqs)
-    if len(freqs) < 4:
-        return psds_uV2
-    freq_res = float(np.median(np.diff(freqs)))            # 0.25 Hz for a 4 s Welch window
-    span_pts = max(3, int(round(span_hz / freq_res)))      # 3 Hz span -> ~12 points at 0.25 Hz
-    out = np.array(psds_uV2, dtype=float, copy=True)
-    n_ep, n_ch, _ = out.shape
-    for ei in range(n_ep):
-        for ci in range(n_ch):
-            try:
-                out[ei, ci] = pd.Series(out[ei, ci]).rolling(
-                    window=span_pts, center=True, min_periods=1).median().to_numpy()
-            except Exception:
-                pass                                       # keep the raw spectrum for this (ep, ch)
-    return out
-
-
-def smooth_psd_lowess(psds_uV2, freqs, span_hz=2.0):
-    """LOWESS-smooth each (epoch, channel) linear PSD along frequency.
-    Reproduces oscip.smooth_spectrum from the Snipes MATLAB pipeline: MATLAB's non-robust
-    'lowess' (local linear regression, tricube weights) over a span given in Hz, applied to the
-    LINEAR power (matching oscip; specparam logs it internally afterwards). The Hz span is converted
-    to a fraction of points because statsmodels expresses the window as a fraction (frac), whereas
-    MATLAB uses a point count. it=0 = non-robust (matches 'lowess', not 'rlowess').
-    Returns a smoothed copy with the same shape (n_ep, n_ch, n_freqs). Non-fatal: on failure a given
-    (epoch, channel) spectrum is left unsmoothed so the 1/f fit still runs."""
-    freqs = np.asarray(freqs)
-    if len(freqs) < 4:
-        return psds_uV2
-    freq_res = float(np.median(np.diff(freqs)))            # 0.25 Hz for a 4 s Welch window
-    span_pts = max(3, int(round(span_hz / freq_res)))      # 2 Hz span -> 8 points at 0.25 Hz
-    frac = min(1.0, span_pts / len(freqs))                 # statsmodels wants a fraction of points
-    out = np.array(psds_uV2, dtype=float, copy=True)
-    n_ep, n_ch, _ = out.shape
-    for ei in range(n_ep):
-        for ci in range(n_ch):
-            try:
-                out[ei, ci] = lowess(out[ei, ci], freqs, frac=frac, it=0, return_sorted=False)
-            except Exception:
-                pass                                       # keep the raw spectrum for this (ep, ch)
-    return out
-
-
 def compute_psds(epochs, fmax=45.0, smoothing=None):
     """Welch PSD per epoch/channel, identical config to 7_preprocessing_voila.
     `fmax` is the 1/f fit upper bound (default 2–45 Hz range); the PSD spans up to it.

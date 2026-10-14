@@ -1,8 +1,9 @@
 r"""Tools that are not part of the test chain (3bis), or a tool with options the chain leaves at their defaults
-(6variant = tool 6 with resampling + high-pass), run on a copy of the INPUTS of a chain dataset, for the
-before / after check of the tool-0 redesign (code moved into tools/*_lib.py).
+(6variant = tool 6 with resampling + high-pass; 7variant = tool 7 with resampling, 10 s epochs, no notch,
+LOWESS-only smoothing), run on a copy of the INPUTS of a chain dataset, for the before / after check of the
+tool-0 redesign (code moved into tools/*_lib.py).
 
-    & $py tests/outside_chain.py [3bis] [6variant]   # build %TEMP%/dtk_outside_chain/<dataset>/data, run them
+    & $py tests/outside_chain.py [3bis] [6variant] [7variant]   # build %TEMP%/dtk_outside_chain/<dataset>/data
     $env:DTK_TEST_ROOT = "$env:TEMP\dtk_outside_chain"; $env:DTK_REFACTOR_ROOT = "$env:TEMP\dtk_outside_saved"
     & $py tests/refactor_check.py save before    # then, after the move: run this script again + compare before
 
@@ -27,6 +28,7 @@ CHAIN_ROOT = Path(os.path.realpath(os.path.join(tempfile.gettempdir(), 'dtk_test
 ROOT = Path(os.path.realpath(os.path.join(tempfile.gettempdir(), 'dtk_outside_chain')))
 T3BIS = 'tools/3bis_autoscoring_gssc_voila.ipynb'
 T6 = 'tools/6_quality_overview_voila.ipynb'
+T7 = 'tools/7_preprocessing_voila.ipynb'
 INPUT_SUFFIXES = ('.edf', '.txt', '.csv', '.xml', '.tsv')
 
 
@@ -66,7 +68,27 @@ def run_tool6_variant(data):
         return nb.widget_text()
 
 
-RUNNERS = {'3bis': run_tool3bis, '6variant': run_tool6_variant}
+def run_tool7_variant(data):
+    """Tool 7 with the options the chain leaves at their defaults: resampling to 128 Hz, 10 s epochs, no notch,
+    PSD smoothing by LOWESS only, events flagged. Needs no quality table (channels from the configuration)."""
+    data = Path(data)
+    with NotebookSession(T7) as nb:
+        nb.pick('fc_edf', data)
+        nb.pick('fc_config', data / 'config_param' / 'remap_reref_persubject.json')
+        nb.pick('fc_events', data / 'config_param' / 'event_remap.json')
+        nb.pick('fc_out', data)
+        nb.set('cb_event_reject', True)
+        nb.set('cb_resample', True)
+        nb.set('txt_target_freq', 128)
+        nb.set('dd_epoch_len', 10)
+        nb.set('cb_notch', False)
+        nb.set('cb_ss_median', False)
+        nb.click('btn_load')
+        nb.click('btn_run')
+        return nb.widget_text()
+
+
+RUNNERS = {'3bis': run_tool3bis, '6variant': run_tool6_variant, '7variant': run_tool7_variant}
 
 
 if __name__ == '__main__':
