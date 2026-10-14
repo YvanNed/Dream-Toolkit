@@ -56,9 +56,9 @@ replace_in_cell(
 
 replace_in_cell(
     0,
-    '`*_preprocessing_params.json`) from the selected *raw-epochs* folder: the raw EDF is never reloaded '
+    '`*_preprocessing_params.json`) from the selected *preprocessed-epochs* folder: the raw EDF is never reloaded '
     '(EEG-only,\nwhatever channels the `.fif` holds).',
-    '`*_preprocessing_params.json`) from the selected *raw-epochs* folder: the raw `.cdt` is never '
+    '`*_preprocessing_params.json`) from the selected *preprocessed-epochs* folder: the raw `.cdt` is never '
     'reloaded (EEG-only,\nwhatever channels the `.fif` holds).',
     'prose: raw EDF -> raw .cdt')
 

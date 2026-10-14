@@ -33,7 +33,7 @@ def tsv(path):
 
 
 def sidecar(data, fid):
-    return json.loads((Path(data) / 'derivatives' / 'raw_epo' / f'{fid}_preprocessing_params.json')
+    return json.loads((Path(data) / 'derivatives' / 'preproc_epo' / f'{fid}_preprocessing_params.json')
                       .read_text(encoding='utf-8'))
 
 
@@ -71,7 +71,7 @@ def test_tool7_10s_epochs_then_8bis_and_9(src, tmp_path):
 
     assert sidecar(data, SIM_LINE)['epoch_length_s'] == 10
     stages30 = np.loadtxt(data / f'{SIM_LINE}_Hypnogram_remapped.txt', dtype=str)
-    rej = tsv(data / 'reports_preprocessing' / f'{SIM_LINE}_epoch_rejection.tsv')
+    rej = tsv(data / 'reports_preproc' / f'{SIM_LINE}_epoch_rejection.tsv')
     assert len(rej) == 3 * len(stages30)
     assert rej['stage'].tolist() == np.repeat(stages30, 3).tolist()     # each sub-epoch inherits its stage
 
@@ -79,7 +79,7 @@ def test_tool7_10s_epochs_then_8bis_and_9(src, tmp_path):
     dec = tsv(data / 'derivatives' / 'rejection_auto' / f'{SIM_LINE}_epoch_decision.tsv')
     assert len(dec) == 3 * len(stages30)
 
-    pipeline.run_tool9(data, data / 'derivatives' / 'raw_epo', data / 'derivatives' / 'rejection_auto')
+    pipeline.run_tool9(data, data / 'derivatives' / 'preproc_epo', data / 'derivatives' / 'rejection_auto')
     bp = tsv(data / 'derivatives' / 'features_spectral' / f'{SIM_LINE}_bandpower_epoch.tsv')
     assert bp['epoch_idx'].nunique() == 3 * len(stages30)
     kept = bp[~bp['rejected'] & ~bp['channel_dropped']]
@@ -95,7 +95,7 @@ def test_tool7_resampling(src, tmp_path):
         nb.set('txt_target_freq', 128)
     run_tool7(data, SIM_LINE, resample)
 
-    ep = mne.read_epochs(str(data / 'derivatives' / 'raw_epo' / f'{SIM_LINE}_all-epo.fif'), verbose=False)
+    ep = mne.read_epochs(str(data / 'derivatives' / 'preproc_epo' / f'{SIM_LINE}_all-epo.fif'), verbose=False)
     assert ep.info['sfreq'] == 128 and len(ep) == 480 and ep.get_data().shape[-1] == 30 * 128
     side = sidecar(data, SIM_LINE)
     assert side['sfreq_hz'] == 128 and side['resample'] == {'applied': True, 'target_freq_hz': 128.0}
@@ -115,8 +115,8 @@ def test_tool7_notch_off_keeps_the_line_noise(src, tmp_path):
     run_tool7(data, SIM_LINE, lambda nb: nb.set('cb_notch', False))
 
     assert sidecar(data, SIM_LINE)['notch'] == {'applied': False, 'freq_hz': None}
-    off = power_50hz_db(data / 'derivatives' / 'raw_epo' / f'{SIM_LINE}_all-epo.fif', 'O1')
-    on = power_50hz_db(src / 'derivatives' / 'raw_epo' / f'{SIM_LINE}_all-epo.fif', 'O1')
+    off = power_50hz_db(data / 'derivatives' / 'preproc_epo' / f'{SIM_LINE}_all-epo.fif', 'O1')
+    on = power_50hz_db(src / 'derivatives' / 'preproc_epo' / f'{SIM_LINE}_all-epo.fif', 'O1')
     assert off - on > 10, (off, on)
 
 
@@ -140,19 +140,19 @@ def test_tool7_custom_stage_n4_reaches_8bis_and_9(src, tmp_path):
     side = sidecar(data, SIM_LINE)
     assert side['custom_stages'] == ['N4'] and 'N4' in side['rejection_thresholds']['amplitude_ptp_uV']
     # The .fif must read back whole: a stage without an event code used to make MNE refuse the file.
-    ep = mne.read_epochs(str(data / 'derivatives' / 'raw_epo' / f'{SIM_LINE}_all-epo.fif'), verbose=False)
+    ep = mne.read_epochs(str(data / 'derivatives' / 'preproc_epo' / f'{SIM_LINE}_all-epo.fif'), verbose=False)
     assert len(ep) == len(stages) and ep.event_id['N4'] == 5
     assert ep.metadata['stage'].tolist() == stages.tolist()
-    rej = tsv(data / 'reports_preprocessing' / f'{SIM_LINE}_epoch_rejection.tsv')
+    rej = tsv(data / 'reports_preproc' / f'{SIM_LINE}_epoch_rejection.tsv')
     assert rej['stage'].tolist() == stages.tolist()
-    summary = tsv(data / 'reports_preprocessing' / f'{SIM_LINE}_rejection_summary.tsv')
+    summary = tsv(data / 'reports_preproc' / f'{SIM_LINE}_rejection_summary.tsv')
     assert 'N4' in set(summary['stage'])
 
     pipeline.run_tool8bis(data)
     dec = tsv(data / 'derivatives' / 'rejection_auto' / f'{SIM_LINE}_epoch_decision.tsv')
     assert (dec['stage'] == 'N4').sum() == n4.sum()
 
-    pipeline.run_tool9(data, data / 'derivatives' / 'raw_epo', data / 'derivatives' / 'rejection_auto')
+    pipeline.run_tool9(data, data / 'derivatives' / 'preproc_epo', data / 'derivatives' / 'rejection_auto')
     bp = tsv(data / 'derivatives' / 'features_spectral' / f'{SIM_LINE}_bandpower_epoch.tsv')
     assert set(bp.loc[bp['stage'] == 'N4', 'epoch_idx']) == set(np.flatnonzero(n4))
 
@@ -184,7 +184,7 @@ def test_tool6_resampling_and_highpass(src, tmp_path):
 
 # =====================================================================================  tool 9
 def copy_participant(src, data, fid, folders):
-    """One participant's files of some derivatives/ folders (tool 9 writes its data beside the raw_epo folder
+    """One participant's files of some derivatives/ folders (tool 9 writes its data beside the preproc_epo folder
     it reads, so it must never be pointed at the chain's own)."""
     for folder in folders:
         (data / 'derivatives' / folder).mkdir(parents=True)
@@ -193,10 +193,10 @@ def copy_participant(src, data, fid, folders):
 
 
 def run_tool9_one(src, data, fid, set_option):
-    copy_participant(src, data, fid, ['raw_epo', 'rejection_auto'])
+    copy_participant(src, data, fid, ['preproc_epo', 'rejection_auto'])
     with NotebookSession(pipeline.T9) as nb:
         nb.pick('fc_data', data)
-        nb.pick('fc_raw', data / 'derivatives' / 'raw_epo')
+        nb.pick('fc_raw', data / 'derivatives' / 'preproc_epo')
         nb.pick('fc_decision', data / 'derivatives' / 'rejection_auto')
         nb.click('btn_scan')
         set_option(nb)
@@ -234,16 +234,16 @@ def test_tool9_knee_mode(src, tmp_path):
 def burst_copy(src, tmp_path):
     """Inputs + sim04's tool-7 outputs (the .fif tool 8 reviews)."""
     data = inputs_copy(src, tmp_path / 'data', ['reports_quality_overview'])
-    raw = data / 'derivatives' / 'raw_epo'
+    raw = data / 'derivatives' / 'preproc_epo'
     raw.mkdir(parents=True)
-    for f in (src / 'derivatives' / 'raw_epo').glob(f'{SIM_BURSTS}_*'):
+    for f in (src / 'derivatives' / 'preproc_epo').glob(f'{SIM_BURSTS}_*'):
         shutil.copy2(f, raw / f.name)
     return data
 
 
 def open_navigator(nb, data):
     nb.pick('fc_data', data)
-    nb.pick('fc_raw', data / 'derivatives' / 'raw_epo')
+    nb.pick('fc_raw', data / 'derivatives' / 'preproc_epo')
     nb.set('dd_part', SIM_BURSTS)
     nb.click('btn_load')
     nb.click('btn_run_nav')
@@ -373,13 +373,13 @@ def test_tool9_names_a_stage_out_of_scope_in_a_legacy_decision(src, tmp_path):
     ed = tsv(legacy)
     ed.loc[ed['stage'] == 'N3', ['in_scope', 'rejected']] = False
     ed.to_csv(legacy, sep='	', index=False)
-    for folder, dst in (('raw_epo', data / 'derivatives' / 'raw_epo'), ('rejection_auto', manual)):
+    for folder, dst in (('preproc_epo', data / 'derivatives' / 'preproc_epo'), ('rejection_auto', manual)):
         for f in (src / 'derivatives' / folder).glob(f'{SIM_LINE}_*'):
-            if folder == 'raw_epo' or f.name.endswith('_decision.tsv'):
+            if folder == 'preproc_epo' or f.name.endswith('_decision.tsv'):
                 shutil.copy2(f, dst / f.name)
     with NotebookSession(pipeline.T9) as nb:
         nb.pick('fc_data', data)
-        nb.pick('fc_raw', data / 'derivatives' / 'raw_epo')
+        nb.pick('fc_raw', data / 'derivatives' / 'preproc_epo')
         nb.pick('fc_decision', manual)
         nb.click('btn_scan')
         assert nb.value('"N3" in stage_checkboxes')
@@ -400,7 +400,7 @@ def test_tool8_annotation_is_read_back_by_tool7(src, tmp_path):
     beside the recording; tool 7 with 'Include tool-8 manual annotations' ticked lists it among the event
     onsets and flags its epoch."""
     data = burst_copy(src, tmp_path)
-    scored = tsv(src / 'reports_preprocessing' / f'{SIM_BURSTS}_epoch_rejection.tsv').set_index('epoch_idx')
+    scored = tsv(src / 'reports_preproc' / f'{SIM_BURSTS}_epoch_rejection.tsv').set_index('epoch_idx')
     with NotebookSession(pipeline.T8) as nb:
         nav = open_navigator(nb, data)
         target = next(e for e in nav if not scored.loc[e, 'flag_event'])
@@ -413,9 +413,9 @@ def test_tool8_annotation_is_read_back_by_tool7(src, tmp_path):
     assert manual[['type', 'onset_s', 'epoch_idx']].values.tolist() == [['hypopnea', onset, target]]
 
     run_tool7(data, SIM_BURSTS, lambda nb: nb.set('cb_manual_events', True))
-    onsets = tsv(data / 'derivatives' / 'raw_epo' / f'{SIM_BURSTS}_event_onsets.tsv')
+    onsets = tsv(data / 'derivatives' / 'preproc_epo' / f'{SIM_BURSTS}_event_onsets.tsv')
     assert ((onsets['type'] == 'hypopnea') & np.isclose(onsets['onset_s'], onset)).sum() == 1
-    rej = tsv(data / 'reports_preprocessing' / f'{SIM_BURSTS}_epoch_rejection.tsv').set_index('epoch_idx')
+    rej = tsv(data / 'reports_preproc' / f'{SIM_BURSTS}_epoch_rejection.tsv').set_index('epoch_idx')
     assert rej.loc[target, 'flag_event']
-    flags = tsv(data / 'reports_preprocessing' / f'{SIM_BURSTS}_event_epoch_flags.tsv').set_index('epoch_idx')
+    flags = tsv(data / 'reports_preproc' / f'{SIM_BURSTS}_event_epoch_flags.tsv').set_index('epoch_idx')
     assert flags.loc[target, 'evt_hypopnea']

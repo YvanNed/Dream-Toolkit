@@ -110,8 +110,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   it changes rendered PNGs. Re-run the Curry generators. → SPEC *Cross-cutting → Rejection-method colour palette*.
 - **Event onsets (tool 7 → tool 8)**: tool 7 persists `{file_id}_event_onsets.tsv` (`type`, `onset_s`,
   `duration_s`) so tool 8 can mark event onsets *inside* an epoch without reloading the raw. It is a
-  **montage companion** → written **beside the `.fif` in `derivatives/raw_epo/`** (like `_context-epo.fif`),
-  **not** in `reports_preprocessing/` (tool 8 never reads the reports tree). Optional/additive. Passes
+  **montage companion** → written **beside the `.fif` in `derivatives/preproc_epo/`** (like `_context-epo.fif`),
+  **not** in `reports_preproc/` (tool 8 never reads the reports tree). Optional/additive. Passes
   through the Curry generator. → SPEC *Cross-cutting → Event-onset sidecar* + §7.
 - **High-density montages (32–64 ch) = channel-count-keyed, never format-keyed**: every adaptation lives in
   `qc_rejected_epochs_lib` and is **inert at or below `HD_CHANNEL_THRESHOLD` (12)**, so the 3–6 channel PSG
@@ -216,9 +216,11 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (30 when absent). Event flagging stays onset-only with an **amber warning** when ≠ 30 s. Thread `epoch_sec`
   consistently across tool 7 → context companion → sidecar → tools 8/8bis/`qc_rejected_epochs_lib` (re-run the
   Curry generator). → SPEC §7 *Epoching (configurable epoch length)*.
-  **Output location**: tool 7 writes its `.fif`/sidecar/context under **`derivatives/raw_epo/<subtree>/`**
+  **Output location**: tool 7 writes its `.fif`/sidecar/context under **`derivatives/preproc_epo/<subtree>/`**
   (sibling of tool 8's `rejection_manual/` and 8bis's `rejection_auto/`), and deletes stale same-id copies at
-  the old `derivatives/<subtree>/` location on reprocess.
+  the old `derivatives/<subtree>/` location on reprocess. A former `derivatives/raw_epo/` is renamed once
+  at Run (the former `reports_preprocessing/` is not migrated): the remaining `'raw_epo'` strings in tool 7 are
+  that migration, keep them. → SPEC §7 *Migration notes*.
   **Deselected channels are kept as `bads`** (→ SPEC §7): in the `.fif` and the sidecar (`bad_channels`),
   out of the average reference and of the flagging (dropped right after epoching, put back at save), but
   **re-referenced by hand** (MNE leaves bads in their original reference). Every tool-7 table stays
@@ -236,8 +238,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   editing the `[H]` block.
 - **Manually reject flagged epochs (`8_reject_manually*`)**: reads tool-7 `{file_id}_all-epo.fif`
   (+ optional params JSON), **never reloads the raw EDF**, **never modifies tool-7 outputs**. **Section 1 =
-  optional study folder + Raw-epochs folder** (like 8bis **minus** the reports picker: tool 8 never reads
-  `reports_preprocessing/`). `find_participants` runs on the chosen raw folder so versioned tool-7 runs stay
+  optional study folder + Preprocessed-epochs folder** (like 8bis **minus** the reports picker: tool 8 never reads
+  `reports_preproc/`). `find_participants` runs on the chosen epochs folder so versioned tool-7 runs stay
   apart on the participant dropdown. `data_root` = the selected study folder, else the `derivatives/`
   ancestor's parent. An **"already processed" badge** (`_epoch_decision.tsv` **and** a review/decision TSV on
   disk) is informative only: it blocks nothing. The **Exclude this participant** button writes `8_manual`.
@@ -272,7 +274,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   columns (no reports-folder access, present only when tool-7 event flagging ran). **Data/reports
   split** (both folders precomputed at load: `S['out_folder']` / `S['reports_folder']`): decision tables →
   **`derivatives/rejection_manual/<subtree>/`**. Reviewed TSVs + `qc2b_report.html` → **`reports_rejection_manual/`**
-  (`deriv_root.parent/…`, beside `reports_preprocessing/`).
+  (`deriv_root.parent/…`, beside `reports_preproc/`).
 - **Automatic epoch rejection (`8bis_reject_automatically_voila`)**: **flagging → rejection** decision tool
   (naming scheme: 7 flag → 8 manual → 8bis auto, where 8 and 8bis are alternatives). Voila app. It reads only
   format-agnostic `.fif` + `{file_id}_epoch_channel_rejection.tsv` (both identical from Curry tool 7), so its
@@ -291,9 +293,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   type over its threshold **excludes the whole participant** (registry `8bis_auto`, like all-channels-dropped /
   all-epochs-rejected; a re-run replaces these rows). Provenance columns
   `methods_used`/`event_types_used`/`excluded`/`exclude_reason`. Run tally gains `excluded`. Still format-agnostic → **Curry twin stays a
-  verbatim copy** (re-run `_make_tool8bis_curry.py`). **Section 1 = two explicit folder pickers (raw-epochs + reports) + a Scan button**
+  verbatim copy** (re-run `_make_tool8bis_curry.py`). **Section 1 = two explicit folder pickers (preprocessed-epochs + reports) + a Scan button**
   (+ an optional data-folder chooser that pre-points them): *not* one root scanned recursively, so
-  renamed/versioned tool-7 runs (`raw_epo_v2`, `reports_preprocessing_v2`) stay apart. **Data/reports split**:
+  renamed/versioned tool-7 runs (`preproc_epo_v2`, `reports_preproc_v2`) stay apart. **Data/reports split**:
   `_epoch_decision.tsv` + `_channel_decision.tsv` → **`rejection_auto/`** (`raw_root.parent/…`, beside the raw
   folder; 8bis no longer reads the `.fif`). `_autoreject_decision.tsv` (durable record + global-summary source, written **before**
   the report) + `_autoreject_report.html` + the global summary/report → **`reports_rejection_auto/`**

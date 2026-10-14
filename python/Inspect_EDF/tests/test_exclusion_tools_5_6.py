@@ -54,10 +54,10 @@ def test_tool7_rerun_with_nothing_to_process_refreshes_its_tables(chain, data_co
     log = pipeline.run_tool7(data_copy, before_run=check_stale_box)   # everyone already processed
     assert 'registry changed after' in stale['before']
     assert 'No participant to process' in log
-    g = tsv(data_copy / 'reports_preprocessing' / 'global_epoch_rejection.tsv')
+    g = tsv(data_copy / 'reports_preproc' / 'global_epoch_rejection.tsv')
     assert g.groupby('file_id')['participant_excluded'].first().to_dict() == {
         p[0]: False, p[1]: True, p[2]: False, p[3]: True}
-    stage = tsv(data_copy / 'reports_preprocessing' / 'global_rejection_by_stage.tsv')
+    stage = tsv(data_copy / 'reports_preproc' / 'global_rejection_by_stage.tsv')
     assert (stage['n_participants'] == 2).all() and (stage['n_participants_excluded'] == 2).all()
 
 
@@ -79,7 +79,7 @@ def test_tool6_tables_flag_and_overview_leaves_out_the_excluded(chain):
 @pytest.mark.tool9
 def test_tool9_scan_warns_when_the_registry_is_newer_than_its_tables(chain, data_copy):
     p = minidb.PARTICIPANTS[chain['dataset']]
-    raw, dec = data_copy / 'derivatives' / 'raw_epo', data_copy / 'derivatives' / 'rejection_auto'
+    raw, dec = data_copy / 'derivatives' / 'preproc_epo', data_copy / 'derivatives' / 'rejection_auto'
 
     def scan_text():
         with NotebookSession(pipeline.T9) as nb:

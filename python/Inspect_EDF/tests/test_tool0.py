@@ -56,7 +56,7 @@ def load_participant(nb, study, fid):
 
 
 def tool7_fif(chain, fid):
-    return next(Path(chain['data'], 'derivatives', 'raw_epo').rglob(f'{fid}_all-epo.fif'))
+    return next(Path(chain['data'], 'derivatives', 'preproc_epo').rglob(f'{fid}_all-epo.fif'))
 
 
 def test_step1_reads_the_recording_like_tool7(chain, tmp_path):

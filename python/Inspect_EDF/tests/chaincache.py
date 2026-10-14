@@ -54,7 +54,7 @@ TOOL_OUTPUTS = {
              'reports_features_macrostructure/participant_selection_criteria.tsv',
              'reports_features_macrostructure/participant_selection_report.html'],
     '6': ['reports_quality_overview'],
-    '7': ['derivatives/raw_epo', 'reports_preprocessing'],
+    '7': ['derivatives/preproc_epo', 'reports_preproc'],
     '8bis': ['derivatives/rejection_auto', 'reports_rejection_auto'],
     '8': ['derivatives/rejection_manual', 'reports_rejection_manual'],
     '9': ['derivatives/features_spectral', 'reports_features_spectral'],

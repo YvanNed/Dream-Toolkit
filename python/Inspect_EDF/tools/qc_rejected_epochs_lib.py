@@ -630,7 +630,7 @@ def ordered_present_stages(stages, custom_stages):
 def load_channel_flags(reports_folder, file_id, ch_names, n_epochs):
     """Read tool 7's `{file_id}_epoch_channel_rejection.tsv` into per-method (n_ep, n_ch) bool arrays.
 
-    This is the ONLY thing tool 8 reads from `reports_preprocessing/`, and only when the user points at
+    This is the ONLY thing tool 8 reads from `reports_preproc/`, and only when the user points at
     that folder: it is what makes per-channel badness exact (it carries the per-channel 1/f flags, which
     tool 8 would otherwise have to refit at ~8 min on a 32-channel night). Absent/unreadable -> None,
     and the caller falls back to `recompute_channel_flags` (time-domain only). Non-fatal by design.

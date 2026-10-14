@@ -2,7 +2,7 @@ r"""Regenerate the Curry twin of tool 8bis (automatic epoch rejection) from its 
 
 Tool 8bis is FORMAT-AGNOSTIC: it reads only the tool-7 `{file_id}_all-epo.fif` and
 `{file_id}_epoch_channel_rejection.tsv`, which the Curry tool 7 writes in the identical MNE/TSV format
-(same `derivatives/` + `reports_preprocessing/` layout). There is no EDF-specific signal loading to swap
+(same `derivatives/` + `reports_preproc/` layout). There is no EDF-specific signal loading to swap
 (unlike tools 6/7, whose generators replace `read_raw_edf` / suffix-dedup blocks), so the Curry twin is a
 **verbatim copy** of the EDF notebook with only the title retitled.
 
