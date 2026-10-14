@@ -851,6 +851,14 @@ def set_bads_aside(epochs):
     return bad_names, bad_epochs, all_channel_order
 
 
+def put_bads_back(epochs, bad_epochs, bad_names, all_channel_order):
+    """Tool 7's save step: the deselected (bad) channels back in the epochs, in their original order and
+    marked bad (the .fif keeps every channel; tools 8 and 9 read them as bads)."""
+    epochs.add_channels([bad_epochs], force_update_info=True)
+    epochs.reorder_channels(all_channel_order)
+    epochs.info['bads'] = bad_names
+
+
 def epoch_psd_for_1f(epochs, sf, epoch_sec, do_1f, fit_fmax_val, ss_enabled_val, ss_median_val,
                      ss_median_span_val, ss_span_val, file_id, warn=print):
     """Tool 7's Welch PSD of every (epoch, channel), µV²/Hz, smoothed before the 1/f fit when asked (median

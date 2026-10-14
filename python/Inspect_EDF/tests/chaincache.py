@@ -34,7 +34,7 @@ BASE_DEPS = [HERE / 'nbdriver.py', HERE / 'pipeline.py', HERE / 'minidb.py', HER
 LIB_PSL, LIB_QC = TOOLS / 'participant_selection_lib.py', TOOLS / 'qc_rejected_epochs_lib.py'
 LIB_MACRO, LIB_EIO = TOOLS / 'macrostructure_lib.py', TOOLS / 'edf_io_lib.py'
 LIB_QUAL, LIB_PREP = TOOLS / 'quality_lib.py', TOOLS / 'preprocessing_lib.py'
-LIB_AR = TOOLS / 'autoreject_lib.py'
+LIB_AR, LIB_SPEC = TOOLS / 'autoreject_lib.py', TOOLS / 'spectral_lib.py'
 TOOL_DEPS = {
     '5': [TOOLS / '5_compute_sleep_macrostructure_voila.ipynb', LIB_PSL, LIB_MACRO, LIB_EIO, LIB_QUAL],
     '5bis': [TOOLS / '5bis_exclude_sleep_macrostructure_voila.ipynb', LIB_PSL, LIB_MACRO, LIB_EIO],
@@ -42,7 +42,7 @@ TOOL_DEPS = {
     '7': [TOOLS / '7_preprocessing_voila.ipynb', LIB_PSL, LIB_PREP],
     '8bis': [TOOLS / '8bis_reject_automatically_voila.ipynb', LIB_PSL, LIB_QC, LIB_PREP, LIB_AR],   # qc lib imports PREP
     '8': [TOOLS / '8_reject_manually_voila.ipynb', LIB_PSL, LIB_QC, LIB_PREP],
-    '9': [TOOLS / '9_spectral_features_voila.ipynb', LIB_PSL],
+    '9': [TOOLS / '9_spectral_features_voila.ipynb', LIB_PSL, LIB_SPEC],
 }
 # What each tool writes in the data folder (deleted before it reruns)
 TOOL_OUTPUTS = {
