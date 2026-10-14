@@ -212,7 +212,8 @@ the move, and after the move compares **every file**: tables, settings, the sign
 `.fif` epoch file, the spectrum files, the Excel workbooks, the figures and the HTML reports (once the date
 and time written in them are masked). The expected result is "no difference". Any difference stops the work
 until it is explained. The tools that are not part of the chain (tool 3bis, the automatic scoring), and the
-options the chain leaves off when the moved code depends on them (tool 6 with resampling and high-pass), are
+options the chain leaves off when the moved code depends on them (tool 6 with resampling and high-pass, tool 7
+with resampling, 10 s epochs, no notch and another PSD smoothing), are
 run for this check on a copy of the test nights (`tests/outside_chain.py`). The same check serves a change
 meant to alter only figures (e.g. the 2026-10-13 harmonization of the hypnogram and spectrogram colours):
 every table must stay identical, and each figure or report that differs must be one the change announced.
@@ -237,7 +238,7 @@ change of date in a report.
 | Participant selector | Skip applies in both modes; a subset with already-processed participants shows the warning; the add box only offers participants not yet selected; pasted and clicked ids switch to subset mode; unknown ids are refused; a rescan drops vanished ids |
 | Registry details | Ids match regardless of case; no temporary file is left behind; rewriting the same decisions does not touch the file (so it never looks "changed") |
 | Curry versions | The Curry twins of tools 6, 7, 8 and 8bis are valid Python and contain the new features of their EDF original (they are generated, not run, see below) |
-| Tool 0 | On every participant, loading gives exactly tool 7's epochs, sleep stages, EEG channels and scored events; the EOG / EMG traces are tool 7's, sample for sample; the header step flags the ±50 µV Fp1 like tool 1; the scoring step counts every scored event under its tool-4 label; its automatic scoring (read from tool 3bis's files, or redone in tool 0) gives tool 3bis's stages, probabilities and kappa; its macrostructure step gives tool 5's value for every metric and the same lights-off / lights-on source, on every participant; its signal-quality step gives tool 6's value for every metric of every channel, over the whole night and per sleep stage, and the same flagged channels, on every participant; rescoring and annotations write only their documented files (the annotation in tool 8's format, read back by tool 7's event reading) and touch nothing else in the study |
+| Tool 0 | On every participant, loading gives exactly tool 7's epochs, sleep stages, EEG channels and scored events; the EOG / EMG traces are tool 7's, sample for sample; the header step flags the ±50 µV Fp1 like tool 1; the scoring step counts every scored event under its tool-4 label; its automatic scoring (read from tool 3bis's files, or redone in tool 0) gives tool 3bis's stages, probabilities and kappa; its macrostructure step gives tool 5's value for every metric and the same lights-off / lights-on source, on every participant; its signal-quality step gives tool 6's value for every metric of every channel, over the whole night and per sleep stage, and the same flagged channels, on every participant; its preprocessing step gives tool 7's flag for every epoch and channel and the same per-epoch information, on every participant, and then shows that signal in the explorer; rescoring and annotations write only their documented files (the annotation in tool 8's format, read back by tool 7's event reading) and touch nothing else in the study |
 
 ## What the tests do not check
 

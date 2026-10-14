@@ -5,7 +5,7 @@ its report and annotations into the study folder, never into the chain's).
 
 Step 1 (loading: channels, hypnogram, events, context channels) against tool 7, step 2 (header) against tool
 1's known answer, the explorer's writes (rescoring, annotations, inspection report), step 3 against tool 3bis,
-step 4 against tool 5, step 5 against tool 6."""
+step 4 against tool 5, step 5 against tool 6, step 6 against tool 7."""
 import json
 import shutil
 from pathlib import Path
@@ -248,6 +248,32 @@ def test_step5_equals_tool6(chain, tmp_path):
                 pd.testing.assert_frame_equal(mine.sort_values(sort).reset_index(drop=True),
                                               ref.sort_values(sort).reset_index(drop=True),
                                               check_dtype=False, rtol=1e-9, atol=1e-12, obj=f'{fid} {key}')
+
+
+@pytest.mark.tool7
+def test_step6_equals_tool7(chain, tmp_path):
+    """Step 6 is tool 7's computation: with tool 7's settings of the chain run (defaults, scored events on,
+    the channels tool 6 flags deselected), every (epoch, channel) flag of every participant equals tool 7's
+    {file_id}_epoch_channel_rejection.tsv, and the per-epoch metadata its .fif's."""
+    import mne
+    study = study_copy(chain, tmp_path / 'study', extra=['reports_quality_overview/quality_summary.tsv'])
+    reports = Path(chain['data'], 'reports_preproc')
+    with NotebookSession(T0) as nb:
+        for fid in minidb.PARTICIPANTS[chain['dataset']]:
+            load_participant(nb, study, fid)
+            nb.set('cb_ev6', True)
+            nb.click('btn_run6')
+            assert nb.value("STATUS['6']") == 'up_to_date', nb.widget_text()[-1500:]
+            mine = pd.DataFrame(nb.value("STATE['preproc']['log'].to_dict('list')"))
+            ref = pd.read_csv(next(reports.rglob(f'{fid}_epoch_channel_rejection.tsv')), sep='\t',
+                              dtype={'file_id': str})
+            assert list(mine.columns) == list(ref.columns), fid
+            pd.testing.assert_frame_equal(mine, ref, check_dtype=False, obj=f'{fid} flags')
+            meta0 = pd.DataFrame(nb.value("STATE['preproc']['epochs'].metadata.to_dict('list')"))
+            ep = mne.read_epochs(str(tool7_fif(chain, fid)), preload=False, verbose=False)
+            pd.testing.assert_frame_equal(meta0, ep.metadata.reset_index(drop=True), check_dtype=False,
+                                          obj=f'{fid} metadata')
+            assert nb.value("[v for _, v in dd_signal.options][-1]") == 'preproc', fid   # offered in the explorer
 
 
 def test_context_channels_match_tool7(chain, tmp_path):

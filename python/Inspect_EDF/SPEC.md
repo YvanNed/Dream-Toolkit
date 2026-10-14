@@ -24,6 +24,7 @@ Inspect_EDF/
 │   ├── autoscoring_lib.py                       # GSSC scoring + figures of tool 3bis, shared with tool 0
 │   ├── macrostructure_lib.py                    # Tool 5's metric registry, computations + figures, shared with 5bis and 0
 │   ├── quality_lib.py                           # Tool 6's signal-quality metrics, computation + figures, shared with 0
+│   ├── preprocessing_lib.py                     # Tool 7's preprocessing, flagging, tables + figures, shared with 0 (+ 8 via qc lib)
 │   ├── 1_inspect_edf_voila.ipynb                # EDF parameter inspector (Voila GUI)
 │   ├── 1_inspect_edf_perdataset.py              # Batch EDF inspection per dataset
 │   ├── 1_inspect_edf_perparticipant.py          # Batch EDF inspection per participant
@@ -249,8 +250,9 @@ downstream ones; before a merge or after a change to a shared module: full). **T
 tools concerned. Selection rule: the modified tool + every tool downstream in the chain
 (5 → 5bis → 6 → 7 → 8bis → 8 → 9) + every tool importing a modified shared module
 (`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0, 5, 5bis,
-`autoscoring_lib` → 0, 3bis, `macrostructure_lib` → 0, 5, 5bis, `quality_lib` → 0, 6 (+ the tool-6 Curry twin,
-which copies it); `chaincache.TOOL_DEPS` lists them for tools 5 / 5bis / 6); a change
+`autoscoring_lib` → 0, 3bis, `macrostructure_lib` → 0, 5, 5bis, `quality_lib` → 0, 5, 6 (+ the tool-6 Curry twin,
+which copies it), `preprocessing_lib` → 0, 7, 8, 8bis (the last two through `qc_rejected_epochs_lib`, + the
+tool-7 Curry twin, which imports it); `chaincache.TOOL_DEPS` lists them for tools 5 to 8); a change
 to a Curry generator or twin: quick (its notebook executes) + `test_curry_twins.py`. Tool 0 mirrors the
 batch tools, so a change to a tool it mirrors also runs `tool0` (`test_tool0.py` compares them).
 
@@ -292,8 +294,10 @@ test must point it at a copied `preproc_epo`.
   the TSV's 4 decimals, same κ); step 4 equals tool 5 (marker `tool5`, both datasets: every registered metric
   and the lights source of every participant, against tool 5's `_sleep_metrics.tsv`); step 5 equals tool 6
   (marker `tool6`, both datasets: every column of tool 6's `_quality_metrics.tsv` and `_quality_by_stage.tsv`,
-  flags included, for every participant, on tool 6's default hypnogram suffix and thresholds).
-  `test_subset_selection.py` also checks tool 5's per-recording report: one per participant with its
+  flags included, for every participant, on tool 6's default hypnogram suffix and thresholds); step 6 equals
+  tool 7 (marker `tool7`, both datasets: with the chain's tool-7 settings, events on and tool 6's flagged
+  channels deselected, every column of `_epoch_channel_rejection.tsv` and the `.fif` metadata, for every
+  participant; the explorer then offers the preprocessed signal). `test_subset_selection.py` also checks tool 5's per-recording report: one per participant with its
   sections, linked from the database report, and part of the skip gate (a recording whose report was deleted
   is the only one reprocessed). `test_edf_io_lib.py`
   (quick): the rules lifted into `edf_io_lib`
@@ -302,8 +306,9 @@ test must point it at a copied `preproc_epo`.
 - `outside_chain.py` (a script): what the chain does not run, on a fresh copy of a chain dataset's inputs in
   `%TEMP%/dtk_outside_chain/<dataset>/data`, so `refactor_check.py` can compare its outputs before / after a
   move (`DTK_TEST_ROOT` / `DTK_REFACTOR_ROOT` pointed at that folder and a save folder): `3bis` (tool 3bis,
-  the default) and `6variant` (tool 6 with resampling to 128 Hz + high-pass 0.5 Hz, options the chain leaves
-  off), e.g. `outside_chain.py 6variant`. `refactor_check` also ignores tool 3bis's `scored_at` date.
+  the default), `6variant` (tool 6 with resampling to 128 Hz + high-pass 0.5 Hz, options the chain leaves
+  off) and `7variant` (tool 7 with resampling to 128 Hz, 10 s epochs, no notch, LOWESS-only smoothing, events
+  on, channels from the configuration), e.g. `outside_chain.py 6variant 7variant`. `refactor_check` also ignores tool 3bis's `scored_at` date.
 - `test_variants.py` (full, synthetic, each on a light copy: inputs + only the needed outputs): tool 7 10 s
   epochs (then 8bis, 9), resampling to 128 Hz, notch off (50 Hz on sim03 > 10 dB above the chain), custom
   stage N4 (the `.fif` reads back, N4 reaches 8bis and 9); tool 6 resampling + high-pass (the metrics are
@@ -836,7 +841,7 @@ instead of restating them. Only tool-specific deltas are kept inline.
 
 ### 0. One participant, the whole pipeline (`0_live_explore_1file_voila.ipynb`)
 
-**Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; done: steps 1-5 +
+**Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; done: steps 1-6 +
 the explorer). Walks **one participant** through every step of the pipeline, each step in its own
 tab, every result shown in the app. Purpose: **diagnose a participant** and **train a new user**. It is a
 viewer: it never modifies a recording, a companion or a batch-tool output.
@@ -866,7 +871,7 @@ the whole database / what to look at), a status badge, a **Run** button, the res
 | 3 Scoring & events | 3, 3bis, 4 | Hypnogram + events overview figure (tool 5's night figure, `macrostructure_lib.plot_night_overview`, with the manual annotations); hypnogram checks (length status, tool 3's mid-night `?` rule `edf_io_lib.mid_recording_unscored`, labels outside AASM / custom / MT, rescored count) and the epoch-by-epoch crosstab of every other hypnogram file of the recording against the one in use (e.g. raw export → tool 3's remapping); events: raw label → tool-4 label (unmapped flagged "tool 7 ignores it"), per type × stage at onset, onsets outside the recording. **Automatic scoring (GSSC, `autoscoring_lib`, imported on first use)**: *Read tool 3bis's scoring* (its `_hypnodensity.tsv` + params, when present) or *Score now with GSSC* (tool 3bis's one-electrode / consensus modes and EOG modes, `score_night`, model loaded once per session); tool 3bis's hypnograms, hypnodensity, agreement (κ, accuracy, F1) with the hypnogram in use (rescorings included), confusion matrix, non-AASM profile | done |
 | 4 Macrostructure | 5, 5bis | `macrostructure_lib.compute_recording` with tool 5's default parameters (sleep-onset rule, ODI / T90 options exposed), on the hypnogram in use (`stages=None` = tool 5 reads the file when nothing is rescored, else the file with the rescored epochs replaced), the study's participant table (`participants.tsv/.csv/.xlsx` at the study root, join column guessed like tool 5) and summary-txt suffix (tool 5's rule). Shows tool 5's per-recording report (the same `macrostructure_lib` pieces): the night figure (hypnogram, time in bed shaded with its lights source, sleep onset, end of the sleep period, one row per scored-event type), the AHI severity band, the `METRICS` table with the indicative ranges (out-of-range rows light grey, `recording_metrics_html`) and a **"tool 5 on disk" column** (✓ same / ≠ value, read from `{file_id}_sleep_metrics.tsv` when tool 5 has run), tool 5's checks, the provenance, and tool 5bis's last decision for the participant (`participant_selection.tsv`). A recording tool 5 cannot compute shows tool 5's error ("listed in sleep_metrics_failed.tsv") | done |
 | 5 Quality | 6 | Tool 6's run for this participant, `quality_lib`'s functions in tool 6's order: optional resampling then high-pass (`prepare_signal`, on a copy: the explorer's signal is never filtered), tool 6's hypnogram rules (`hypno_vector`, `check_hypno_length`) on the hypnogram file **whole** with the rescored epochs replaced (the scoring done here when there is no file), the EDF physical range of each channel (`edf_io_lib.phys_bounds_for_remap`: tool 6's bounds lines, header only), `compute_channel_metrics` (tool 6's thresholds and defaults exposed), `display_limits`, `compute_channel_spectrograms`. Shows tool 6's overview box (suspicious channels and why, hypnogram warning, what was analysed), the per-channel table (tool 6's columns, flagged rows shaded) with a **"tool 6 on disk" column** (✓ same / ≠ the columns that differ, against `{file_id}_quality_metrics.tsv` when tool 6 has run), the per-stage std / p99.9 / flat tables, and tool 6's Overview figures (butterfly, median spectrogram, PSD, distributions, averaged metrics, pooled and per-electrode metrics). **One channel**: a dropdown (the first flagged channel pre-selected) shows tool 6's channel section (metrics with the interpretation column, histogram, PSD, time series, spectrogram); **Show in the explorer** puts the navigator spectrogram on that channel. The inspection report keeps the tables and the first two overview figures | done |
-| 6 Preprocessing | 7 | | phase 5 |
+| 6 Preprocessing | 7 | Tool 7's run for this participant, `preprocessing_lib`'s functions in tool 7's order on a copy of the recording: `select_montage_channels` (one keep checkbox per EEG channel, pre-filled like tool 7 from tool 6's `quality_summary.tsv` on disk, unticked = deselected: kept marked bad, never flagged; *Untick step 5's flagged channels* applies the live step-5 flags), `preprocess_raw` (re-reference declared in tool 2, resampling, notch, band-pass), `hypnogram_epochs` on the hypnogram in use (the file whole with the rescorings, as tool 7 reads it), `make_epochs`, `set_bads_aside`, `epoch_psd_for_1f`, the event chain (`edf_io_lib.load_events` + `augment_remap_for_manual`, then `event_flags`), `compute_rejection_masks`, `epoch_metadata`. Every parameter exposed with **tool 7's widget defaults** (notch 50 Hz on, band-pass 0.1–50 Hz on, resampling off, epoch length 30 s, amplitude W 250 / N1 250 / N2 300 / N3 300 / R 250 / custom 250 µV, gradient 100 µV/sample, flat 1 µV, 1/f R² 0.95 / error 0.15 on 2–45 Hz, PSD smoothing median 3 + LOWESS 2 Hz on, events off with every event_remap.json type ticked, manual annotations off). Shows the headline rates (pairs and epochs flagged), the deselected channels, a **"tool 7 on disk" line** (✓ identical / ≠ against `{file_id}_epoch_channel_rejection.tsv`), tool 7's heatmap, per-stage × method and channel × stage tables, the event-type table and the settings. A fatal step shows "Tool 7 would skip this recording" with its `preprocessing_failed.tsv` reason. Nothing is written but the inspection report | done |
 | 7 Decision | 8bis (8) | decision source: live 8bis rule or the tool 8 / 8bis tables on disk; feeds step 8 + the explorer | phase 6 |
 | 8 Spectral | 9 | | phase 7 |
 
@@ -912,10 +917,17 @@ frequencies); rescored epochs; cursor; a one-row legend above the strip), tool 8
 context channels, scored onsets + manual annotations via `merge_onsets_for_display`, channel subset modes) and
 detail panel (`plot_epoch_detail`: PSD against the same-stage epochs + per-channel metric table). Epoch identity
 as in tool 8: `Epoch i (#N, clock)` via `L.epoch_labels` (editable offset), and the same clock row under the
-montage's time axis (`clock_start`, montage bottom margin 0.8 in). **Trace colours are a preview**:
-tool 7's time-domain criteria at tool 7's **default** thresholds (`L.DEFAULT_THRESHOLDS`) on the displayed
-signal, said so in the panel; step 6 will provide the real flags. Signal: **as recorded** or a **display
-band-pass 0.3-35 Hz** (rebuilds the displayed epochs, never reaches a computation). Navigation: prev / next,
+montage's time axis (`clock_start`, montage bottom margin 0.8 in). **Trace colours**: tool 7's criteria at
+the thresholds of the step-6 tab (tool 7's defaults unless changed; formerly `L.DEFAULT_THRESHOLDS`, whose
+amplitude values are not tool 7's), a preview on the displayed signal, said so in the panel. Signal: **as
+recorded**, a **display band-pass 0.3-35 Hz** (rebuilds the displayed epochs, never reaches a computation), or,
+once step 6 has run with 30 s epochs, **preprocessed + flags (step 6)**: step 6's epochs (deselected channels
+left out) shown as tool 8 shows tool 7's `.fif` (trace colours recomputed at step 6's thresholds, the montage
+title from the epoch's `reject_method`, the detail-panel PSD smoothed like step 6). The navigator then gains a
+**flags strip** under the events strip: each epoch's `reject_method` in the toolkit palette
+(`qc_rejected_epochs_lib.HEATMAP_COLORS`, legend = the methods present). A reload of step 1 drops step 6's
+epochs (the option disappears until step 6 runs again); a step 6 with sub-30 s epochs keeps the flags in the
+tab only (the explorer's grid is 30 s). Navigation: prev / next,
 slider, next stage change, keyboard (`ipyevents`, optional: ←/→, w/0, 1, 2, 3, r/4/5, m), listened on the
 figures only so the comment field stays typable. **Rescoring**: stage buttons / keys change the working
 hypnogram (auto-advance optional); **Save** writes `<hypnogram stem>_rescored.txt` + `_rescore_log.tsv`
@@ -1643,6 +1655,29 @@ Key metrics shown in plots: `std_uV`, `flat_pct`, `bounds_pct`, `hist_extreme_pc
 
 Implemented as a Voila notebook with four sections: (1) path configuration, (2) preprocessing and rejection parameters, (3) participant selection, (4) processing loop. **Section 2 is organised into two headed sub-sections**: **Preprocessing** (resampling + notch + bandpass filter) and **Epoch rejection** (peak-to-peak amplitude per stage, flat signal & gradient, 1/f fit quality, and the optional event-based rejection, see below).
 
+**Shared library (`tools/preprocessing_lib.py`, tool-0 redesign phase 5)**: the computation lives in the library,
+**moved verbatim** and shared with tool 0's step 6 (same code, same flags). It holds (a) the former
+shared-function cell minus the EDF reading: `METHOD_ORDER` / `METHOD_CODE` / `MULTIPLE_CODE` / `METHOD_LABEL`, the
+custom-stage helpers, `compute_event_epoch_mask`, `smooth_psd_median` / `smooth_psd_lowess`,
+`compute_rejection_masks`, `build_combined_method_matrix`, `plot_rejection_heatmap` and every `build_*` table / HTML
+helper; (b) the computation lines of `run_preprocessing`, lifted into small functions whose progress-bar updates
+became callbacks (`status`, `step_done`), whose run-log prints a `warn` callback, and whose fatal paths raise
+**`StepFailed(reason, message)`** (the notebook prints `message` and writes `reason` to `preprocessing_failed.tsv`,
+exactly the former strings): `preprocess_raw` ([C] resampling, [D] re-reference, [D2] notch, [E] band-pass),
+`prepare_hypnogram` (read) → `hypnogram_epochs` (length rule, sub-epochs, stage codes), `make_epochs` ([F]),
+`set_bads_aside` ([F2]), `epoch_psd_for_1f` (Welch + smoothing), `event_flags` (masks, counts, onsets),
+`epoch_metadata` (`reject_flag` / `reject_method` / `flag_*` / `evt_*`). The notebook keeps the UI, the EDF reading
+(load block, suffix helpers, the TXT/CSV/XML event chain: the Curry generator rewrites them; plan phase 8), the
+`[H]` context companion, the saves, the report and the Skip / cumulative logic. `select_montage_channels` is a
+copy of the load block's selection lines, used by tool 0 only until phase 8. **The Curry twin imports the library**
+(through the `tools/` path its first cell already probes for `participant_selection_lib`): nothing in it is
+format-specific, so `_make_tool7_curry.py` needs no change (checked: 137 definitions of the twin unchanged, the 25
+moved ones AST-identical to the library's). `qc_rejected_epochs_lib` imports `smooth_psd_median` /
+`smooth_psd_lowess` from the library instead of its former verbatim copy. Every output identical to before
+(`refactor_check` on the whole chain, plus `outside_chain.py 7variant`: resampling 128 Hz, 10 s epochs, no notch,
+LOWESS-only smoothing, events on). **Edit the library, never the notebook**, then re-run `_make_tool7_curry.py`
+only if a notebook block it matches changed.
+
 **Inputs**:
 - The **study folder** (`fc_edf`, recordings scanned recursively) and an **optional output folder**
   (`fc_out`): `out_root_path()` = the output folder when picked, else the study folder. It is the root of
@@ -1749,10 +1784,10 @@ All methods operate on the epoch data in µV. The time-domain methods (amplitude
 
 | Method | Signal feature | Default threshold | Notes |
 |--------|---------------|-------------------|-------|
-| **Amplitude** | Peak-to-peak = `max(epoch) − min(epoch)` | W: 300, N1: 250, N2/N3: 200, REM: 250 µV | Per-stage threshold, W/REM more lenient because muscle and eye-movement artefacts are physiologically common in those stages. Equivalent to MNE's `drop_bad(reject=...)` criterion. |
+| **Amplitude** | Peak-to-peak = `max(epoch) − min(epoch)` | W: 250, N1: 250, N2/N3: 300, REM: 250 µV, custom stages 250 (tool 7's widgets; corrected here on 2026-10-14, this table said W 300 / N2-N3 200, the values `qc_rejected_epochs_lib.DEFAULT_THRESHOLDS`, tool 8's fallback when a participant has no sidecar, also held until that day: now equal to tool 7's, keep them so) | Per-stage threshold, W/REM more lenient because muscle and eye-movement artefacts are physiologically common in those stages. Equivalent to MNE's `drop_bad(reject=...)` criterion. |
 | **Gradient** | `max(|diff(epoch)|)` across time | 100 µV/sample | Maximum sample-to-sample absolute difference, sensitive to sudden jumps, electrode pops, and movement artefacts not captured by peak-to-peak. `diff` and `max` both operate on `axis=-1` (time axis) of the per-channel `(n_epochs, n_times)` slice. Placed next to Amplitude in the UI/tables because both are amplitude/jump measures. |
 | **Flat signal** | Peak-to-peak < threshold | 1 µV | Detects disconnected electrodes or amplifier saturation within a single epoch. Logically identical to MNE's `drop_bad(flat=...)` criterion: both compare `ptp` against a low-amplitude threshold. |
-| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, **configurable fit range, default 2–45 Hz**: see below, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`, **`max_n_peaks=8`**) | MAE > 0.15 OR R² < 0.95 | Fit lower bound ≥ 2 Hz limits slow-wave influence. A **capped peak model is used** (`max_n_peaks=8`): periodic components (spindles, alpha…) are still modelled and removed *before* assessing the aperiodic fit quality, but the peak search is **bounded** so a noisy short-epoch PSD (e.g. 6 s epochs → only ~2 Welch segments) cannot send specparam into a runaway peak-fitting loop that made each fit ~2–3× slower. 8 ≥ the realistic neural peak count on 2–45 Hz, so this is **not** the `max_n_peaks=0` case, which would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. **⚠ Not byte-neutral**: capping at 8 changes MAE/R² (hence the 1/f flag) wherever specparam previously fit > 8 peaks, on clean 30 s PSDs it usually fits few, so existing outputs are *nearly* unchanged, but **reprocess a dataset once to homogenise**. **Sync constraint**: the `SpectralModel(...)` lives in **three copies that must change together**, tool 7 EDF (`compute_rejection_masks`), its Curry twin (regenerated by `_make_tool7_curry.py`), and `qc_rejected_epochs_lib.py` (tools 8/8bis recompute attribution with it), else tool 8's recomputed attribution diverges from tool 7's flags. **Tool 9's copy is deliberately NOT part of this set** and carries different peak settings on purpose (artefact detection vs faithful decomposition): see §9. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). The UI shows the two thresholds **R² first, then error** with an inline note (`f1_metric_desc`) contrasting them: **R²** (relative, 0–1) captures *shape* mismatch (e.g. wrong 1/f slope), **error** (MAE, absolute log-power) captures *absolute* misfit (e.g. broadband noise or line ridges). |
+| **1/f fit quality** | Specparam aperiodic fit on Welch PSD (4 s windows, **configurable fit range, default 2–45 Hz**: see below, `aperiodic_mode='fixed'`, `peak_width_limits=[0.5, 20]`, `min_peak_height=0.3`, **`max_n_peaks=8`**) | MAE > 0.15 OR R² < 0.95 | Fit lower bound ≥ 2 Hz limits slow-wave influence. A **capped peak model is used** (`max_n_peaks=8`): periodic components (spindles, alpha…) are still modelled and removed *before* assessing the aperiodic fit quality, but the peak search is **bounded** so a noisy short-epoch PSD (e.g. 6 s epochs → only ~2 Welch segments) cannot send specparam into a runaway peak-fitting loop that made each fit ~2–3× slower. 8 ≥ the realistic neural peak count on 2–45 Hz, so this is **not** the `max_n_peaks=0` case, which would push all peak power into the aperiodic component, degrading R² and over-rejecting nearly every N2/REM epoch. **⚠ Not byte-neutral**: capping at 8 changes MAE/R² (hence the 1/f flag) wherever specparam previously fit > 8 peaks, on clean 30 s PSDs it usually fits few, so existing outputs are *nearly* unchanged, but **reprocess a dataset once to homogenise**. **Sync constraint**: the `SpectralModel(...)` lives in **two copies that must change together**, `preprocessing_lib.compute_rejection_masks` (tool 7 EDF, its Curry twin and tool 0 since phase 5 of the tool-0 redesign; formerly the notebook and its twin, two copies) and `qc_rejected_epochs_lib.py` (tools 8/8bis recompute attribution with it), else tool 8's recomputed attribution diverges from tool 7's flags. **Tool 9's copy is deliberately NOT part of this set** and carries different peak settings on purpose (artefact detection vs faithful decomposition): see §9. Metrics read via `get_metrics('error','mae')` / `get_metrics('gof','squared')` (specparam 2.x). A failed fit is treated as a double flag (both error and R²). The UI shows the two thresholds **R² first, then error** with an inline note (`f1_metric_desc`) contrasting them: **R²** (relative, 0–1) captures *shape* mismatch (e.g. wrong 1/f slope), **error** (MAE, absolute log-power) captures *absolute* misfit (e.g. broadband noise or line ridges). |
 | **Event containment** *(optional, off by default)* | 30 s epoch **containing the onset** of any **selected** canonical scored-event type (arousal, apnea, hypopnea, limb movement, SpO2 desaturation…) | **onset-only**: the epoch holding the event `Start`, the annotated `Duration` is **intentionally ignored** (clinicians often score only the onset without a reliable duration), so each event flags exactly one epoch | **Epoch-level** flag, replicated across all channels → single `flag_event` column. Events read with the shared CSV-first / XML-fallback `load_events(edf, csv_suffix)`, raw labels mapped to canonical via `event_remap.json` (tool 4). UI: a checkbox to activate, **a wrapping row of checkboxes for the canonical types** (all shown at once, populated from the chosen `event_remap.json`, **all ticked by default**, activating event flagging with nothing selected would silently be a no-op, so the useful default is "flag on every known type, then untick"), and an inline note explaining the onset-only rule so the choice is informed. A **"Count affected epochs"** button reports, over the participants currently checked in Section 3, how many epochs each selected type would flag (overall + per stage) using only the hypnogram length/stages and events: no signal is read. Missing/unreadable event companions are non-fatal (the file keeps the other 5 methods, never added to `failed`). |
 
 **Configurable 1/f fit range**: the aperiodic fit window is user-editable via two widgets
@@ -1806,7 +1841,8 @@ exponent↔offset correlation-residual outliers (z>10), and uses a stricter **R�
 matches only the *smoothing* (MAE 0.15 / R² kept editable), not those extra decision criteria,
 out of scope here. *Tool-8 consistency*: the per-epoch reject **decision** comes from the `.fif` metadata
 (authoritative), and tool 8's **recomputed per-channel attribution / report PSDs now honour the smoothing**:
- `qc_rejected_epochs_lib.py` carries the same two helpers (kept in sync with tool 7), `load_params` reads
+ `qc_rejected_epochs_lib.py` imports tool 7's two helpers from `preprocessing_lib` (a verbatim copy until the tool-0
+redesign's phase 5), `load_params` reads
 the `psd_smoothing` block into `info['psd_smoothing']`, and `compute_psds(epochs, fmax, smoothing=…)`
 smooths the recomputed PSD (median-then-LOWESS) before the fit. All four tool-8 call sites (batch +
 Voila cells 5/7) pass `info.get('psd_smoothing')`. `smoothing=None` (older sidecars) is byte-identical.

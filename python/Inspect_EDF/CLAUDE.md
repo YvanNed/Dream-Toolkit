@@ -201,14 +201,18 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   the 1/f fit** (`cb_ssmatch` + optional `cb_ss_median`, two-stage median→LOWESS on the linear Welch PSD,
   oscip parity) is built in and **defaults ON** (the one *not* byte-neutral default: untick it to reproduce the
   pre-smoothing output, and reprocess to homogenise), recorded in the additive `psd_smoothing` sidecar block and
-  **honoured by tool 8** when it recomputes PSDs (`smooth_psd_median`/`smooth_psd_lowess` are duplicated in tool 7
-  + `qc_rejected_epochs_lib.py`, keep them in sync. 8bis is untouched since it never recomputes a PSD). In the 1/f box the
+  **honoured by tool 8** when it recomputes PSDs (`smooth_psd_median`/`smooth_psd_lowess` live in `preprocessing_lib`,
+  which `qc_rejected_epochs_lib.py` imports. 8bis is untouched since it never recomputes a PSD). In the 1/f box the
   **fit parameters** (fit range + smoothing) are grouped one indent shallower than the **thresholds**, and all
   methods' thresholds share that deeper indent so they stay aligned (Variant A, layout-only). `compute_rejection_masks`
   reads the signal **one channel at a
   time** from `epochs` (+ `del raw` after epoching) to bound memory on dense montages. The formulas are unchanged, so
   every output is **byte-identical** to the former full-array version, and the code is format-agnostic (EDF
   source, passes through to the Curry twin). Keep the formulas in sync with tool 8's `qc_rejected_epochs_lib.py`.
+  **Tool 7's computation = `tools/preprocessing_lib.py`** (shared with tool 0's step 6; the Curry twin imports it):
+  edit the library, never the notebook. Its fatal steps raise `StepFailed(reason, message)` (the former
+  `preprocessing_failed.tsv` reasons). The EDF reading, the `[H]` companion and the saves stay in the notebook (the
+  Curry generator rewrites them). → SPEC §7 *Shared library*.
   **Configurable epoch length** (`dd_epoch_len`, divisors of 30 ≥ 5 s, **default 30 = classic**): the 30 s
   hypnogram is validated/trimmed at 30 s then **expanded** (`np.repeat(expert_hypno, 30 // epoch_sec)`) so each
   sub-epoch inherits its parent stage. `make_fixed_length_epochs(duration=epoch_sec)`, event mask + context
@@ -253,8 +257,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   writes an **8bis-style decision record** (`_manualreject_decision.tsv` → `_manualreject_report.html` →
   `global_manualreject_summary.tsv` **rebuilt by globbing the per-file TSVs**, data written before the report). Analysis + plotting live in a **shared module
   `qc_rejected_epochs_lib.py`**: a deliberate exception to the "duplicate helpers" rule. The copied bits
-  (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, **PSD smoothing `smooth_psd_median`/`smooth_psd_lowess`**,
-  1/f fit) must stay in sync with tool 7. `compute_psds(…, smoothing=info['psd_smoothing'])` re-applies the
+  (`METHOD_ORDER`, palette, custom-stage helpers, Welch-PSD, 1/f fit) must stay in sync with tool 7; the PSD
+  smoothing `smooth_psd_median`/`smooth_psd_lowess` is imported from `preprocessing_lib` (no copy any more), and
+  `DEFAULT_THRESHOLDS` (fallback without a sidecar) must equal tool 7's widget defaults. `compute_psds(…, smoothing=info['psd_smoothing'])` re-applies the
   tool-7 smoothing so the recomputed plots/attribution match the flags (`smoothing=None` → byte-identical).
   **Epoch identity**: the UI shows `Epoch 123 (#124) — 01:01:30 — 23:23:54`. Compumedics numbers from 1 at
   the recording start and tool 7 epochs from t=0 with no crop, so `#N = index + 1` (editable offset). The
