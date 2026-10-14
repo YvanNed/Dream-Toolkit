@@ -177,14 +177,15 @@ def header_channel_table(header):
 # Channel types (detect_channel_types from 0_live_explore_1file; detect_context_channels from
 # 2_select&remap_channels_edf, Section 2bis)
 # ---------------------------------------------------------------------------------------------------------
-# Anchored full 10-10 system + mastoids + older 10-20 temporal labels (T3/T4/T5/T6) + literal 'EEG'.
+# Anchored full 10-10 system + mastoid / auricular references (M1/M2, A1/A2, as in tools 1 and 2) + older
+# 10-20 temporal labels (T3/T4/T5/T6) + literal 'EEG'.
 KNOWN_EEG_CHANNEL_RE = (
     r'\bFp1\b|\bFpz\b|\bFp2\b|\bAF7\b|\bAF3\b|\bAFz\b|\bAF4\b|\bAF8\b|\bF7\b|\bF5\b|\bF3\b|\bF1\b'
     r'|\bFz\b|\bF2\b|\bF4\b|\bF6\b|\bF8\b|\bFT7\b|\bFC5\b|\bFC3\b|\bFC1\b|\bFCz\b|\bFC2\b|\bFC4\b'
     r'|\bFC6\b|\bFT8\b|\bT7\b|\bC5\b|\bC3\b|\bC1\b|\bCz\b|\bC2\b|\bC4\b|\bC6\b|\bT8\b|\bTP7\b|\bCP5\b'
     r'|\bCP3\b|\bCP1\b|\bCPz\b|\bCP2\b|\bCP4\b|\bCP6\b|\bTP8\b|\bP7\b|\bP5\b|\bP3\b|\bP1\b|\bPz\b'
     r'|\bP2\b|\bP4\b|\bP6\b|\bP8\b|\bPO7\b|\bPO5\b|\bPO3\b|\bPOz\b|\bPO4\b|\bPO6\b|\bPO8\b|\bO1\b'
-    r'|\bOz\b|\bO2\b|\bM1\b|\bM2\b|\bT3\b|\bT4\b|\bT5\b|\bT6\b|EEG'
+    r'|\bOz\b|\bO2\b|\bM1\b|\bM2\b|\bA1\b|\bA2\b|\bT3\b|\bT4\b|\bT5\b|\bT6\b|EEG'
 )
 
 
