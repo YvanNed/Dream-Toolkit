@@ -23,6 +23,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import mne
 from sklearn.metrics import accuracy_score, cohen_kappa_score, f1_score, confusion_matrix
+from edf_io_lib import (   # one copy, in edf_io_lib (same folder)
+    CUSTOM_STAGE_PALETTE, load_custom_stages, drop_suffix_duplicates, adapt_remap_dict_to_suffixes, read_edf_start_datetime, load_json_lenient,
+)
 
 # GSSC and torch are imported apart: without them nothing can be scored, but the rest still works.
 # torch >= 2.6 loads model files with weights_only=True by default, which refuses the weights shipped
@@ -60,25 +63,6 @@ STAGE_COLORS = {'W': '#969696', 'N1': '#9e9ac8', 'N2': '#807dba', 'N3': '#6a51a3
 # Hypnogram drawing of tools 6/7: grey step line, REM highlighted in red.
 HYPNO_LINE_COLOR = '#555555'
 HYPNO_REM_COLOR = '#c0392b'
-# Custom (non-AASM) stages declared in config_param/custom_stages.json (written by tool 3): same helper and
-# palette as tools 6/7/9 (red is reserved for REM on the hypnogram).
-CUSTOM_STAGE_PALETTE = ['#8dd3c7', '#ffffb3', '#bebada', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9']
-
-
-def load_custom_stages(folder):
-    """Read config_param/custom_stages.json; return list of kept non-AASM labels ([] if absent/unreadable)."""
-    if not folder:
-        return []
-    path = Path(folder) / 'config_param' / 'custom_stages.json'
-    if not path.exists():
-        return []
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = json.load(f)
-        stages = data.get('custom_stages', []) if isinstance(data, dict) else []
-        return [str(s) for s in stages]
-    except Exception:
-        return []
 
 
 def non_aasm_group(label, custom_stages):
@@ -109,44 +93,6 @@ OVERLAY_Y = {'W': 0.9, 'R': 0.7, 'N1': 0.5, 'N2': 0.3, 'N3': 0.1}
 CONSENSUS_RULE = 'loudest_vote'   # GSSC's native rule: the most confident combination wins, per epoch
 # EOG names that tool 2 may have kept in the remap: never offered as an EEG electrode.
 EOG_NAME_RE = re.compile(r'(EOG|^LOC$|^ROC$|^E1$|^E2$)', re.IGNORECASE)
-
-
-def drop_suffix_duplicates(raw):
-    """Keep only the -0 variant when MNE creates -0/-1 duplicates for repeated channel names."""
-    groups = {}
-    for ch in raw.ch_names:
-        if ch.endswith('-0') or ch.endswith('-1'):
-            base = ch.rsplit('-', 1)[0]
-            groups.setdefault(base, []).append(ch)
-    to_drop = []
-    for base, ch_list in groups.items():
-        if any(c.endswith('-0') for c in ch_list):
-            to_drop.extend(c for c in ch_list if not c.endswith('-0'))
-    if to_drop:
-        raw.drop_channels(to_drop)
-    return raw, to_drop
-
-
-def adapt_remap_dict_to_suffixes(raw, remap_dict):
-    """Handle MNE's -0 suffix when the remap config uses the base channel name."""
-    ch_set = set(raw.ch_names)
-    new_remap = {}
-    for base_label, target in remap_dict.items():
-        if base_label in ch_set:
-            new_remap[base_label] = target
-        elif f'{base_label}-0' in ch_set:
-            new_remap[f'{base_label}-0'] = target
-    return new_remap
-
-
-def load_json_lenient(path):
-    """Strict parse, then repair one trailing comma before a closing } or ] (a common hand edit)."""
-    with open(path, encoding='utf-8') as f:
-        text = f.read()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return json.loads(re.sub(r',(\s*[}\]])', r'\1', text))
 
 
 def list_edf(folder):
@@ -317,23 +263,6 @@ def compare_scoring(expert, gssc):
 
 def _hours(n):
     return np.arange(n + 1) * EPOCH_SEC / 3600
-
-
-def read_edf_start_datetime(edf_path):
-    """Read the EDF recording-start datetime from the fixed header (offset 168 = date
-    'dd.mm.yy', 176 = time 'hh.mm.ss'), applying the EDF 2-digit-year clipping
-    (00-84 -> 20xx, 85-99 -> 19xx). Header-only read; returns a datetime or None on failure."""
-    try:
-        with open(edf_path, 'rb') as f:
-            f.seek(168)
-            date_str = f.read(8).decode('ascii', 'replace').strip()   # dd.mm.yy
-            time_str = f.read(8).decode('ascii', 'replace').strip()   # hh.mm.ss
-        dd, mm, yy = (int(x) for x in date_str.split('.'))
-        hh, mi, ss = (int(x) for x in time_str.split('.'))
-        year = 2000 + yy if yy <= 84 else 1900 + yy
-        return datetime.datetime(year, mm, dd, hh, mi, ss)
-    except Exception:
-        return None
 
 
 def recording_start(edf_path):

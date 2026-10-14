@@ -1,9 +1,9 @@
-r"""Tools that are not part of the test chain (3bis), or a tool with options the chain leaves at their defaults
-(6variant = tool 6 with resampling + high-pass; 7variant = tool 7 with resampling, 10 s epochs, no notch,
+r"""Tools that are not part of the test chain (1, 3, 3bis), or a tool with options the chain leaves at their
+defaults (6variant = tool 6 with resampling + high-pass; 7variant = tool 7 with resampling, 10 s epochs, no notch,
 LOWESS-only smoothing), run on a copy of the INPUTS of a chain dataset, for the before / after check of the
 tool-0 redesign (code moved into tools/*_lib.py).
 
-    & $py tests/outside_chain.py [3bis] [6variant] [7variant]   # build %TEMP%/dtk_outside_chain/<dataset>/data
+    & $py tests/outside_chain.py [1] [3] [3bis] [6variant] [7variant]   # build %TEMP%/dtk_outside_chain/<dataset>/data
     $env:DTK_TEST_ROOT = "$env:TEMP\dtk_outside_chain"; $env:DTK_REFACTOR_ROOT = "$env:TEMP\dtk_outside_saved"
     & $py tests/refactor_check.py save before    # then, after the move: run this script again + compare before
 
@@ -26,6 +26,8 @@ from nbdriver import NotebookSession  # noqa: E402
 
 CHAIN_ROOT = Path(os.path.realpath(os.path.join(tempfile.gettempdir(), 'dtk_tests')))
 ROOT = Path(os.path.realpath(os.path.join(tempfile.gettempdir(), 'dtk_outside_chain')))
+T1 = 'tools/1_inspect_edf_voila.ipynb'
+T3 = 'tools/3_remap_hypno_voila.ipynb'
 T3BIS = 'tools/3bis_autoscoring_gssc_voila.ipynb'
 T6 = 'tools/6_quality_overview_voila.ipynb'
 T7 = 'tools/7_preprocessing_voila.ipynb'
@@ -44,6 +46,31 @@ def build(dataset):
             shutil.copy2(f, data / f.name)
     shutil.copytree(src / 'config_param', data / 'config_param')
     return data
+
+
+def run_tool1(data):
+    """Tool 1 on every recording, with its defaults (EEG + EOG inspected)."""
+    with NotebookSession(T1) as nb:
+        nb.pick('chooser', data)
+        nb.click('run_button')
+        return nb.widget_text()
+
+
+def run_tool3(data):
+    """Tool 3 on the raw hypnogram exports when there are some (else the remapped hypnograms), with its default
+    rules, written under its own suffix (the chain's hypnograms stay untouched)."""
+    suffix = '_Hypnogram_Export.txt' if any(Path(data).glob('*_Hypnogram_Export.txt')) else '_Hypnogram_remapped.txt'
+    with NotebookSession(T3) as nb:
+        nb.pick('chooser', data)
+        nb.set('suffix_box', suffix)
+        nb.set('output_suffix_box', '_Hypnogram_tool3.txt')
+        nb.click('btn_scan')
+        nb.click('btn_run_remap')
+        nb.click_labelled('Save remapping')
+        nb.click('btn_run_save')
+        nb.click_labelled('Save files')
+        nb.click('btn_run_verify')
+        return nb.widget_text()
 
 
 def run_tool3bis(data):
@@ -88,7 +115,8 @@ def run_tool7_variant(data):
         return nb.widget_text()
 
 
-RUNNERS = {'3bis': run_tool3bis, '6variant': run_tool6_variant, '7variant': run_tool7_variant}
+RUNNERS = {'1': run_tool1, '3': run_tool3, '3bis': run_tool3bis, '6variant': run_tool6_variant,
+           '7variant': run_tool7_variant}
 
 
 if __name__ == '__main__':

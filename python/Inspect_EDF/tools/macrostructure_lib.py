@@ -30,6 +30,7 @@ import mne
 from edf_io_lib import (read_edf_start_datetime, event_companion_paths, _events_df_from_txt, _events_df_from_csv,
                         _events_df_from_xml, _events_df_from_manual, augment_remap_for_manual, load_events,
                         load_event_remap)
+from edf_io_lib import (load_custom_stages, parse_custom_field)   # one copy, in edf_io_lib (same folder)
 
 try:
     import openpyxl                     # noqa: F401  (pandas needs it to read/write .xlsx)
@@ -232,32 +233,6 @@ def norm(p):
 def strip_accents(text):
     """'Luminosité' -> 'Luminosite' (accent-insensitive column matching)."""
     return ''.join(c for c in unicodedata.normalize('NFKD', str(text)) if not unicodedata.combining(c))
-
-
-def parse_custom_field(text):
-    """Parse the comma-separated 'Custom stages' field into a clean, de-duplicated list."""
-    seen = []
-    for tok in str(text).split(','):
-        tok = tok.strip()
-        if tok and tok not in seen:
-            seen.append(tok)
-    return seen
-
-
-def load_custom_stages(folder):
-    """Read config_param/custom_stages.json under the study folder ([] when absent)."""
-    if not folder:
-        return []
-    path = Path(folder) / 'config_param' / 'custom_stages.json'
-    if not path.exists():
-        return []
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = json.load(f)
-        stages = data.get('custom_stages', []) if isinstance(data, dict) else []
-        return [str(s) for s in stages]
-    except Exception:
-        return []
 
 
 def load_subject_info(path):

@@ -19,6 +19,9 @@ import numpy as np
 import pandas as pd
 from specparam import SpectralModel
 from statsmodels.nonparametric.smoothers_lowess import lowess
+from edf_io_lib import (   # one copy, in edf_io_lib (same folder)
+    BASE_STAGE_COLORS, CUSTOM_STAGE_PALETTE, load_custom_stages, parse_custom_field, custom_stage_style,
+)
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -33,55 +36,6 @@ MULTIPLE_CODE = len(METHOD_ORDER) + 1                            # 7 = multiple
 # Human-readable method names for report table headers (keyed by METHOD_ORDER labels).
 METHOD_LABEL  = {'amplitude': 'Amplitude', 'gradient': 'Gradient', 'flat': 'Flat',
                  '1f_r2': '1/f R²', '1f_error': '1/f error', 'event': 'Event'}
-
-
-# --- Custom (non-AASM) sleep stages -------------------------------------------
-# Declared in config_param/custom_stages.json (written by 3_remap_hypno) and recognised here
-# so per-stage rejection thresholds, summaries and the heatmap include them.
-BASE_STAGE_COLORS = {'W': '#969696', 'N1': '#9e9ac8', 'N2': '#807dba', 'N3': '#6a51a3', 'R': '#c994c7'}
-# Distinct, non-red palette for custom stages (red is reserved for REM on the hypnogram).
-CUSTOM_STAGE_PALETTE = ['#8dd3c7', '#ffffb3', '#bebada', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9']
-
-
-def load_custom_stages(folder):
-    """Read config_param/custom_stages.json; return list of kept non-AASM labels ([] if absent/unreadable)."""
-    if not folder:
-        return []
-    path = Path(folder) / 'config_param' / 'custom_stages.json'
-    if not path.exists():
-        return []
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = json.load(f)
-        stages = data.get('custom_stages', []) if isinstance(data, dict) else []
-        return [str(s) for s in stages]
-    except Exception:
-        return []
-
-
-def parse_custom_field(text):
-    """Parse the comma-separated 'Custom stages' field into a clean, de-duplicated list."""
-    seen = []
-    for tok in str(text).split(','):
-        tok = tok.strip()
-        if tok and tok not in seen:
-            seen.append(tok)
-    return seen
-
-
-def custom_stage_style(custom_stages):
-    """Stage -> y-position, stage -> colour, and axis ticks for AASM + custom stages.
-    AASM keeps YASA heights (W top ... N3 bottom); custom stages stack below N3 (-1, -2, ...).
-    Returns (stage_y, stage_colors, ytick_pos, ytick_labels)."""
-    stage_y = {'W': 4, 'R': 3, 'N1': 2, 'N2': 1, 'N3': 0}
-    stage_colors = dict(BASE_STAGE_COLORS)
-    for i, cs in enumerate(custom_stages):
-        stage_y[cs] = -1 - i
-        stage_colors[cs] = CUSTOM_STAGE_PALETTE[i % len(CUSTOM_STAGE_PALETTE)]
-    ordered = sorted(stage_y.items(), key=lambda kv: kv[1])
-    ytick_pos = [y for _, y in ordered]
-    ytick_labels = ['REM' if s == 'R' else s for s, _ in ordered]
-    return stage_y, stage_colors, ytick_pos, ytick_labels
 
 
 def compute_event_epoch_mask(events_df, event_remap, selected_types, n_epochs,

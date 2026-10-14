@@ -38,88 +38,19 @@ except ImportError as e:
 else:
     print("✅ Packages and functions successfully imported!")
 
-# custom function to detect automatically and return the encoding of edf file
-def detect_encoding(byte_string, min_confidence=0.6):
-    result = chardet.detect(byte_string)
-    encoding = result['encoding']
-    confidence = result['confidence']
-    if encoding is None or confidence < min_confidence:
-        raise UnicodeDecodeError("chardet", byte_string, 0, len(byte_string),
-                                 f"\tUnable to reliably detect encoding. Detected: {encoding} with confidence {confidence}")
-    return encoding
-
-# custom function to read information from EDF headers, without using the pyedflib package (that was too strict for ICEBERG)
-# EDF file should follow a strict format, dedicating a specific number of octets for each type of information.
-# it means that we can read the info octet by octet by specifying the number of octets we expect for the next variable (that is known from the EDF norm)
-def read_edf_header_custom(file_path):
-    with open(file_path, 'rb') as f: # open the file in binary mode, to read octet by octet. 
-        header = {}
-        # detect encoding
-        raw_header = f.read(256)
-        encoding = detect_encoding(raw_header)
-        # print(f"\tDetected encoding for {file_path} : {encoding}")
-        # Rewind to the beginning of the file
-        f.seek(0)
-        
-        # the first 256 octets are global subject info
-        header['version'] = f.read(8).decode(encoding).strip()
-        header['patient_id'] = f.read(80).decode(encoding).strip()
-        header['recording_id'] = f.read(80).decode(encoding).strip()
-        header['start_date'] = f.read(8).decode(encoding).strip()
-        header['start_time'] = f.read(8).decode(encoding).strip()
-        header['header_bytes'] = int(f.read(8).decode(encoding).strip())
-        header['reserved'] = f.read(44).decode(encoding).strip()
-        header['n_data_records'] = int(f.read(8).decode(encoding).strip())
-        header['duration_data_record'] = float(f.read(8).decode(encoding).strip())
-        header['n_channels'] = int(f.read(4).decode(encoding).strip())
-        
-        # get info per channel
-        n = header['n_channels']
-        channel_fields = {
-            'channel': [],
-            'transducer_type': [],
-            'dimension': [],
-            'physical_min': [],
-            'physical_max': [],
-            'digital_min': [],
-            'digital_max': [],
-            'prefiltering': [],
-            'samples_per_record': [],
-            'reserved': [],
-        }
-
-        for key in channel_fields:
-            length = {
-                'channel': 16,
-                'transducer_type': 80,
-                'dimension': 8,
-                'physical_min': 8,
-                'physical_max': 8,
-                'digital_min': 8,
-                'digital_max': 8,
-                'prefiltering': 80,
-                'samples_per_record': 8,
-                'reserved': 32,
-            }[key]
-            channel_fields[key] = [f.read(length).decode(encoding).strip() for _ in range(n)]
-
-        header.update(channel_fields)
-
-        # The per-channel EDF header field is the NUMBER OF SAMPLES PER DATA RECORD,
-        # not the sampling frequency. In classic EDF the data-record duration is 1 s, so the
-        # two coincide; but in EDF+ the record duration often differs (e.g. 0.1 s or 2 s), so the
-        # true sampling frequency must be obtained by dividing (e.g. 40 / 0.1 = 400 Hz).
-        dur = header['duration_data_record']
-        sf_list = []
-        for s in header['samples_per_record']:
-            try:
-                sf = float(s) / dur
-                sf_list.append(str(int(sf)) if sf == int(sf) else str(sf))
-            except (ValueError, ZeroDivisionError):
-                sf_list.append(s)  # fall back to the raw field if non-numeric or zero duration
-        header['sampling_frequency'] = sf_list
-
-    return header
+# Shared EDF reading (tools/edf_io_lib.py, also used by tool 1's Voila app and tool 0): found beside this script,
+# or from the repo root / tools/ when the cells are run one by one (Spyder: no __file__).
+import sys
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    _here = os.getcwd()
+for _p in [_here, os.getcwd(), os.path.join(os.getcwd(), 'tools')]:
+    if os.path.isfile(os.path.join(_p, 'edf_io_lib.py')):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+        break
+from edf_io_lib import detect_encoding, read_edf_header_custom, extract_filter_value, check_anonymization
 
 # custum function to get the path of a folder by selecting it from a browsing window 
 def get_folder_path():
@@ -130,54 +61,6 @@ def get_folder_path():
     folder = filedialog.askdirectory(title="Select the study folder that contains your dataset", parent = root)
     root.destroy()          # close the graphic initialysation
     return folder
-
-# function to extract filter information from the string in headers
-def extract_filter_value(s, tag):
-    if pd.isna(s):
-        return None
-    match = re.search(rf'{tag}[:\s]*([\d\.]+)\s*', s, re.IGNORECASE)
-    return float(match.group(1)) if match else None
-
-def check_anonymization(patient_id, file_stem):
-    """
-    Inspect the EDF+ 'Local Patient ID' field for a real patient name.
-    EDF+ format: 'code sex birthdate name' (space-separated).
-    Compumedics encodes the name as 'LASTNAME_FIRSTNAME'; anonymized = 'X_X'.
-    The name subfield (4th token onward) is isolated, placeholder chars
-    (X/x/_ and whitespace) are stripped; anything remaining is a real name.
-    Filename cross-check: each name token with >=3 chars is searched in the
-    file stem (case-insensitive) to detect PII leaking into the file name.
-    """
-    parts = str(patient_id).split()
-    if len(parts) >= 4:
-        name_subfield = ' '.join(parts[3:])
-        id_format = 'edf+'
-    else:
-        name_subfield = str(patient_id).strip()
-        id_format = 'non-standard'
-    cleaned = re.sub(r'[Xx_,;\s]', '', name_subfield)
-    header_anonymized = (cleaned == '')
-    name_in_filename = False
-    if not header_anonymized:
-        stem_low = file_stem.lower()
-        for token in re.split(r'[_\s]+', name_subfield):
-            if len(token) >= 3 and token.lower() in stem_low:
-                name_in_filename = True
-                break
-    warning = ''
-    if not header_anonymized:
-        if name_in_filename:
-            warning = 'PII in header AND file name'
-        else:
-            warning = 'header NOT anonymized (file name looks clean)'
-    return {
-        'patient_id'        : str(patient_id).strip(),
-        'name_subfield'     : name_subfield,
-        'patient_id_format' : id_format,
-        'header_anonymized' : header_anonymized,
-        'name_in_filename'  : name_in_filename,
-        'anon_warning'      : warning,
-    }
 
 # function to plot df columns more properly
 def join_uniq(series):
@@ -592,20 +475,5 @@ if not anon_df.empty:
     n_warn = (~anon_df['header_anonymized'].astype(str).str.lower().isin(['true', '1'])).sum()
     if n_warn > 0:
         print(f'⚠️ {n_warn} file(s) with a non-anonymized header — see anonymization_check_edf.tsv')    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

@@ -19,6 +19,9 @@ import matplotlib.pyplot as plt
 import mne
 
 import participant_selection_lib as PSL     # the excluded-participant banner of the report (same folder)
+from edf_io_lib import (   # one copy, in edf_io_lib (same folder)
+    BASE_STAGE_COLORS, CUSTOM_STAGE_PALETTE, load_custom_stages, parse_custom_field,
+)
 
 # numpy 2 renamed trapz -> trapezoid; keep both working
 _trapz = getattr(np, 'trapezoid', np.trapz)
@@ -44,13 +47,6 @@ except Exception:
 
 # --- sleep stages ------------------------------------------------------------
 AASM_STAGES = ['W', 'N1', 'N2', 'N3', 'R']
-
-# Stage colours / geometry - duplicated from qc_rejected_epochs_lib (keep in sync)
-BASE_STAGE_COLORS = {'W': '#969696', 'N1': '#9e9ac8', 'N2': '#807dba',
-                     'N3': '#6a51a3', 'R': '#c994c7'}
-
-CUSTOM_STAGE_PALETTE = ['#8dd3c7', '#ffffb3', '#bebada', '#80b1d3',
-                        '#fdb462', '#b3de69', '#fccde5', '#d9d9d9']
 
 # --- frequency bands ---------------------------------------------------------
 DEFAULT_BANDS = [('delta', 0.5, 4.0), ('theta', 4.0, 8.0), ('alpha', 8.0, 12.0),
@@ -128,15 +124,6 @@ def stage_style(custom_stages):
         colors[cs] = CUSTOM_STAGE_PALETTE[i % len(CUSTOM_STAGE_PALETTE)]
     ordered = sorted(stage_y.items(), key=lambda kv: kv[1])
     return stage_y, colors, [y for _, y in ordered], ['REM' if s == 'R' else s for s, _ in ordered]
-
-def parse_custom_field(text):
-    """Parse the comma-separated 'Custom stages' field into a clean, de-duplicated list."""
-    seen = []
-    for tok in str(text).split(','):
-        tok = tok.strip()
-        if tok and tok not in seen:
-            seen.append(tok)
-    return seen
 
 def norm(p):
     """Normalised path/id string, used on BOTH sides of every comparison (Windows safety)."""
@@ -295,22 +282,6 @@ def fit_settings_diff(cfg, side):
         diffs.append(f"PSD smoothing {'on' if t6_smooth else 'off'} in tool 7, "
                      f"{'on' if cfg['smooth']['enabled'] else 'off'} here")
     return diffs
-
-
-def load_custom_stages(folder):
-    """Read config_param/custom_stages.json under the study folder ([] when absent)."""
-    if not folder:
-        return []
-    path = Path(folder) / 'config_param' / 'custom_stages.json'
-    if not path.exists():
-        return []
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = json.load(f)
-        stages = data.get('custom_stages', []) if isinstance(data, dict) else []
-        return [str(s) for s in stages]
-    except Exception:
-        return []
 
 
 def load_subject_info(path):
