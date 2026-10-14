@@ -211,7 +211,8 @@ settings files only). `tests/refactor_check.py` keeps a copy of everything the t
 the move, and after the move compares **every file**: tables, settings, the signal and metadata of every
 `.fif` epoch file, the spectrum files, the Excel workbooks, the figures and the HTML reports (once the date
 and time written in them are masked). The expected result is "no difference". Any difference stops the work
-until it is explained. The tools that are not part of the chain (tool 3bis, the automatic scoring), and the
+until it is explained. The tools that are not part of the chain (tool 1, the header inspection; tool 3, the
+hypnogram remapping; tool 3bis, the automatic scoring), and the
 options the chain leaves off when the moved code depends on them (tool 6 with resampling and high-pass, tool 7
 with resampling, 10 s epochs, no notch and another PSD smoothing), are
 run for this check on a copy of the test nights (`tests/outside_chain.py`). The same check serves a change
@@ -238,6 +239,7 @@ change of date in a report.
 | Participant selector | Skip applies in both modes; a subset with already-processed participants shows the warning; the add box only offers participants not yet selected; pasted and clicked ids switch to subset mode; unknown ids are refused; a rescan drops vanished ids |
 | Registry details | Ids match regardless of case; no temporary file is left behind; rewriting the same decisions does not touch the file (so it never looks "changed") |
 | Curry versions | The Curry twins of tools 6, 7, 8 and 8bis are valid Python and contain the new features of their EDF original (they are generated, not run, see below) |
+| Shared EDF reading | The copies of the shared reading functions that some tools still carry (tools 2, 4, 6 and 7, whose Curry versions rewrite them; the custom-stage helpers of the quality library) are the same code as the shared library's: a copy edited alone fails this check, which names it (quick level) |
 | Tool 0 | On every participant, loading gives exactly tool 7's epochs, sleep stages, EEG channels and scored events; a hypnogram the detection misses (renamed, in another folder) loads through "Other file…" with the same stages; the EOG / EMG traces are tool 7's, sample for sample; the header step flags the ±50 µV Fp1 like tool 1 and shows one channel table per detected type; the scoring step counts every scored event under its tool-4 label; its automatic scoring (read from tool 3bis's files, or redone in tool 0) gives tool 3bis's stages, probabilities and kappa; its macrostructure step gives tool 5's value for every metric and the same lights-off / lights-on source, on every participant; its signal-quality step gives tool 6's value for every metric of every channel, over the whole night and per sleep stage, and the same flagged channels, on every participant; its preprocessing step gives tool 7's flag for every epoch and channel and the same per-epoch information, on every participant, and then shows that signal in the explorer; its decision step gives tool 8bis's epoch table, channel table and decision record, on every participant, and reads tool 8's and 8bis's tables back unchanged; its spectral step gives every per-participant table of tool 9, on every participant; rescoring and annotations write only their documented files (the annotation in tool 8's format, read back by tool 7's event reading) and touch nothing else in the study |
 
 ## What the tests do not check

@@ -20,7 +20,7 @@ Inspect_EDF/
 ├── TESTS.md                     # What the test suite checks, in plain words (for researchers)
 ├── tools/
 │   ├── 0_live_explore_1file_voila.ipynb         # One participant through the whole pipeline (Voila GUI, being rebuilt)
-│   ├── edf_io_lib.py                            # Shared EDF reading (header, channel types, hypnogram, events, context), tool 0
+│   ├── edf_io_lib.py                            # Shared EDF reading (header, channel types, hypnogram, events, context) + custom stages: tools 0, 1, 1bis, 3 and the libraries
 │   ├── autoscoring_lib.py                       # GSSC scoring + figures of tool 3bis, shared with tool 0
 │   ├── macrostructure_lib.py                    # Tool 5's metric registry, computations + figures, shared with 5bis and 0
 │   ├── quality_lib.py                           # Tool 6's signal-quality metrics, computation + figures, shared with 0
@@ -251,7 +251,8 @@ downstream ones; before a merge or after a change to a shared module: full). **T
 `tool3`, `tool3bis`, `tool4`, `tool5`, `tool5bis`, `tool6`, `tool7`, `tool8`, `tool8bis`, `tool9` select the tests of the
 tools concerned. Selection rule: the modified tool + every tool downstream in the chain
 (5 → 5bis → 6 → 7 → 8bis → 8 → 9) + every tool importing a modified shared module
-(`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0, 5, 5bis,
+(`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0, 1, 1bis, 3, 3bis,
+5 to 9 (every library imports it: custom stages; + the Curry twins of tools 3, 7, 8, 8bis through it),
 `autoscoring_lib` → 0, 3bis, `macrostructure_lib` → 0, 5, 5bis, `quality_lib` → 0, 5, 6 (+ the tool-6 Curry twin,
 which copies it), `preprocessing_lib` → 0, 7, 8, 8bis (the last two through `qc_rejected_epochs_lib`, + the
 tool-7 Curry twin, which imports it), `autoreject_lib` → 0, 8bis (+ the 8bis Curry twin, which imports it),
@@ -315,10 +316,16 @@ test must point it at a copied `preproc_epo`.
   header table).
 - `outside_chain.py` (a script): what the chain does not run, on a fresh copy of a chain dataset's inputs in
   `%TEMP%/dtk_outside_chain/<dataset>/data`, so `refactor_check.py` can compare its outputs before / after a
-  move (`DTK_TEST_ROOT` / `DTK_REFACTOR_ROOT` pointed at that folder and a save folder): `3bis` (tool 3bis,
-  the default), `6variant` (tool 6 with resampling to 128 Hz + high-pass 0.5 Hz, options the chain leaves
+  move (`DTK_TEST_ROOT` / `DTK_REFACTOR_ROOT` pointed at that folder and a save folder): `1` (tool 1, its
+  defaults), `3` (tool 3 on the raw hypnogram exports when there are some, written under `_Hypnogram_tool3.txt`),
+  `3bis` (tool 3bis, the default), `6variant` (tool 6 with resampling to 128 Hz + high-pass 0.5 Hz, options the chain leaves
   off) and `7variant` (tool 7 with resampling to 128 Hz, 10 s epochs, no notch, LOWESS-only smoothing, events
   on, channels from the configuration), e.g. `outside_chain.py 6variant 7variant`. `refactor_check` also ignores tool 3bis's `scored_at` date.
+- `test_edf_io_sync.py` (quick): the copies of `edf_io_lib`'s functions that tools still carry (tool 1bis's
+  `detect_encoding`; tool 2's header parser; tool 4's start datetime / companions; tool 6's suffix helpers and
+  physical bounds; tool 7's event chain and suffix helpers; `quality_lib`'s custom-stage helpers) are the same code
+  as the library's (docstrings and comments aside); a failure names the copy to update. The copies that differ on
+  purpose are listed in its docstring.
 - `test_variants.py` (full, synthetic, each on a light copy: inputs + only the needed outputs): tool 7 10 s
   epochs (then 8bis, 9), resampling to 128 Hz, notch off (50 Hz on sim03 > 10 dB above the chain), custom
   stage N4 (the `.fif` reads back, N4 reaches 8bis and 9); tool 6 resampling + high-pass (the metrics are
@@ -394,9 +401,11 @@ instead of restating them. Only tool-specific deltas are kept inline.
   binary parser (robust to encoding/header edge cases, **never** used for signal data).
   `sampling_frequency = samples_per_record / duration_data_record` (the per-channel 8-byte field is the
   *number of samples per data record*, not the rate, the two coincide only when `duration_data_record == 1 s`).
-  Kept as a string to preserve `sorted(set(...))` grouping. Shared by `1_inspect_edf*`,
-  `2_select&remap_channels_edf*`, and `tools/edf_io_lib.py` (tool 0; tool 1's copy plus an optional
-  `fallback_encoding`, see §0). (Tool 1 carries the worked EDF+ examples.) Trap kept as is in every copy: the
+  Kept as a string to preserve `sorted(set(...))` grouping. **One copy, in `tools/edf_io_lib.py`** (tool 1's
+  parser plus tool 0's optional `fallback_encoding`, off by default), imported by tool 1 (Voila and both batch
+  scripts, phase 8 of the tool-0 redesign) and tool 0; tool 2 keeps a copy (its Curry generator rewrites that
+  block) and tool 1bis its `detect_encoding` (plus its own short reader of the identity fields), **kept identical
+  by `tests/test_edf_io_sync.py`**. (Tool 1 carries the worked EDF+ examples.) Trap kept as is in every copy: the
   per-channel `reserved` list overwrites the global 44-byte `reserved` field (EDF+C / EDF+D), so the parser
   never returns the EDF+ type.
 - **MNE EDF signal loading pattern**: when actual signal is needed, load with
@@ -721,8 +730,12 @@ instead of restating them. Only tool-specific deltas are kept inline.
   `<study_folder>/config_param/custom_stages.json` (`{"custom_stages": ["N4", …]}`, order = display order),
   **written only by `3_remap_hypno`** and **read** by tools 0/6/7/8. Tools 0/6/7/8 each expose an editable
   `Custom stages` field **auto-filled from the JSON on folder/file selection**: a **volatile per-run
-  override** that never rewrites the JSON (management stays in tool 3). Three helpers are **duplicated**
-  across the tools (like `get_phys_bounds_uV`): `load_custom_stages(folder)`, `parse_custom_field(text)`,
+  override** that never rewrites the JSON (management stays in tool 3). Three helpers (+ the
+  `BASE_STAGE_COLORS` / `CUSTOM_STAGE_PALETTE` they use) have **one copy, in `tools/edf_io_lib.py`** (section *Study
+  configuration*, phase 8 of the tool-0 redesign), imported by tool 3 and the libraries (`macrostructure_lib`,
+  `preprocessing_lib`, `qc_rejected_epochs_lib`, `spectral_lib`, `autoscoring_lib`); `quality_lib` keeps a copy (the
+  tool-6 Curry generator copies that library), kept identical by `tests/test_edf_io_sync.py`:
+  `load_custom_stages(folder)`, `parse_custom_field(text)`,
   and `custom_stage_style(custom_stages) -> (stage_y, stage_colors, ytick_pos, ytick_labels)`. Custom
   stages stack **below N3** on every hypnogram axis (`N3=0 → -1, -2, …` in declaration order). The
   step-line stays gray with **REM in red** (YASA convention) and each custom stage in a fixed non-red
@@ -808,9 +821,9 @@ instead of restating them. Only tool-specific deltas are kept inline.
   declared in mV (typical for Compumedics EOG/EMG/ECG, `physical_max = 1.0 mV`) is compared against a
   1.0 µV bound (1000× too small) so `bounds_pct` flags ~98–100 % of a perfectly healthy signal. EEG
   (declared in µV) stays unaffected, which kept the bug latent until non-EEG channels were added.
-  Defined in `6_quality_overview_voila`, **duplicated** in `tools/edf_io_lib.py` (with tool 6's
-  bounds-reading lines, `phys_bounds_for_remap`, used by tool 0's step 5) until tool 6 reads the EDF through
-  `edf_io_lib` (plan phase 8, its Curry generator replaces that load block): keep in sync.
+  Defined in `tools/edf_io_lib.py` (with tool 6's bounds-reading lines, `phys_bounds_for_remap`, used by tool
+  0's step 5); tool 6's load block keeps a copy (its Curry generator removes that block), **kept identical by
+  `tests/test_edf_io_sync.py`** (moving it: *Planned modules*).
   (Verified on ICEBERG 117: EOG/EMG/ECG `bounds_pct` 97–98 % → <0.4 %, EEG unchanged.)
 - **EOG/EMG/ECG channel-type detection (`detect_channel_types`)**: non-EEG channels are classified by
   **transducer type OR channel name**: EOG = transducer `EOG` / name `eog`. ECG = transducer
@@ -1141,7 +1154,9 @@ read or write, `ParticipantSelector` called with `excluded=None`).
 **`score_night`**, the scoring steps of `score_one` (EEG + EOG + `run_gssc`, missing-electrode rule) lifted
 unchanged. The notebook imports them by name (cell 2) and keeps its UI, its writes and its reports; tool 0's
 step 3 calls the same functions. Move proven output-neutral (`tests/outside_chain.py` + `refactor_check.py`:
-86 files, both datasets, no difference). Edit the library, not the notebook, for any scoring or figure change.
+86 files, both datasets, no difference). Edit the library, not the notebook, for any scoring or figure change. Its
+reading helpers (`drop_suffix_duplicates`, `adapt_remap_dict_to_suffixes`, `read_edf_start_datetime`,
+`load_json_lenient`, `load_custom_stages`) come from `edf_io_lib` (phase 8, no copy any more).
 
 **Inputs**: the EDF files (recursive scan of the study folder), tool 2's
 `<study>/config_param/remap_reref_persubject.json` (required: an EDF absent from it is listed and not
@@ -2530,6 +2545,18 @@ under the `pip:` block). These were bumped for Curry. The EDF tools continue to 
 ## Planned modules (in development)
 
 Modules still in development. The quality-overview (6), preprocessing (7) and QC-of-rejected-epochs (8) tools above are stable and were promoted out of this section.
+
+### EDF reading of tools 2, 4, 6, 7 through `edf_io_lib` (TODO, needs a user test on Curry data)
+
+Left out of the tool-0 redesign's phase 8 (user decision, 2026-10-14: reduced scope + a sync test). Tool 2's header
+parser, tool 4's event loaders, tool 6's load block (suffix helpers, physical bounds) and tool 7's event chain /
+start datetime / suffix detection are still copies of `edf_io_lib`'s functions, kept identical by
+`tests/test_edf_io_sync.py`. Moving them means: the format-specific readers (recording start datetime, companion
+files: `.edf` vs `.cdt`) passed to the library's functions as arguments, and the four Curry generators
+(`_make_tool{2,4,6,7}_curry.py`) rewritten so the twins pass their Curry readers and find `tools/`. Tool 4 reads only
+the event names (no start datetime): its loader needs a decision (a `.txt` with no readable start datetime is read
+by tool 4, skipped by the library). **No test runs a Curry twin on a recording**: the four twins must be checked by
+the user in Voila on Curry data before the change is committed.
 
 ### Event-based epoch rejection (Phase A): **implemented in tool 7**
 

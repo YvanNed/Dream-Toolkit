@@ -13,7 +13,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **EDF headers = header-only custom binary parser**: read headers with the hand-written binary parser
   (robust to encoding edge cases), **never** for signal data. Derive `sampling_frequency =
   samples_per_record / duration_data_record` (the 8-byte field is samples *per record*, not the rate).
-  Keep in sync across `1_inspect_edf*`, `2_select&remap_channels_edf*` and `tools/edf_io_lib.py` (tool 0).
+  One copy in `tools/edf_io_lib.py`, imported by tools 0 and 1 (Voila + batch scripts); tool 2's copy (and 1bis's
+  `detect_encoding`) are kept identical by `tests/test_edf_io_sync.py`.
 - **Signal = MNE, export = edfio**: load signal with `mne.io.read_raw_edf()` (never pyedflib). Write EDF
   with `edfio.EdfSignal()`/`edfio.Edf()` directly (not `mne.export.export_raw()`) for per-channel
   physical-range control.
@@ -38,14 +39,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   twin is **regenerated** via `tools_curry/_make_tool2_curry.py` (new code passes through, no generator
   edit needed). Re-run it after editing the EDF Voila.
 - **`get_phys_bounds_uV`**: scale MNE's physical bounds by `units[ch]*1e6`, otherwise mV channels
-  (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. Duplicated in tool 6's load block and
-  `edf_io_lib` (`get_phys_bounds_uV` + `phys_bounds_for_remap`, tool 0's step 5): **keep in sync** (until tool 6
-  reads the EDF through `edf_io_lib`, plan phase 8).
+  (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. In `edf_io_lib` (`get_phys_bounds_uV` +
+  `phys_bounds_for_remap`, tool 0's step 5); tool 6's load block keeps a copy, checked by `tests/test_edf_io_sync.py`.
 - **Tool-0 redesign = shared libraries** (`tools/plan_tool0_redesign.md`, in progress on branch
   `tool0-redesign`): tool 0 never re-implements a computation, it imports the batch tools' code from
   `tools/*_lib.py` (`edf_io_lib` = EDF reading). Code is moved **verbatim**, and every move is proven
   output-neutral with `tests/refactor_check.py` (save before / compare after: every file of the chain).
-  `tests/test_tool0.py` compares tool 0 with the batch tool it mirrors. → SPEC §0 + *Tests*.
+  `tests/test_tool0.py` compares tool 0 with the batch tool it mirrors. The reading blocks the Curry generators
+  rewrite (tools 2, 4, 6, 7) stay copies of `edf_io_lib`'s, kept identical by **`tests/test_edf_io_sync.py`**: edit
+  both, then re-run the generator. → SPEC §0 + *Tests*.
 
 **Shared conventions** (→ SPEC *Cross-cutting procedures*)
 - **Rejected data is computed, flagged, left out of the outputs** (→ SPEC *Cross-cutting → Rejected-data
@@ -128,8 +130,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   is intended (clinical-viewer behaviour): never clip or hide amplitude. → SPEC *Cross-cutting → Fixed
   clinical display scales*.
 - **Custom (non-AASM) sleep stages**: declared once in `config_param/custom_stages.json` (written only by
-  `3_remap_hypno`, read by tools 6/7/8). Three duplicated helpers (`load_custom_stages`,
-  `parse_custom_field`, `custom_stage_style`). Tools 6/8 use a custom `plot_hypnospectrogram()` because
+  `3_remap_hypno`, read by tools 6/7/8). Its helpers (`load_custom_stages`, `parse_custom_field`,
+  `custom_stage_style`) have one copy, in `edf_io_lib` (tool 3 and the libraries import it; `quality_lib`'s copy is
+  checked by `tests/test_edf_io_sync.py`). Tools 6/8 use a custom `plot_hypnospectrogram()` because
   YASA's plotting hard-rejects non-AASM labels. Reading the JSON is non-fatal.
 - **Flat/dead-epoch colour scaling (`plot_hypnospectrogram()`)**: exclude near-zero (dead-epoch) columns
   from the vmin/vmax percentiles and render them grey, **then cap the colour span
