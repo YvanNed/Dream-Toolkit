@@ -3,8 +3,8 @@ participant: it shares their code (tools/*_lib.py, see tools/plan_tool0_redesign
 compared with the chain outputs of the batch tool it mirrors, on a copy of the study inputs (tool 0 writes
 its report and annotations into the study folder, never into the chain's).
 
-Step 1 (loading: channels, hypnogram, events, context channels) against tool 7, step 2 (header) against tool
-1's known answer, the explorer's writes (rescoring, annotations, inspection report), step 3 against tool 3bis,
+Step 1 (loading: channels, hypnogram, events, context channels; a hypnogram chosen by hand) against tool 7,
+step 2 (header) against tool 1's known answer, the explorer's writes (rescoring, annotations, inspection report), step 3 against tool 3bis,
 step 4 against tool 5, step 5 against tool 6, step 6 against tool 7."""
 import json
 import shutil
@@ -92,6 +92,40 @@ def test_step2_flags_the_narrow_dynamic_range(chain, tmp_path):
     if chain['dataset'] == 'synthetic':
         assert 'EEG <b>Fp1</b>: dynamic range 100 µV' in content
         assert 'header anonymized' in content
+    # one channel table per detected type, so a detection miss shows at a glance
+    assert '<h4>Channels, by detected type</h4>' in content
+    for typ in ('EEG', 'EOG', 'EMG', 'ECG'):
+        assert f'<b>{typ}</b>: ' in content, typ
+
+
+def test_step1_hypnogram_chosen_by_hand(chain, tmp_path):
+    """A hypnogram the detection misses (another name, another folder) is chosen with "Other file…": it
+    loads the same stages as tool 7 reads from the detected file, and the log says it was chosen by hand."""
+    import mne
+    study = study_copy(chain, tmp_path / 'study')
+    fid = minidb.PARTICIPANTS[chain['dataset']][0]
+    hyp = study / f'{fid}_Hypnogram_remapped.txt'
+    moved = study / 'elsewhere' / 'scoring_by_hand.txt'
+    moved.parent.mkdir()
+    hyp.rename(moved)
+    with NotebookSession(T0) as nb:
+        nb.pick('fc_data', study)
+        nb.set('dd_part', fid)
+        assert '_Hypnogram_remapped.txt' not in nb.value('list(dd_hypno.options)')
+        nb.run('dd_hypno.value = OTHER_FILE')
+        assert nb.value('box_hypno_other.layout.display') == ''
+        nb.click('btn_run1')                             # nothing chosen yet: refused, nothing loaded
+        assert nb.value("STATUS['1']") == 'not_run'
+        assert 'no hypnogram file is selected' in nb.widget_text()
+        nb.pick('fc_hypno', moved)
+        nb.click('btn_run1')
+        assert nb.value("STATUS['1']") == 'up_to_date', nb.widget_text()[-2000:]
+        assert Path(nb.value("str(STATE['hypno_path'])")) == moved      # (Path ==: case-insensitive on Windows)
+        stages = nb.value("[str(s) for s in STATE['hypno_work']]")
+    meta = mne.read_epochs(str(tool7_fif(chain, fid)), preload=False, verbose=False).metadata
+    assert stages == meta['stage'].astype(str).tolist()
+    log = pd.read_csv(study / 'reports_live_explore' / f'{fid}_inspection_log.tsv', sep='\t')
+    assert 'scoring_by_hand.txt (chosen by hand)' in log['details'].iloc[-1]
 
 
 def test_explorer_writes_only_its_own_files(chain, tmp_path):
