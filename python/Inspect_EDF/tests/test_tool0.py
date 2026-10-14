@@ -5,7 +5,8 @@ its report and annotations into the study folder, never into the chain's).
 
 Step 1 (loading: channels, hypnogram, events, context channels; a hypnogram chosen by hand) against tool 7,
 step 2 (header) against tool 1's known answer, the explorer's writes (rescoring, annotations, inspection report), step 3 against tool 3bis,
-step 4 against tool 5, step 5 against tool 6, step 6 against tool 7, step 7 against tool 8bis."""
+step 4 against tool 5, step 5 against tool 6, step 6 against tool 7, step 7 against tool 8bis, step 8 against
+tool 9."""
 import json
 import shutil
 from pathlib import Path
@@ -346,6 +347,33 @@ def test_step7_equals_tool8bis(chain, tmp_path):
             nb.click('btn_run7')
             assert nb.value("STATE['decision']['rejected'].tolist()") == live, fid
         assert nb.value('box_decision.layout.display') == ''       # the explorer shows the decision
+
+
+@pytest.mark.tool9
+def test_step8_equals_tool9(chain, tmp_path):
+    """Step 8 is tool 9's computation: on step 6's epochs (as tool 7 saves them, the deselected channels
+    included) and step 7's decision (tool 8bis's rule, the chain's decision source), with tool 9's settings of
+    the chain run (both averaging spaces, night thirds), every per-participant table equals tool 9's."""
+    study = study_copy(chain, tmp_path / 'study', extra=['reports_quality_overview/quality_summary.tsv'])
+    out9 = Path(chain['data'], 'derivatives', 'features_spectral')
+    tables = ('spectral_stage', 'aperiodic_stage', 'psd_stage', 'spectral_stage_third', 'bandpower_epoch',
+              'aperiodic_epoch', 'periodic_peaks')
+    with NotebookSession(T0) as nb:
+        for fid in minidb.PARTICIPANTS[chain['dataset']]:
+            load_participant(nb, study, fid)
+            nb.set('cb_ev6', True)
+            nb.click('btn_run6')
+            nb.click('btn_run7')
+            nb.set('cb_lin8', True)
+            nb.set('cb_thirds8', True)
+            nb.click('btn_run8')
+            assert nb.value("STATUS['8']") == 'up_to_date', nb.widget_text()[-1500:]
+            for key in tables:
+                mine = pd.DataFrame(nb.value(f"STATE['spectral']['tables'][{key!r}].to_dict('list')"))
+                mine = mine.mask(mine.astype(str).eq(''))          # an empty text is read back from a TSV as NaN
+                ref = pd.read_csv(next(out9.rglob(f'{fid}_{key}.tsv')), sep='\t', dtype={'file_id': str})
+                pd.testing.assert_frame_equal(mine, ref, check_dtype=False, rtol=1e-6, atol=1e-9,
+                                              obj=f'{fid} {key}')
 
 
 def test_context_channels_match_tool7(chain, tmp_path):

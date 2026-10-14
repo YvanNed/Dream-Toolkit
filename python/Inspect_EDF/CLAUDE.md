@@ -322,7 +322,8 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   (epoch × channel) 1/f flags and forces a full reprocess). Tool 9 is **not** part of tool 7's three-copy
   `SpectralModel` sync constraint. Outputs split data → `derivatives/features_spectral/`, reports
   → `reports_features_spectral/`. Database tables are globbed from disk and **padded to the channel union**
-  (database figures: `figure_rows` = not excluded, not dropped). → SPEC §9.
+  (database figures: `figure_rows` = not excluded, not dropped). **Its computation, figures and report pieces =
+  `tools/spectral_lib.py`** (shared with tool 0's step 8): edit the library, never the notebook. → SPEC §9.
 - **Any tool computing a PSD**: work in **µV²/Hz** and guard logs with `np.where(psd > 0, psd, np.nan)`,
   and **never** with `psd + 1e-10` on a V²/Hz array (that is a 100 µV²/Hz floor, above most of the sleep spectrum).
   With **multitaper**, pass `normalization='full'`: MNE's `'length'` default is not a density (off by
