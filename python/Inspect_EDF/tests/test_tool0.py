@@ -5,7 +5,7 @@ its report and annotations into the study folder, never into the chain's).
 
 Step 1 (loading: channels, hypnogram, events, context channels; a hypnogram chosen by hand) against tool 7,
 step 2 (header) against tool 1's known answer, the explorer's writes (rescoring, annotations, inspection report), step 3 against tool 3bis,
-step 4 against tool 5, step 5 against tool 6, step 6 against tool 7."""
+step 4 against tool 5, step 5 against tool 6, step 6 against tool 7, step 7 against tool 8bis."""
 import json
 import shutil
 from pathlib import Path
@@ -308,6 +308,44 @@ def test_step6_equals_tool7(chain, tmp_path):
             pd.testing.assert_frame_equal(meta0, ep.metadata.reset_index(drop=True), check_dtype=False,
                                           obj=f'{fid} metadata')
             assert nb.value("[v for _, v in dd_signal.options][-1]") == 'preproc', fid   # offered in the explorer
+
+
+@pytest.mark.tool8bis
+def test_step7_equals_tool8bis(chain, tmp_path):
+    """Step 7 is tool 8bis's computation: on step 6's flags (tool 7's settings of the chain run) and with tool
+    8bis's defaults, the epoch table, the channel table and the decision record of every participant equal tool
+    8bis's; its tables on disk (and tool 8's) are offered as sources and read back unchanged."""
+    study = study_copy(chain, tmp_path / 'study', extra=['reports_quality_overview/quality_summary.tsv',
+                                                         'derivatives/rejection_auto', 'derivatives/rejection_manual'])
+    auto, auto_rep = Path(chain['data'], 'derivatives', 'rejection_auto'), Path(chain['data'], 'reports_rejection_auto')
+
+    def table(expr):
+        # an empty text is read back from a TSV as NaN
+        df = pd.DataFrame(nb.value(f"{expr}.to_dict('list')"))
+        return df.mask(df.astype(str).eq(''))
+
+    with NotebookSession(T0) as nb:
+        for fid in minidb.PARTICIPANTS[chain['dataset']]:
+            load_participant(nb, study, fid)
+            nb.set('cb_ev6', True)
+            nb.click('btn_run6')
+            nb.click('btn_run7')
+            assert nb.value("STATUS['7']") == 'up_to_date', nb.widget_text()[-1500:]
+            for expr, ref in (("STATE['decision']['epoch_df']", next(auto.rglob(f'{fid}_epoch_decision.tsv'))),
+                              ("STATE['decision']['channel_df']", next(auto.rglob(f'{fid}_channel_decision.tsv'))),
+                              ("STATE['decision']['record']", next(auto_rep.rglob(f'{fid}_autoreject_decision.tsv')))):
+                pd.testing.assert_frame_equal(table(expr), pd.read_csv(ref, sep='\t', dtype={'file_id': str}),
+                                              check_dtype=False, obj=f'{fid} {ref.name}')
+            assert "Same decision as tool 8bis" in nb.value("''.join(REPORT_BLOCKS['7'])"), fid
+            live = nb.value("STATE['decision']['rejected'].tolist()")
+            sources = nb.value('[v for l, v in dd_src7.options]')
+            # live + tool 8bis's tables (+ tool 8's: the chain reviews one participant only)
+            reviewed = fid == minidb.manual_review_participant(chain['dataset'])
+            assert len(sources) == (3 if reviewed else 2), (fid, sources)
+            nb.set('dd_src7', [s for s in sources if 'rejection_auto' in s][0])
+            nb.click('btn_run7')
+            assert nb.value("STATE['decision']['rejected'].tolist()") == live, fid
+        assert nb.value('box_decision.layout.display') == ''       # the explorer shows the decision
 
 
 def test_context_channels_match_tool7(chain, tmp_path):

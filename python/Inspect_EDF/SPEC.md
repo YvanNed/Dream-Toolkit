@@ -25,6 +25,7 @@ Inspect_EDF/
 │   ├── macrostructure_lib.py                    # Tool 5's metric registry, computations + figures, shared with 5bis and 0
 │   ├── quality_lib.py                           # Tool 6's signal-quality metrics, computation + figures, shared with 0
 │   ├── preprocessing_lib.py                     # Tool 7's preprocessing, flagging, tables + figures, shared with 0 (+ 8 via qc lib)
+│   ├── autoreject_lib.py                        # Tool 8bis's decision rule, tables + figures, shared with 0 (+ the 8bis Curry twin)
 │   ├── 1_inspect_edf_voila.ipynb                # EDF parameter inspector (Voila GUI)
 │   ├── 1_inspect_edf_perdataset.py              # Batch EDF inspection per dataset
 │   ├── 1_inspect_edf_perparticipant.py          # Batch EDF inspection per participant
@@ -252,7 +253,8 @@ tools concerned. Selection rule: the modified tool + every tool downstream in th
 (`participant_selection_lib` → 5 to 9, `qc_rejected_epochs_lib` → 0, 8, 8bis, 9, `edf_io_lib` → 0, 5, 5bis,
 `autoscoring_lib` → 0, 3bis, `macrostructure_lib` → 0, 5, 5bis, `quality_lib` → 0, 5, 6 (+ the tool-6 Curry twin,
 which copies it), `preprocessing_lib` → 0, 7, 8, 8bis (the last two through `qc_rejected_epochs_lib`, + the
-tool-7 Curry twin, which imports it); `chaincache.TOOL_DEPS` lists them for tools 5 to 8); a change
+tool-7 Curry twin, which imports it), `autoreject_lib` → 0, 8bis (+ the 8bis Curry twin, which imports it);
+`chaincache.TOOL_DEPS` lists them for tools 5 to 8); a change
 to a Curry generator or twin: quick (its notebook executes) + `test_curry_twins.py`. Tool 0 mirrors the
 batch tools, so a change to a tool it mirrors also runs `tool0` (`test_tool0.py` compares them).
 
@@ -299,7 +301,10 @@ test must point it at a copied `preproc_epo`.
   flags included, for every participant, on tool 6's default hypnogram suffix and thresholds); step 6 equals
   tool 7 (marker `tool7`, both datasets: with the chain's tool-7 settings, events on and tool 6's flagged
   channels deselected, every column of `_epoch_channel_rejection.tsv` and the `.fif` metadata, for every
-  participant; the explorer then offers the preprocessed signal). `test_subset_selection.py` also checks tool 5's per-recording report: one per participant with its
+  participant; the explorer then offers the preprocessed signal); step 7 equals tool 8bis (marker `tool8bis`,
+  both datasets: on step 6's flags with tool 8bis's defaults, the epoch table, the channel table and the
+  decision record of every participant; the tables of tool 8 and 8bis on disk are offered as sources and read
+  back with the same decision). `test_subset_selection.py` also checks tool 5's per-recording report: one per participant with its
   sections, linked from the database report, and part of the skip gate (a recording whose report was deleted
   is the only one reprocessed). `test_edf_io_lib.py`
   (quick): the rules lifted into `edf_io_lib`
@@ -844,7 +849,7 @@ instead of restating them. Only tool-specific deltas are kept inline.
 
 ### 0. One participant, the whole pipeline (`0_live_explore_1file_voila.ipynb`)
 
-**Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; done: steps 1-6 +
+**Being rebuilt** (tool-0 redesign, `tools/plan_tool0_redesign.md`, branch `tool0-redesign`; done: steps 1-7 +
 the explorer). Walks **one participant** through every step of the pipeline, each step in its own
 tab, every result shown in the app. Purpose: **diagnose a participant** and **train a new user**. It is a
 viewer: it never modifies a recording, a companion or a batch-tool output.
@@ -875,7 +880,7 @@ the whole database / what to look at), a status badge, a **Run** button, the res
 | 4 Macrostructure | 5, 5bis | `macrostructure_lib.compute_recording` with tool 5's default parameters (sleep-onset rule, ODI / T90 options exposed), on the hypnogram in use (`stages=None` = tool 5 reads the file when nothing is rescored, else the file with the rescored epochs replaced), the study's participant table (`participants.tsv/.csv/.xlsx` at the study root, join column guessed like tool 5) and summary-txt suffix (tool 5's rule). Shows tool 5's per-recording report (the same `macrostructure_lib` pieces): the night figure (hypnogram, time in bed shaded with its lights source, sleep onset, end of the sleep period, one row per scored-event type), the AHI severity band, the `METRICS` table with the indicative ranges (out-of-range rows light grey, `recording_metrics_html`) and a **"tool 5 on disk" column** (✓ same / ≠ value, read from `{file_id}_sleep_metrics.tsv` when tool 5 has run), tool 5's checks, the provenance, and tool 5bis's last decision for the participant (`participant_selection.tsv`). A recording tool 5 cannot compute shows tool 5's error ("listed in sleep_metrics_failed.tsv") | done |
 | 5 Quality | 6 | Tool 6's run for this participant, `quality_lib`'s functions in tool 6's order: optional resampling then high-pass (`prepare_signal`, on a copy: the explorer's signal is never filtered), tool 6's hypnogram rules (`hypno_vector`, `check_hypno_length`) on the hypnogram file **whole** with the rescored epochs replaced (the scoring done here when there is no file), the EDF physical range of each channel (`edf_io_lib.phys_bounds_for_remap`: tool 6's bounds lines, header only), `compute_channel_metrics` (tool 6's thresholds and defaults exposed), `display_limits`, `compute_channel_spectrograms`. Shows tool 6's overview box (suspicious channels and why, hypnogram warning, what was analysed), the per-channel table (tool 6's columns, flagged rows shaded) with a **"tool 6 on disk" column** (✓ same / ≠ the columns that differ, against `{file_id}_quality_metrics.tsv` when tool 6 has run), the per-stage std / p99.9 / flat tables, and tool 6's Overview figures (butterfly, median spectrogram, PSD, amplitude distributions, averaged metrics). Tool 6's two **metric figures per electrode** (pooled box plots, metric by electrode) are large: they are drawn for the **inspection report only**, in a closed `<details>` ("Metrics per electrode"), and only when *Keep an inspection report* is ticked (the tab says where they are). **Per-channel inspection**: a closed `Accordion` (`acc_ch5`, shown once step 5 has run); a dropdown (the first flagged channel pre-selected) shows tool 6's channel section (metrics with the interpretation column, histogram, PSD, time series, spectrogram), **drawn ahead**: right after the overview figures are shown (they are not delayed), before the report's metric figures, so opening it is immediate; **Show in the explorer** puts the navigator spectrogram on that channel. The inspection report keeps the tables, the first two overview figures and the folded metric figures | done |
 | 6 Preprocessing | 7 | Tool 7's run for this participant, `preprocessing_lib`'s functions in tool 7's order on a copy of the recording: `select_montage_channels` (one keep checkbox per EEG channel, pre-filled like tool 7 from tool 6's `quality_summary.tsv` on disk, unticked = deselected: kept marked bad, never flagged; *Untick step 5's flagged channels* applies the live step-5 flags), `preprocess_raw` (re-reference declared in tool 2, resampling, notch, band-pass), `hypnogram_epochs` on the hypnogram in use (the file whole with the rescorings, as tool 7 reads it), `make_epochs`, `set_bads_aside`, `epoch_psd_for_1f`, the event chain (`edf_io_lib.load_events` + `augment_remap_for_manual`, then `event_flags`), `compute_rejection_masks`, `epoch_metadata`. Every parameter exposed with **tool 7's widget defaults** (notch 50 Hz on, band-pass 0.1–50 Hz on, resampling off, epoch length 30 s, amplitude W 250 / N1 250 / N2 300 / N3 300 / R 250 / custom 250 µV, gradient 100 µV/sample, flat 1 µV, 1/f R² 0.95 / error 0.15 on 2–45 Hz, PSD smoothing median 3 + LOWESS 2 Hz on, events off with every event_remap.json type ticked, manual annotations off). Shows the headline rates (pairs and epochs flagged), the deselected channels, a **"tool 7 on disk" line** (✓ identical / ≠ against `{file_id}_epoch_channel_rejection.tsv`), tool 7's heatmap, per-stage × method and channel × stage tables, the event-type table and the settings. A fatal step shows "Tool 7 would skip this recording" with its `preprocessing_failed.tsv` reason. Nothing is written but the inspection report | done |
-| 7 Decision | 8bis (8) | decision source: live 8bis rule or the tool 8 / 8bis tables on disk; feeds step 8 + the explorer | phase 6 |
+| 7 Decision | 8bis (8) | **Decision source** (`dd_src7`): **live** = tool 8bis's run for this participant, `autoreject_lib`'s functions in 8bis's order on step 6's flag table and event sidecars (`pair_matrix_from_tables`, `auto_reject_decision`, `event_exclusion_reason`, `registry_reason`, `build_epoch_decision` / `build_channel_decision` with step 6's deselected channels as tool 7's bads, `decision_summary_row`), with tool 8bis's widgets and defaults (channel / epoch reject > 20 %, the methods present all ticked, reference stages N2 / N3 / R, one row per event type with an exclusion threshold, 0 = off, and this recording's count); or **the tables of tool 8 / 8bis on disk** (`{file_id}_epoch_decision.tsv` + `_channel_decision.tsv` anywhere under `derivatives/`), offered only when their epoch count equals step 6's (else named with the reason). Shows the source, rejected epochs and dropped channels, tool 8bis's would-be exclusion (registry reason, nothing written), a **"tool 8bis on disk" line** (✓ same decision / ≠), tool 8bis's overview (per-stage table) and decision heatmap (on-disk source: step 6's flags with that decision). Requires step 6; re-running step 6 drops the decision (the tab is marked out of date) and re-fills the choices. The decision in force (`STATE['decision']`) feeds the explorer and step 8 | done |
 | 8 Spectral | 9 | | phase 7 |
 
 A step's status is *not run* / *up to date* / **OUT OF DATE** (badge + tab-title mark ✓ / ⚠). Nothing is
@@ -908,7 +913,8 @@ are tool 7's**; built lazily and handed to `qc_rejected_epochs_lib.participant_f
 steps 4-8 and the look at flagged / rejected epochs downstream of steps 6-7, and gains layers as steps run).
 **Layout as tool 8's Section 3**: navigation right above the figures (prev / slider / next / next stage change
 / epoch n° offset + status line), the figures (navigator, montage, detail panel), the **keep / reject decision
-right under them** (read-only, `box_decision`, hidden until step 7 exists, plan phase 6), then the
+right under them** (read-only, `box_decision`: KEPT, or REJECTED with its reason, the source, the dropped
+channels and the would-be exclusion; shown once step 7 has decided on 30 s epochs), then the
 **rescoring** box (stage buttons, GSSC buttons, save) and the **annotation** box, and the **display settings**
 last (signal, spectrogram channel, channel subset, ± context, context traces, scales). The navigator is drawn
 at the montage's width (12 in, 14 on a dense montage) with its left / right margins (17 % / 84 %); both are
@@ -932,7 +938,8 @@ once step 6 has run with 30 s epochs, **preprocessed + flags (step 6)**: step 6'
 left out) shown as tool 8 shows tool 7's `.fif` (trace colours recomputed at step 6's thresholds, the montage
 title from the epoch's `reject_method`, the detail-panel PSD smoothed like step 6). The navigator then gains a
 **flags strip** under the events strip: each epoch's `reject_method` in the toolkit palette
-(`qc_rejected_epochs_lib.HEATMAP_COLORS`, legend = the methods present). A reload of step 1 drops step 6's
+(`qc_rejected_epochs_lib.HEATMAP_COLORS`, legend = the methods present), and once step 7 has decided a
+**decision strip** under it: each epoch kept (green) or rejected (red), tool 8bis's report colours. A reload of step 1 drops step 6's
 epochs (the option disappears until step 6 runs again); a step 6 with sub-30 s epochs keeps the flags in the
 tab only (the explorer's grid is 30 s). Navigation: prev / next,
 slider, next stage change, keyboard (`ipyevents`, optional: ←/→, w/0, 1, 2, 3, r/4/5, m), listened on the
@@ -2004,6 +2011,22 @@ PREP / FASTER): a globally-bad channel is **dropped before** the epoch vote, so 
 epoch it appears in. Voila-only (no batch twin: the run loop already processes the whole database). It is a
 pure **decision + write** tool: it reads tool-7 outputs **read-only** and never modifies them.
 
+**Shared library (`tools/autoreject_lib.py`, tool-0 redesign phase 6)**: the decision rule, its tables and figures
+live in the library, **moved verbatim** from the notebook's shared-function cell and shared with tool 0's step 7
+(same code, same decision): `AASM_STAGES`, `DEFAULT_CHANNEL_REJECT_PCT` / `DEFAULT_EPOCH_REJECT_PCT`,
+`read_event_counts`, `build_pair_matrix`, `auto_reject_decision`, `stages_in_order`, `decision_summary_row`,
+`read_tool7_bad_channels`, `build_epoch_decision`, `build_channel_decision`, `wrap_scroll`, `per_stage_table_html`,
+`decision_overview_html`, `plot_decision_heatmap`. Two readers are split so tool 0 can pass tables already in memory
+(its step 6's): `build_pair_matrix(tsv_path, …)` reads the files then calls **`pair_matrix_from_tables(df, …,
+event_flags)`** (the event-flags file is read only when the event method is selected, as before), and
+`read_event_counts(path)` calls **`event_counts_from_table(d)`**. A few lines of the Scan and Run cells became
+functions: `ordered_stages` (AASM order then custom), `default_reference_stages` (N2 / N3 / R, else all),
+`event_exclusion_reason` (the per-type count threshold), `registry_reason` (the `8bis_auto` reason: event
+exclusion, else all channels dropped, else all reference-stage epochs rejected). The notebook keeps the UI, the
+run loop, the writes, `DECISION_DIRNAME`, `registry_folder` and the global summary. The Curry twin, still a verbatim
+copy, imports the library through the same probe as `qc_rejected_epochs_lib`. Proven output-neutral by
+`tests/refactor_check.py` on the whole chain. Edit the library, never a copy.
+
 **Inputs (Section 1 selects two folders explicitly, then a `Scan` button)** (deliberately *not* one root
 scanned recursively, tool 7 is often re-run with different parameters and its outputs renamed/versioned side
 by side, e.g. `preproc_epo`, `preproc_epo_v2`, `reports_preproc_v2`, a recursive `rglob` on `derivatives/`
@@ -2137,7 +2160,8 @@ twin `tools_curry/8bis_reject_automatically_curry_voila.ipynb` is therefore a **
 notebook with only the title retitled, produced by `tools_curry/_make_tool8bis_curry.py` (re-run it after
 editing the EDF notebook: it re-copies + syntax-checks, the generator asserts every code cell is byte-equal
 to the source). The shared-library import search in the setup cell probes `cwd`, `cwd/tools`,
-`dirname(cwd)/tools` and `cwd/../tools`, so `tools/qc_rejected_epochs_lib.py` is found whether Voila is
+`dirname(cwd)/tools` and `cwd/../tools`, so `tools/qc_rejected_epochs_lib.py` (and `autoreject_lib.py`, which sits
+beside it) is found whether Voila is
 launched from the repo root **or** from `tools_curry/` (where the twin lives, the lib in `../tools`).
 
 ### 9. Spectral features: band power + aperiodic/periodic decomposition (`9_spectral_features_voila.ipynb`)

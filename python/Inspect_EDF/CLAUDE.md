@@ -298,7 +298,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   type over its threshold **excludes the whole participant** (registry `8bis_auto`, like all-channels-dropped /
   all-epochs-rejected; a re-run replaces these rows). Provenance columns
   `methods_used`/`event_types_used`/`excluded`/`exclude_reason`. Run tally gains `excluded`. Still format-agnostic → **Curry twin stays a
-  verbatim copy** (re-run `_make_tool8bis_curry.py`). **Section 1 = two explicit folder pickers (preprocessed-epochs + reports) + a Scan button**
+  verbatim copy** (re-run `_make_tool8bis_curry.py`). **The decision rule, its tables and figures =
+  `tools/autoreject_lib.py`** (shared with tool 0's step 7; the twin imports it through the qc-lib probe): edit the
+  library, never the notebook. → SPEC §8bis *Shared library*. **Section 1 = two explicit folder pickers (preprocessed-epochs + reports) + a Scan button**
   (+ an optional data-folder chooser that pre-points them): *not* one root scanned recursively, so
   renamed/versioned tool-7 runs (`preproc_epo_v2`, `reports_preproc_v2`) stay apart. **Data/reports split**:
   `_epoch_decision.tsv` + `_channel_decision.tsv` → **`rejection_auto/`** (`raw_root.parent/…`, beside the raw
