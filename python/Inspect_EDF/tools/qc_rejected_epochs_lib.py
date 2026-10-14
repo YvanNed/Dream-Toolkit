@@ -164,9 +164,11 @@ def custom_stage_style(custom_stages):
     return stage_y, stage_colors, ytick_pos, ytick_labels
 
 
-# ---- Default thresholds (tool-7 defaults; fallback when the params JSON is absent) ----
+# ---- Default thresholds (fallback when the params JSON is absent) ----
+# = tool 7's widget defaults (7_preprocessing_voila, Section 2): keep them equal. Until 2026-10-14 the amplitude
+# values here were W 300 / N2-N3 200 µV, not tool 7's.
 DEFAULT_THRESHOLDS = {
-    'amplitude_ptp_uV': {'W': 300.0, 'N1': 250.0, 'N2': 200.0, 'N3': 200.0, 'R': 250.0},
+    'amplitude_ptp_uV': {'W': 250.0, 'N1': 250.0, 'N2': 300.0, 'N3': 300.0, 'R': 250.0},
     'flat_ptp_uV': 1.0,
     'gradient_uV_per_sample': 100.0,
     '1f_mae_max': 0.15,
