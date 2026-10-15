@@ -204,9 +204,9 @@ channel, so with these options the clipped Fp1 of the synthetic set is no longer
 
 ### 10. Moving code into a shared library changes nothing (before / after check)
 
-The redesign of tool 0 moves the computations of the batch tools into shared libraries (`tools/*_lib.py`)
-that the batch tools and tool 0 both use. Such a move must change **nothing at all** in what the tools
-write, so it gets a stricter check than the comparison with the reference run (which looks at tables and
+The computations of the batch tools live in shared libraries (`tools/*_lib.py`) that the batch tools and
+tool 0 both use (the redesign of tool 0 moved them there, October 2026). Moving code into a library must
+change **nothing at all** in what the tools write, so it gets a stricter check than the comparison with the reference run (which looks at tables and
 settings files only). `tests/refactor_check.py` keeps a copy of everything the test chain wrote just before
 the move, and after the move compares **every file**: tables, settings, the signal and metadata of every
 `.fif` epoch file, the spectrum files, the Excel workbooks, the figures and the HTML reports (once the date

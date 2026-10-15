@@ -41,13 +41,15 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **`get_phys_bounds_uV`**: scale MNE's physical bounds by `units[ch]*1e6`, otherwise mV channels
   (Compumedics EOG/EMG/ECG) falsely flag ~100 % `bounds_pct`. In `edf_io_lib` (`get_phys_bounds_uV` +
   `phys_bounds_for_remap`, tool 0's step 5); tool 6's load block keeps a copy, checked by `tests/test_edf_io_sync.py`.
-- **Tool-0 redesign = shared libraries** (`tools/plan_tool0_redesign.md`, in progress on branch
-  `tool0-redesign`): tool 0 never re-implements a computation, it imports the batch tools' code from
-  `tools/*_lib.py` (`edf_io_lib` = EDF reading). Code is moved **verbatim**, and every move is proven
-  output-neutral with `tests/refactor_check.py` (save before / compare after: every file of the chain).
-  `tests/test_tool0.py` compares tool 0 with the batch tool it mirrors. The reading blocks the Curry generators
-  rewrite (tools 2, 4, 6, 7) stay copies of `edf_io_lib`'s, kept identical by **`tests/test_edf_io_sync.py`**: edit
-  both, then re-run the generator. → SPEC §0 + *Tests*.
+- **Shared computation libraries (`tools/*_lib.py`)**: the batch tools' computation lives in libraries that the
+  batch notebook and tool 0 both import (`edf_io_lib` = EDF reading + custom stages, `autoscoring_lib` 3bis,
+  `macrostructure_lib` 5, `quality_lib` 6, `preprocessing_lib` 7, `autoreject_lib` 8bis, `spectral_lib` 9,
+  `qc_rejected_epochs_lib` 8): **edit the library, never the notebook**, and tool 0 never re-implements a
+  computation. Moving code into a library = verbatim, proven output-neutral with `tests/refactor_check.py` (save
+  before / compare after: every file of the chain, + `tests/outside_chain.py`). `tests/test_tool0.py` compares
+  each tool-0 step with the batch tool it mirrors. The reading blocks the Curry generators rewrite (tools 2, 4, 6,
+  7) stay copies of `edf_io_lib`'s, kept identical by **`tests/test_edf_io_sync.py`**: edit both, then re-run the
+  generator. → SPEC *Cross-cutting → Shared computation libraries* + §0 + *Tests*.
 
 **Shared conventions** (→ SPEC *Cross-cutting procedures*)
 - **Rejected data is computed, flagged, left out of the outputs** (→ SPEC *Cross-cutting → Rejected-data
