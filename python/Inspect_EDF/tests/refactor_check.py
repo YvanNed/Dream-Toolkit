@@ -38,7 +38,11 @@ import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from snapshot import VOLATILE  # noqa: E402  (columns / keys that legitimately differ between two runs)
+from snapshot import VOLATILE as _SNAPSHOT_VOLATILE  # noqa: E402
+
+# Columns / JSON keys that legitimately differ between two runs: the chain's, plus the scoring date of
+# tool 3bis's _scoring_params.json (outside the chain, see outside_chain.py).
+VOLATILE = set(_SNAPSHOT_VOLATILE) | {'scored_at'}
 
 DATASETS = ['synthetic', 'real']
 RUN_ROOT = Path(os.path.realpath(os.environ.get('DTK_TEST_ROOT',

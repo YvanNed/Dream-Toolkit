@@ -58,6 +58,30 @@ def test_tool5_subset(chain, data_copy):
     assert all(pid in gtable for pid in p)
 
 
+@pytest.mark.tool5
+def test_tool5_report_per_recording_is_part_of_the_skip_gate(chain, data_copy):
+    """Tool 5 writes one {file_id}_macrostructure_report.html per recording (the night with its scored events,
+    the metrics, the checks), linked from the database report. A recording counts as processed only with its
+    table AND its report: the one whose report is missing is reprocessed, the others are skipped."""
+    p = minidb.PARTICIPANTS[chain['dataset']]
+    reports = data_copy / 'reports_features_macrostructure'
+    rep = {f.name: f for f in reports.rglob('*_macrostructure_report.html')}
+    assert sorted(rep) == sorted(f'{pid}_macrostructure_report.html' for pid in p)
+    html = rep[f'{p[1]}_macrostructure_report.html'].read_text(encoding='utf-8')
+    for section in ('The night', 'Metrics', 'Checks', 'Where the numbers come from'):
+        assert section in html, section
+    database = (reports / 'sleep_metrics_database_report.html').read_text(encoding='utf-8')
+    assert all(f'{pid}_macrostructure_report.html' in database for pid in p)
+
+    per_file = data_copy / 'derivatives' / 'features_macrostructure'
+    before = mtimes(per_file, '*_sleep_metrics.tsv')
+    rep[f'{p[1]}_macrostructure_report.html'].unlink()
+    pipeline.run_tool5(data_copy)                                          # Skip ticked (the default)
+    after = mtimes(per_file, '*_sleep_metrics.tsv')
+    assert sorted(k for k in after if after[k] != before[k]) == [f'{p[1]}_sleep_metrics.tsv']
+    assert len(list(reports.rglob('*_macrostructure_report.html'))) == len(p)
+
+
 @pytest.mark.tool6
 def test_tool6_subset(chain, data_copy):
     p = minidb.PARTICIPANTS[chain['dataset']]

@@ -91,7 +91,7 @@ def test_tool9_computes_every_epoch_and_channel(chain):
     p = minidb.PARTICIPANTS[chain['dataset']]
     feat, dec = data / 'derivatives' / 'features_spectral', data / 'derivatives' / 'rejection_auto'
     for fid in p:
-        ep = mne.read_epochs(str(data / 'derivatives' / 'raw_epo' / f'{fid}_all-epo.fif'),
+        ep = mne.read_epochs(str(data / 'derivatives' / 'preproc_epo' / f'{fid}_all-epo.fif'),
                              preload=False, verbose=False)
         ed = tsv(dec / f'{fid}_epoch_decision.tsv').set_index('epoch_idx')
         cd = tsv(dec / f'{fid}_channel_decision.tsv')
@@ -134,7 +134,7 @@ def test_tool9_reaggregate_equals_a_full_run(chain, data_copy):
     ed.to_csv(dec_path, sep='\t', index=False)
     before = tsv(feat / f'{fid}_spectral_stage.tsv')
 
-    raw_dir, dec_dir = data_copy / 'derivatives' / 'raw_epo', data_copy / 'derivatives' / 'rejection_auto'
+    raw_dir, dec_dir = data_copy / 'derivatives' / 'preproc_epo', data_copy / 'derivatives' / 'rejection_auto'
     log = pipeline.run_tool9(data_copy, raw_dir, dec_dir, subset=[fid], reaggregate=True)
     assert 'Re-aggregate only' in log and '1 processed' in log and 'failed:' not in log, log[-2000:]
     reagg = {n: tsv(feat / f'{fid}_{n}.tsv') for n in EPOCH_TABLES + STAGE_TABLES + ['spectral_stage_third']}

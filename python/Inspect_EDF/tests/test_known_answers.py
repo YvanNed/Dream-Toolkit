@@ -88,7 +88,7 @@ def test_tool7_flags_the_injected_movement_bursts_and_nothing_else(syn):
     burst_epochs = set(np.flatnonzero(seconds >= 1.0).tolist())
     assert len(burst_epochs) == 10
 
-    flags = tsv(data / 'reports_preprocessing' / f'{fid}_epoch_channel_rejection.tsv')
+    flags = tsv(data / 'reports_preproc' / f'{fid}_epoch_channel_rejection.tsv')
     fp1 = flags[flags['channel'] == 'Fp1'].set_index('epoch_idx')
     hit = fp1['flag_amplitude'].astype(bool) | fp1['flag_gradient'].astype(bool)
     assert set(fp1.index[hit].tolist()) == burst_epochs

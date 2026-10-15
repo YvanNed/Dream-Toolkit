@@ -38,6 +38,10 @@ rhythms). No part of the tools is copied or simulated: if a test passes, the not
   standby" (even on mains power) and pauses the programs: a run then becomes several times slower, and once
   a notebook waited forever for an answer lost during the pause. A test run therefore asks Windows to keep
   the screen on until it ends (the power settings are not changed).
+- **A run never waits forever.** Even with the computer awake, a test occasionally waited forever: the
+  notebook had finished and its answer had arrived, but the signal meant to wake the test up was lost. The
+  test now looks for the answer again every 2 seconds instead of waiting for that signal. As a last safety
+  net, a step still running after 30 minutes fails its test instead of blocking the whole run.
 
 ## Three levels: run what the change needs
 
@@ -200,14 +204,21 @@ channel, so with these options the clipped Fp1 of the synthetic set is no longer
 
 ### 10. Moving code into a shared library changes nothing (before / after check)
 
-The redesign of tool 0 moves the computations of the batch tools into shared libraries (`tools/*_lib.py`)
-that the batch tools and tool 0 both use. Such a move must change **nothing at all** in what the tools
-write, so it gets a stricter check than the comparison with the reference run (which looks at tables and
+The computations of the batch tools live in shared libraries (`tools/*_lib.py`) that the batch tools and
+tool 0 both use (the redesign of tool 0 moved them there, October 2026). Moving code into a library must
+change **nothing at all** in what the tools write, so it gets a stricter check than the comparison with the reference run (which looks at tables and
 settings files only). `tests/refactor_check.py` keeps a copy of everything the test chain wrote just before
 the move, and after the move compares **every file**: tables, settings, the signal and metadata of every
 `.fif` epoch file, the spectrum files, the Excel workbooks, the figures and the HTML reports (once the date
 and time written in them are masked). The expected result is "no difference". Any difference stops the work
-until it is explained. The checker is itself tested (`test_refactor_check.py`, quick level): it must see a
+until it is explained. The tools that are not part of the chain (tool 1, the header inspection; tool 3, the
+hypnogram remapping; tool 3bis, the automatic scoring), and the
+options the chain leaves off when the moved code depends on them (tool 6 with resampling and high-pass, tool 7
+with resampling, 10 s epochs, no notch and another PSD smoothing), are
+run for this check on a copy of the test nights (`tests/outside_chain.py`). The same check serves a change
+meant to alter only figures (e.g. the 2026-10-13 harmonization of the hypnogram and spectrogram colours):
+every table must stay identical, and each figure or report that differs must be one the change announced.
+The checker is itself tested (`test_refactor_check.py`, quick level): it must see a
 changed value, setting, report line, figure, array, a missing or an added file, and must not report a mere
 change of date in a report.
 
@@ -219,6 +230,7 @@ change of date in a report.
 | Every tool | No Python error appears in any tool's output during the chain |
 | Every tool | Every reference file is owned by a tool (none escapes the comparison) |
 | Tool 5bis | Validating writes the criteria exclusions to the registry; a new validation replaces them but keeps the manual decisions; a forced inclusion is refused without a comment; the exclusion columns are never mistaken for sleep metrics |
+| Tool 5 | One report per recording (the night with its scored events, the metrics, the checks), each linked from the database report; a recording whose report is missing counts as not processed: it is the only one run again |
 | Tool 6 | The quality tables flag the excluded participants; `dataset_overview.html` counts only the others and names the excluded one; the excluded participant's report shows the banner |
 | Tool 7 | Deselected channels are in the `.fif` (marked bad) and in the settings file, absent from the flagging tables; the per-stage summary is pooled over the non-excluded participants only; a manual exclusion needs a reason; a re-run with nobody to process still refreshes the tables |
 | Tool 8bis | The decision tables keep exactly the epochs and channels the former cleaned copy held; tool-7 deselected channels are recorded as dropped; an event-count threshold excludes a participant, a re-run without it lifts the exclusion |
@@ -227,6 +239,8 @@ change of date in a report.
 | Participant selector | Skip applies in both modes; a subset with already-processed participants shows the warning; the add box only offers participants not yet selected; pasted and clicked ids switch to subset mode; unknown ids are refused; a rescan drops vanished ids |
 | Registry details | Ids match regardless of case; no temporary file is left behind; rewriting the same decisions does not touch the file (so it never looks "changed") |
 | Curry versions | The Curry twins of tools 6, 7, 8 and 8bis are valid Python and contain the new features of their EDF original (they are generated, not run, see below) |
+| Shared EDF reading | The copies of the shared reading functions that some tools still carry (tools 2, 4, 6 and 7, whose Curry versions rewrite them; the custom-stage helpers of the quality library) are the same code as the shared library's: a copy edited alone fails this check, which names it (quick level) |
+| Tool 0 | On every participant, loading gives exactly tool 7's epochs, sleep stages, EEG channels and scored events; a hypnogram the detection misses (renamed, in another folder) loads through "Other file…" with the same stages; the EOG / EMG traces are tool 7's, sample for sample; the header step flags the ±50 µV Fp1 like tool 1 and shows one channel table per detected type; the scoring step counts every scored event under its tool-4 label; its automatic scoring (read from tool 3bis's files, or redone in tool 0) gives tool 3bis's stages, probabilities and kappa; its macrostructure step gives tool 5's value for every metric and the same lights-off / lights-on source, on every participant; its signal-quality step gives tool 6's value for every metric of every channel, over the whole night and per sleep stage, and the same flagged channels, on every participant; its preprocessing step gives tool 7's flag for every epoch and channel and the same per-epoch information, on every participant, and then shows that signal in the explorer; its decision step gives tool 8bis's epoch table, channel table and decision record, on every participant, and reads tool 8's and 8bis's tables back unchanged; its spectral step gives every per-participant table of tool 9, on every participant; rescoring and annotations write only their documented files (the annotation in tool 8's format, read back by tool 7's event reading) and touch nothing else in the study |
 
 ## What the tests do not check
 
@@ -236,7 +250,8 @@ change of date in a report.
   where the before / after check of section 10 compares the figures too).
 - **Curry recordings.** The Curry twins are checked for consistency with their EDF original and opened in a
   kernel (quick level), but never run on a recording (the Curry test data is 17 GB).
-- **Tools 0 and 2** are only opened (too interactive for a useful run), **tool 1bis** checks itself.
+- **Tool 2** is only opened (too interactive for a useful run), **tool 1bis** checks itself. Tool 0 is
+  checked step by step as its steps are built (tool-0 redesign).
 - **Every option.** The variants cover the main options of tools 6 to 9, not every combination.
 - **The science of the methods.** The tests prove the tools compute what they computed before, or what a
   change intends. Whether a threshold or a method is the right choice for a study remains a scientific

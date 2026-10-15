@@ -21,7 +21,7 @@ TWINS = {
     'tools_curry/8_reject_manually_curry_voila.ipynb': [
         'participant_selection_lib', "'8_manual'", '_epoch_decision.tsv', '_channel_decision.tsv'],
     'tools_curry/8bis_reject_automatically_curry_voila.ipynb': [
-        'participant_selector', "'8bis_auto'", '_epoch_decision.tsv', 'tool7_deselected'],
+        'participant_selector', "'8bis_auto'", '_epoch_decision.tsv', 'from autoreject_lib import'],
 }
 ORIGINALS = {
     'tools_curry/6_quality_overview_curry_voila.ipynb': 'tools/6_quality_overview_voila.ipynb',

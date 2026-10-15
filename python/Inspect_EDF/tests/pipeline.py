@@ -87,8 +87,8 @@ def run_tool7(data, events=True, subset=None, skip=True, channels=None, before_r
 def run_tool8bis(data):
     data = Path(data)
     with NotebookSession(T8BIS) as nb:
-        nb.pick('fc_raw', data / 'derivatives' / 'raw_epo')
-        nb.pick('fc_reports', data / 'reports_preprocessing')
+        nb.pick('fc_raw', data / 'derivatives' / 'preproc_epo')
+        nb.pick('fc_reports', data / 'reports_preproc')
         nb.click('btn_scan')
         nb.click('btn_run')
         return nb.widget_text()
@@ -99,8 +99,8 @@ def run_tool8(data, file_id):
     data = Path(data)
     with NotebookSession(T8) as nb:
         nb.pick('fc_data', data)
-        nb.pick('fc_raw', data / 'derivatives' / 'raw_epo')
-        nb.pick('fc_reports', data / 'reports_preprocessing')
+        nb.pick('fc_raw', data / 'derivatives' / 'preproc_epo')
+        nb.pick('fc_reports', data / 'reports_preproc')
         nb.set('dd_part', file_id)
         nb.click('btn_load')
         nb.click('btn_save')
@@ -137,7 +137,7 @@ def chain_steps(data, manual_participant):
             ('7', lambda: run_tool7(data)),
             ('8bis', lambda: run_tool8bis(data)),
             ('8', lambda: run_tool8(data, manual_participant)),
-            ('9', lambda: run_tool9(data, data / 'derivatives' / 'raw_epo',
+            ('9', lambda: run_tool9(data, data / 'derivatives' / 'preproc_epo',
                                     data / 'derivatives' / 'rejection_auto'))]
 
 

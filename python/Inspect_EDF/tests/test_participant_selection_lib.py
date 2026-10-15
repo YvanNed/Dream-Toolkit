@@ -109,10 +109,10 @@ def test_add_exclusion_columns_reflects_the_current_registry(data):
 
 
 def test_find_data_folder(data):
-    deep = data / 'derivatives' / 'raw_epo' / 'group1'
+    deep = data / 'derivatives' / 'preproc_epo' / 'group1'
     deep.mkdir(parents=True)
     assert P.find_data_folder(deep) == data                               # via config_param/
-    other = data.parent / (data.name + '_noconfig') / 'reports_preprocessing' / 'g'
+    other = data.parent / (data.name + '_noconfig') / 'reports_preproc' / 'g'
     other.mkdir(parents=True)
     assert P.find_data_folder(other) == other.parent.parent               # via reports_*
 

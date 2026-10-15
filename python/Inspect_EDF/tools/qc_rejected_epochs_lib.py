@@ -4,6 +4,8 @@ Shared analysis + report helpers for Tool 8 — Interactive QC of rejected epoch
 Consumed by:
   - 8_reject_manually_voila.ipynb  (interactive, per-participant QC + manual override)
   - 8_reject_manually_batch.py      (database-level Section-2 report, no interaction)
+  - 0_live_explore_1file_voila.ipynb (epoch explorer: montage, detail panel, annotations; feeds its own
+                                      in-memory epochs through participant_from_epochs)
 
 Reads the outputs written by 7_preprocessing_voila for one participant:
   - {file_id}_all-epo.fif                    all epochs + per-epoch rejection metadata (MNE)
@@ -46,13 +48,12 @@ try:
 except Exception:
     HAS_SPECPARAM = False
 
-# Optional PSD smoothing before the 1/f fit (honours tool 7's psd_smoothing sidecar block).
-try:
-    from statsmodels.nonparametric.smoothers_lowess import lowess
-    HAS_LOWESS = True
-except Exception:
-    HAS_LOWESS = False
-    lowess = None
+# PSD smoothing before the 1/f fit (honours tool 7's psd_smoothing sidecar block): tool 7's own functions,
+# from preprocessing_lib (tool-0 redesign phase 5; they were a verbatim copy here).
+from preprocessing_lib import smooth_psd_median, smooth_psd_lowess
+from edf_io_lib import (   # one copy, in edf_io_lib (same folder)
+    BASE_STAGE_COLORS, CUSTOM_STAGE_PALETTE, load_custom_stages, parse_custom_field, custom_stage_style,
+)
 
 mne.set_log_level('ERROR')
 
@@ -120,55 +121,12 @@ DETAIL_FIG_HEIGHT_IN = 3.3      # navigator detail panel (PSD + metric table): l
 
 AASM_STAGES = ['W', 'N1', 'N2', 'N3', 'R']
 
-# ---- Custom (non-AASM) sleep stages (duplicated from tool 7, kept in sync) ----
-BASE_STAGE_COLORS   = {'W': '#969696', 'N1': '#9e9ac8', 'N2': '#807dba', 'N3': '#6a51a3', 'R': '#c994c7'}
-CUSTOM_STAGE_PALETTE = ['#8dd3c7', '#ffffb3', '#bebada', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9']
 
-
-def load_custom_stages(folder):
-    """Read config_param/custom_stages.json; return list of kept non-AASM labels ([] if absent/unreadable)."""
-    if not folder:
-        return []
-    path = Path(folder) / 'config_param' / 'custom_stages.json'
-    if not path.exists():
-        return []
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = json.load(f)
-        stages = data.get('custom_stages', []) if isinstance(data, dict) else []
-        return [str(s) for s in stages]
-    except Exception:
-        return []
-
-
-def parse_custom_field(text):
-    """Parse the comma-separated 'Custom stages' field into a clean, de-duplicated list."""
-    seen = []
-    for tok in str(text).split(','):
-        tok = tok.strip()
-        if tok and tok not in seen:
-            seen.append(tok)
-    return seen
-
-
-def custom_stage_style(custom_stages):
-    """Stage -> y-position, stage -> colour, and axis ticks for AASM + custom stages.
-    AASM keeps YASA heights (W top ... N3 bottom); custom stages stack below N3 (-1, -2, ...).
-    Returns (stage_y, stage_colors, ytick_pos, ytick_labels)."""
-    stage_y = {'W': 4, 'R': 3, 'N1': 2, 'N2': 1, 'N3': 0}
-    stage_colors = dict(BASE_STAGE_COLORS)
-    for i, cs in enumerate(custom_stages):
-        stage_y[cs] = -1 - i
-        stage_colors[cs] = CUSTOM_STAGE_PALETTE[i % len(CUSTOM_STAGE_PALETTE)]
-    ordered = sorted(stage_y.items(), key=lambda kv: kv[1])
-    ytick_pos = [y for _, y in ordered]
-    ytick_labels = ['REM' if s == 'R' else s for s, _ in ordered]
-    return stage_y, stage_colors, ytick_pos, ytick_labels
-
-
-# ---- Default thresholds (tool-7 defaults; fallback when the params JSON is absent) ----
+# ---- Default thresholds (fallback when the params JSON is absent) ----
+# = tool 7's widget defaults (7_preprocessing_voila, Section 2): keep them equal. Until 2026-10-14 the amplitude
+# values here were W 300 / N2-N3 200 µV, not tool 7's.
 DEFAULT_THRESHOLDS = {
-    'amplitude_ptp_uV': {'W': 300.0, 'N1': 250.0, 'N2': 200.0, 'N3': 200.0, 'R': 250.0},
+    'amplitude_ptp_uV': {'W': 250.0, 'N1': 250.0, 'N2': 300.0, 'N3': 300.0, 'R': 250.0},
     'flat_ptp_uV': 1.0,
     'gradient_uV_per_sample': 100.0,
     '1f_mae_max': 0.15,
@@ -294,6 +252,13 @@ def load_participant(fif_path):
     flagged). They are dropped from the analysis here, so tools 8 / the batch see exactly the channels
     tool 7 flagged; the list is returned so a decision table can record them as dropped."""
     epochs = mne.read_epochs(str(fif_path), preload=True, verbose=False)
+    return participant_from_epochs(epochs)
+
+
+def participant_from_epochs(epochs):
+    """The dict of load_participant, built from an Epochs object already in memory: tool 0 epochs the
+    recording itself (like tool 7) and feeds it to the same display code as tool 8. The metadata must
+    carry 'stage' and 'reject_flag'. The bad channels are dropped from `epochs` in place, as above."""
     bad_channels = list(epochs.info['bads'])
     if bad_channels:
         epochs.drop_channels(bad_channels)
@@ -414,57 +379,6 @@ def merge_onsets_for_display(onsets, manual):
 # ---------------------------------------------------------------------------
 # Spectral analysis (Welch PSD + specparam 1/f fit) — same config as tool 7
 # ---------------------------------------------------------------------------
-# --- PSD smoothing helpers (copied VERBATIM from 7_preprocessing_voila — keep in sync) ---------
-def smooth_psd_median(psds_uV2, freqs, span_hz=3.0):
-    """Running-median smooth of each (epoch, channel) linear PSD along frequency.
-    Reproduces oscip.smooth_spectrum_median (MATLAB movmedian over a span given in Hz): a centred
-    median filter that removes narrow spikes (residual line-noise harmonics, single-bin artefacts)
-    BEFORE the LOWESS mean smoothing. The Hz span is converted to a point count
-    (span_pts = round(span_hz / freq_res)); pandas rolling(center=True, min_periods=1) matches
-    MATLAB's truncated-window edge behaviour. Non-fatal: a failing (epoch, channel) is left as-is."""
-    freqs = np.asarray(freqs)
-    if len(freqs) < 4:
-        return psds_uV2
-    freq_res = float(np.median(np.diff(freqs)))            # 0.25 Hz for a 4 s Welch window
-    span_pts = max(3, int(round(span_hz / freq_res)))      # 3 Hz span -> ~12 points at 0.25 Hz
-    out = np.array(psds_uV2, dtype=float, copy=True)
-    n_ep, n_ch, _ = out.shape
-    for ei in range(n_ep):
-        for ci in range(n_ch):
-            try:
-                out[ei, ci] = pd.Series(out[ei, ci]).rolling(
-                    window=span_pts, center=True, min_periods=1).median().to_numpy()
-            except Exception:
-                pass                                       # keep the raw spectrum for this (ep, ch)
-    return out
-
-
-def smooth_psd_lowess(psds_uV2, freqs, span_hz=2.0):
-    """LOWESS-smooth each (epoch, channel) linear PSD along frequency.
-    Reproduces oscip.smooth_spectrum from the Snipes MATLAB pipeline: MATLAB's non-robust
-    'lowess' (local linear regression, tricube weights) over a span given in Hz, applied to the
-    LINEAR power (matching oscip; specparam logs it internally afterwards). The Hz span is converted
-    to a fraction of points because statsmodels expresses the window as a fraction (frac), whereas
-    MATLAB uses a point count. it=0 = non-robust (matches 'lowess', not 'rlowess').
-    Returns a smoothed copy with the same shape (n_ep, n_ch, n_freqs). Non-fatal: on failure a given
-    (epoch, channel) spectrum is left unsmoothed so the 1/f fit still runs."""
-    freqs = np.asarray(freqs)
-    if len(freqs) < 4:
-        return psds_uV2
-    freq_res = float(np.median(np.diff(freqs)))            # 0.25 Hz for a 4 s Welch window
-    span_pts = max(3, int(round(span_hz / freq_res)))      # 2 Hz span -> 8 points at 0.25 Hz
-    frac = min(1.0, span_pts / len(freqs))                 # statsmodels wants a fraction of points
-    out = np.array(psds_uV2, dtype=float, copy=True)
-    n_ep, n_ch, _ = out.shape
-    for ei in range(n_ep):
-        for ci in range(n_ch):
-            try:
-                out[ei, ci] = lowess(out[ei, ci], freqs, frac=frac, it=0, return_sorted=False)
-            except Exception:
-                pass                                       # keep the raw spectrum for this (ep, ch)
-    return out
-
-
 def compute_psds(epochs, fmax=45.0, smoothing=None):
     """Welch PSD per epoch/channel, identical config to 7_preprocessing_voila.
     `fmax` is the 1/f fit upper bound (default 2–45 Hz range); the PSD spans up to it.
@@ -621,7 +535,7 @@ def ordered_present_stages(stages, custom_stages):
 def load_channel_flags(reports_folder, file_id, ch_names, n_epochs):
     """Read tool 7's `{file_id}_epoch_channel_rejection.tsv` into per-method (n_ep, n_ch) bool arrays.
 
-    This is the ONLY thing tool 8 reads from `reports_preprocessing/`, and only when the user points at
+    This is the ONLY thing tool 8 reads from `reports_preproc/`, and only when the user points at
     that folder: it is what makes per-channel badness exact (it carries the per-channel 1/f flags, which
     tool 8 would otherwise have to refit at ~8 min on a 32-channel night). Absent/unreadable -> None,
     and the caller falls back to `recompute_channel_flags` (time-domain only). Non-fatal by design.
@@ -986,9 +900,9 @@ def plot_channel_flag_heatmap(P, pair_flags, methods_sel, in_scope, badness_pct=
     hypno_y = np.array([stage_y.get(s, floor) for s in stages])
     ax_hyp.step(np.arange(n_ep + 1), np.append(hypno_y, hypno_y[-1]), where='post',
                 color='#555555', lw=1.0)
-    for ei in range(n_ep):                                          # REM in red (YASA convention)
+    for ei in range(n_ep):                  # REM in red at the line's width (the toolkit's discreet convention)
         if stages[ei] == 'R':
-            ax_hyp.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=2.0,
+            ax_hyp.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=1.0,
                         solid_capstyle='butt')
     ax_hyp.set_yticks(ytick_pos); ax_hyp.set_yticklabels(ytick_labels, fontsize=6)
     ax_hyp.set_xlim(0, n_ep); ax_hyp.set_xticks([])
@@ -1195,7 +1109,7 @@ def select_montage_channels(P, ei, thresholds, mode='all', n_worst=16, neighbour
 
 
 def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, title_method=None,
-                       scales=None, show_channels=None, number_label=None, manual=None):
+                       scales=None, show_channels=None, number_label=None, manual=None, clock_start=None):
     """Stacked montage of epoch `ei` (± `context` epochs), MNE-raw-plot style. EEG channels on top
     (current-epoch trace coloured by its recomputed flagging method, steepest-gradient jump boxed), then
     the optional EOG/EMG/ECG context traces below — **each channel TYPE on its own FIXED amplitude scale**
@@ -1212,7 +1126,10 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
     `number_label`: optional '(#124 - 23:23:54)' string appended to the epoch number in the title, so the
         montage names the epoch the way the scoring software does; None (default) -> classic title.
     `manual`: optional DataFrame of manual annotations (load_manual_events) drawn as DASHED vertical
-        lines, distinct from the solid scored-event lines; None (default) -> none drawn."""
+        lines, distinct from the solid scored-event lines; None (default) -> none drawn.
+    `clock_start`: optional recording-start datetime (`P['meas_date']`): adds a discreet clock-time row
+        (HH:MM:SS at the epoch boundaries) under the time axis, so the reviewer knows where the window sits in
+        the night without looking up; None (default) -> classic figure."""
     data, sf, ch_all = P['data_uV'], P['sfreq'], P['ch_names']
     stages, meta = P['stages'], P['meta']
     n_ep, n_ch_all, n_t = data.shape
@@ -1383,6 +1300,23 @@ def plot_epoch_montage(P, ei, thresholds, context=1, ctx=None, onsets=None, titl
         handles.append(Line2D([0], [0], color=MANUAL_COLOR, lw=1.5, ls='--', label='manual annotation'))
     ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(1.005, 1.0), fontsize=7, framealpha=0.9)
     fig.subplots_adjust(left=0.17, right=0.84, top=0.93, bottom=0.08)
+    # Clock time under the seconds axis (optional), at the epoch boundaries of the window: small and grey, so
+    # the seconds axis stays the main one. Placed once the margins are final (its offset is in axes fraction).
+    if clock_start is not None:
+        try:
+            # just under the seconds' tick labels (the epoch boundaries fall on 0 / 30 / 60 s ticks), the
+            # 'Time (s)' label pushed one line lower
+            ax_h_in = ax.get_position().height * fig.get_figheight()
+            clock_ax = ax.secondary_xaxis(-0.27 / ax_h_in)
+            bounds = [k * n_t / sf for k in range(len(idxs) + 1)]
+            clock_ax.set_xticks(bounds)
+            clock_ax.set_xticklabels([(clock_start + pd.to_timedelta(win_start + b, unit='s')).strftime('%H:%M:%S')
+                                      for b in bounds], fontsize=7, color='0.45')
+            clock_ax.tick_params(axis='x', colors='0.45', length=0, pad=1)
+            clock_ax.spines['bottom'].set_visible(False)
+            ax.set_xlabel('Time (s)', labelpad=15)
+        except Exception:
+            pass                        # a clock that cannot be drawn must never cost the montage
     return fig
 
 
@@ -1671,9 +1605,9 @@ def plot_review_strip(P, final_reject, overridden, custom_stages=(), in_scope=No
     ax = axes[0]
     xs = np.arange(n_ep + 1)
     ax.step(xs, np.append(hypno_y, hypno_y[-1]), where='post', color='#555555', lw=1.0)
-    for ei in range(n_ep):
+    for ei in range(n_ep):                  # REM in red at the line's width (the toolkit's discreet convention)
         if stages[ei] == 'R':
-            ax.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=2.0,
+            ax.plot([ei, ei + 1], [stage_y['R'], stage_y['R']], color='#c0392b', lw=1.0,
                     solid_capstyle='butt')
     ax.set_yticks(ytick_pos)
     ax.set_yticklabels(ytick_labels, fontsize=7)

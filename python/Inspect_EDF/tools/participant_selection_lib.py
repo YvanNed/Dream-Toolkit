@@ -47,7 +47,7 @@ def registry_path(data_folder):
 def find_data_folder(path):
     """The data folder a path belongs to: the first ancestor (or the path itself) that holds a
     `config_param/` folder, else the parent of the `derivatives/` or `reports_*` folder the path lies
-    in, else None. Lets a tool that only knows e.g. `<data>/derivatives/raw_epo` find the registry."""
+    in, else None. Lets a tool that only knows e.g. `<data>/derivatives/preproc_epo` find the registry."""
     if path is None:
         return None
     p = Path(path)
