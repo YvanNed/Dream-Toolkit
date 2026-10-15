@@ -83,8 +83,6 @@ run_cell = cells[8]
 print("=== Cell 0: markdown intro ===")
 replace_in_cell(md0, "# Preprocessing: Phase 2",
                 "# Preprocessing: Phase 2, Curry 9 (.cdt)", "md title")
-replace_in_cell(md0, "Select the **paths** (EDF folder,",
-                "Select the **paths** (.cdt folder,", "md paths line")
 replace_in_cell(md0, "[group sub-folders mirroring the EDF folder structure, if any]",
                 "[group sub-folders mirroring the .cdt folder structure, if any]", "md output structure")
 
@@ -277,12 +275,6 @@ replace_in_cell(ui_param,
     "                        if os.path.normcase(f.stem) == os.path.normcase(fid) and f.suffix == '.cdt']",
     "cell6 discovery")
 
-# 6b. "Select the EDF data folder" message
-replace_in_cell(ui_param,
-    "print('Select the EDF data folder in Section 1 first.')",
-    "print('Select the .cdt data folder in Section 1 first.')",
-    "cell6 EDF msg")
-
 # ===========================================================================
 print("\n=== Cell 8: run ===")
 
@@ -405,12 +397,6 @@ NEW_LOAD = (
     "                continue\n"
 )
 replace_in_cell(run_cell, OLD_LOAD, NEW_LOAD, "cell8 load block")
-
-# 8b2. Validation ERROR message listing required paths (user-facing)
-replace_in_cell(run_cell,
-    "print('ERROR: Please select the required paths (EDF folder, JSON config, output). '",
-    "print('ERROR: Please select the required paths (.cdt folder, JSON config, output). '",
-    "cell8 validation msg")
 
 # 8c. "EDF not found" -> ".cdt not found" (print + reason)
 replace_in_cell(run_cell,

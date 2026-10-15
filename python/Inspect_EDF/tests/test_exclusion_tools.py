@@ -39,7 +39,7 @@ def ids(chain):
     return minidb.PARTICIPANTS[chain['dataset']]
 
 
-def fif(data, fid, kind='raw_epo', suffix='all-epo'):
+def fif(data, fid, kind='preproc_epo', suffix='all-epo'):
     return mne.read_epochs(str(Path(data) / 'derivatives' / kind / f'{fid}_{suffix}.fif'),
                            preload=True, verbose=False)
 
@@ -57,10 +57,10 @@ def test_tool7_keeps_deselected_channels_as_bad(chain):
     for fid, bad in [(p[0], 'Fp1'), (p[1], 'C3')]:
         ep = fif(chain['data'], fid)
         assert ep.info['bads'] == [bad] and bad in ep.ch_names
-        side = json.loads((chain['data'] / 'derivatives' / 'raw_epo'
+        side = json.loads((chain['data'] / 'derivatives' / 'preproc_epo'
                            / f'{fid}_preprocessing_params.json').read_text(encoding='utf-8'))
         assert side['bad_channels'] == [bad] and bad not in side['channels']
-        flags = tsv(chain['data'] / 'reports_preprocessing' / f'{fid}_epoch_channel_rejection.tsv')
+        flags = tsv(chain['data'] / 'reports_preproc' / f'{fid}_epoch_channel_rejection.tsv')
         assert bad not in set(flags['channel'])
     assert fif(chain['data'], p[2]).info['bads'] == []
 
@@ -127,15 +127,15 @@ def test_tool7_manual_exclusion_and_global_tables(chain, data_copy):
     assert P.status_of(st, p[2]) == (True, '7_manual: tool 6: noisy night')
 
     # every epoch row kept, the excluded participants flagged (p1 by 5bis, p2 here)
-    g = tsv(data_copy / 'reports_preprocessing' / 'global_epoch_rejection.tsv')
+    g = tsv(data_copy / 'reports_preproc' / 'global_epoch_rejection.tsv')
     assert set(g['file_id']) == set(p)
     flagged = g.groupby('file_id')[P.COL_EXCLUDED].first()
     assert flagged.to_dict() == {p[0]: False, p[1]: True, p[2]: True, p[3]: False}
 
     # the per-stage summary is pooled over the 2 non-excluded participants only
-    stage = tsv(data_copy / 'reports_preprocessing' / 'global_rejection_by_stage.tsv')
+    stage = tsv(data_copy / 'reports_preproc' / 'global_rejection_by_stage.tsv')
     assert (stage['n_participants'] == 2).all() and (stage['n_participants_excluded'] == 2).all()
-    per_file = pd.concat([tsv(data_copy / 'reports_preprocessing' / f'{f}_rejection_summary.tsv')
+    per_file = pd.concat([tsv(data_copy / 'reports_preproc' / f'{f}_rejection_summary.tsv')
                           for f in (p[0], p[3])])
     m0 = per_file['method'].iloc[0]
     expected = per_file[per_file['method'] == m0].groupby('stage')['n_total'].sum()
@@ -145,9 +145,9 @@ def test_tool7_manual_exclusion_and_global_tables(chain, data_copy):
 @pytest.mark.tool7
 def test_tool7_chain_stage_summary_leaves_out_the_5bis_exclusion(chain):
     p = ids(chain)
-    stage = tsv(chain['data'] / 'reports_preprocessing' / 'global_rejection_by_stage.tsv')
+    stage = tsv(chain['data'] / 'reports_preproc' / 'global_rejection_by_stage.tsv')
     assert (stage['n_participants'] == 3).all() and (stage['n_participants_excluded'] == 1).all()
-    per_file = pd.concat([tsv(chain['data'] / 'reports_preprocessing' / f'{f}_rejection_summary.tsv')
+    per_file = pd.concat([tsv(chain['data'] / 'reports_preproc' / f'{f}_rejection_summary.tsv')
                           for f in (p[0], p[2], p[3])])
     m0 = per_file['method'].iloc[0]
     expected = per_file[per_file['method'] == m0].groupby('stage')['n_total'].sum()
@@ -187,7 +187,7 @@ def test_tool8bis_decision_tables_match_the_clean_epochs(chain, golden):
         good = sorted(cd.loc[~cd['dropped'], 'channel'])
         assert good == sorted(chans_old)
         # the other stages: same epoch rule, on the good channels
-        pairs = tsv(next((chain['data'] / 'reports_preprocessing').rglob(f'{fid}_epoch_channel_rejection.tsv')))
+        pairs = tsv(next((chain['data'] / 'reports_preproc').rglob(f'{fid}_epoch_channel_rejection.tsv')))
         frac = (pairs[pairs['channel'].isin(good)].groupby('epoch_idx')['reject_any']
                 .mean().reindex(ed['epoch_idx']).fillna(0.0).values)
         expected = (frac > 0.20) if good else np.ones(len(ed), dtype=bool)
@@ -215,8 +215,8 @@ def test_tool8bis_event_threshold_excludes_then_a_rerun_lifts_it(chain, data_cop
 
     def run(threshold):
         with NotebookSession(pipeline.T8BIS) as nb:
-            nb.pick('fc_raw', data_copy / 'derivatives' / 'raw_epo')
-            nb.pick('fc_reports', data_copy / 'reports_preprocessing')
+            nb.pick('fc_raw', data_copy / 'derivatives' / 'preproc_epo')
+            nb.pick('fc_reports', data_copy / 'reports_preproc')
             nb.click('btn_scan')
             nb.run(f"S['event_type_rows']['arousal_spontaneous'][1].value = {threshold}")
             select_subset(nb, [fid], skip=False)
@@ -249,7 +249,7 @@ def test_tool8_exclude_button(chain, data_copy):
     fid = ids(chain)[3]
     with NotebookSession(pipeline.T8) as nb:
         nb.pick('fc_data', data_copy)
-        nb.pick('fc_raw', data_copy / 'derivatives' / 'raw_epo')
+        nb.pick('fc_raw', data_copy / 'derivatives' / 'preproc_epo')
         nb.set('dd_part', fid)
         nb.click('btn_excl')
         assert 'Give a reason' in nb.value('lbl_excl.value')

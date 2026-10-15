@@ -2,6 +2,8 @@
 _make_tool6_curry.py — Generate 6_quality_overview_curry_voila.ipynb from the EDF original.
 
 Changes from EDF version:
+- tools/quality_lib.py (imported by the EDF notebook) is copied into the twin's cell 1, so the twin is
+  standalone and the bounds_pct removals below apply to that copy: re-run after editing the lib too
 - File discovery: .edf → .cdt (bare suffix)
 - Signal loading: mne.io.read_raw_edf → mne.io.read_raw_curry with pick + load_data
 - No EDF physical bounds: remove bounds_pct metric, get_phys_bounds_uV, thresh_bounds widget
@@ -95,6 +97,23 @@ replace_in_cell(cell0,
 )
 
 print("\n=== Cell 1: shared functions ===")
+
+# 1. tools/quality_lib.py (tool 6's metrics, figures and per-recording computation, shared with tool 0) is
+# COPIED into the twin in place of its import: the Curry twin keeps a standalone copy, so the replacements
+# below can strip the EDF physical-range metric (bounds_pct) from it. Re-run this script after editing the lib.
+with open("tools/quality_lib.py", encoding="utf-8") as f:
+    lib_src = f.read()
+_src1 = get_src(cell1)
+_start = _src1.index("from quality_lib import (")
+_end = _src1.index(")\n", _start) + 2
+if _src1.count("from quality_lib import (") != 1:
+    errors.append("quality_lib import")
+set_src(cell1, _src1[:_start]
+        + "# ---- tools/quality_lib.py, copied here by tools_curry/_make_tool6_curry.py (bounds_pct removed) ----\n"
+        + lib_src
+        + "# ---- end of the copy of tools/quality_lib.py ----\n"
+        + _src1[_end:])
+print("  ✓ quality_lib copied in place of its import")
 
 # 1a. Remove drop_suffix_duplicates
 replace_in_cell(cell1,
@@ -390,6 +409,7 @@ replace_in_cell(cell4,
     "                continue\n"
     "\n"
     "            raw.rename_channels({k: v for k, v in sub_config['remap'].items() if k in raw.ch_names})\n"
+    "            phys_bounds_by_name, final_to_orig = {}, {}   # no EDF physical range in Curry (bounds_pct not computed)\n"
     "            sf = raw.info['sfreq']\n",
     "cell4 replace load block",
 )
@@ -437,42 +457,44 @@ replace_in_cell(cell4,
     "cell4 remove EDF comment",
 )
 
-# 4f. Remove phys_bounds lookup + update compute_signal_metrics call (main channel loop)
-replace_in_cell(cell4,
-    "                orig_base = final_to_orig.get(ch, ch)\n"
-    "                phys_min, phys_max = phys_bounds_by_name.get(orig_base, (np.nan, np.nan))\n"
-    "                m = compute_signal_metrics(sig_uV, phys_min, phys_max)\n",
-    "                m = compute_signal_metrics(sig_uV)\n",
-    "cell4 remove phys_bounds call",
+# 4f. Remove phys_bounds lookup + update compute_signal_metrics call (main channel loop). Since phase 4 of
+# the tool-0 redesign this loop is quality_lib.compute_channel_metrics, copied into cell 1 above (4f-4h, 4k
+# target that copy: 8 spaces less indentation than in the former run loop).
+replace_in_cell(cell1,
+    "        orig_base = final_to_orig.get(ch, ch)\n"
+    "        phys_min, phys_max = phys_bounds_by_name.get(orig_base, (np.nan, np.nan))\n"
+    "        m = compute_signal_metrics(sig_uV, phys_min, phys_max)\n",
+    "        m = compute_signal_metrics(sig_uV)\n",
+    "compute_channel_metrics: remove phys_bounds call",
 )
 
 # 4f2. Update compute_signal_metrics call in per-stage loop
-replace_in_cell(cell4,
-    "                        sm = compute_signal_metrics(stage_sig, phys_min, phys_max)\n",
-    "                        sm = compute_signal_metrics(stage_sig)\n",
-    "cell4 remove phys_bounds from stage call",
+replace_in_cell(cell1,
+    "                sm = compute_signal_metrics(stage_sig, phys_min, phys_max)\n",
+    "                sm = compute_signal_metrics(stage_sig)\n",
+    "compute_channel_metrics: remove phys_bounds from stage call",
 )
 
 # 4g. Remove bounds_pct from rows_summary
-replace_in_cell(cell4,
-    "                    'p999_abs_uV': m['p999_abs_uV'],\n"
-    "                    'flat_pct': m['flat_pct'],\n"
-    "                    'bounds_pct': m['bounds_pct'],\n"
-    "                    'hist_extreme_pct': m['hist_extreme_pct'],\n",
-    "                    'p999_abs_uV': m['p999_abs_uV'],\n"
-    "                    'flat_pct': m['flat_pct'],\n"
-    "                    'hist_extreme_pct': m['hist_extreme_pct'],\n",
-    "cell4 remove bounds_pct from rows_summary",
+replace_in_cell(cell1,
+    "            'p999_abs_uV': m['p999_abs_uV'],\n"
+    "            'flat_pct': m['flat_pct'],\n"
+    "            'bounds_pct': m['bounds_pct'],\n"
+    "            'hist_extreme_pct': m['hist_extreme_pct'],\n",
+    "            'p999_abs_uV': m['p999_abs_uV'],\n"
+    "            'flat_pct': m['flat_pct'],\n"
+    "            'hist_extreme_pct': m['hist_extreme_pct'],\n",
+    "compute_channel_metrics: remove bounds_pct from rows_summary",
 )
 
 # 4h. Remove bounds_pct from rows_stage_summary
-replace_in_cell(cell4,
-    "                            'flat_pct': sm['flat_pct'],\n"
-    "                            'bounds_pct': sm['bounds_pct'],\n"
-    "                            'hist_extreme_pct': sm['hist_extreme_pct'],\n",
-    "                            'flat_pct': sm['flat_pct'],\n"
-    "                            'hist_extreme_pct': sm['hist_extreme_pct'],\n",
-    "cell4 remove bounds_pct from rows_stage_summary",
+replace_in_cell(cell1,
+    "                    'flat_pct': sm['flat_pct'],\n"
+    "                    'bounds_pct': sm['bounds_pct'],\n"
+    "                    'hist_extreme_pct': sm['hist_extreme_pct'],\n",
+    "                    'flat_pct': sm['flat_pct'],\n"
+    "                    'hist_extreme_pct': sm['hist_extreme_pct'],\n",
+    "compute_channel_metrics: remove bounds_pct from rows_stage_summary",
 )
 
 # 4i. Remove 'At EDF bounds (%)' from metrics table in report
@@ -494,17 +516,18 @@ replace_in_cell(cell4,
 # physiological ceiling. DC-coupled Curry data (no export clipping) can carry large
 # drift/artifacts that blow up the p99.9 autoscale and crush the real EEG; capping keeps
 # ~all physiological signal visible while clean low-amplitude channels still zoom in below.
-replace_in_cell(cell4,
-    "            _p999 = [m['p999_abs_uV'] for m in ch_metrics.values()]\n"
-    "            y_lim_ts = float(max(_p999)) if _p999 else 1.0\n",
-    "            # DC-coupled data carries no export clipping, so drift/artifacts can push the\n"
-    "            # p99.9 autoscale far past physiological range and crush the real EEG. Cap the\n"
-    "            # shared time-series / histogram amplitude limit at a wide physiological ceiling\n"
-    "            # (uV); clean low-amplitude channels still auto-zoom below the cap.\n"
-    "            DISPLAY_YLIM_UV = 500.0\n"
-    "            _p999 = [m['p999_abs_uV'] for m in ch_metrics.values()]\n"
-    "            y_lim_ts = min(float(max(_p999)), DISPLAY_YLIM_UV) if _p999 else 1.0\n",
-    "cell4 cap time-series y-limit at physiological ceiling",
+# (quality_lib.display_limits, copied into cell 1: x_lim_hist = y_lim_ts follows, so the histograms are capped too)
+replace_in_cell(cell1,
+    "    _p999 = [m['p999_abs_uV'] for m in ch_metrics.values()]\n"
+    "    y_lim_ts = float(max(_p999)) if _p999 else 1.0\n",
+    "    # DC-coupled data carries no export clipping, so drift/artifacts can push the\n"
+    "    # p99.9 autoscale far past physiological range and crush the real EEG. Cap the\n"
+    "    # shared time-series / histogram amplitude limit at a wide physiological ceiling\n"
+    "    # (uV); clean low-amplitude channels still auto-zoom below the cap.\n"
+    "    DISPLAY_YLIM_UV = 500.0\n"
+    "    _p999 = [m['p999_abs_uV'] for m in ch_metrics.values()]\n"
+    "    y_lim_ts = min(float(max(_p999)), DISPLAY_YLIM_UV) if _p999 else 1.0\n",
+    "display_limits: cap time-series y-limit at physiological ceiling",
 )
 
 print("\n=== Global replacements ===")

@@ -40,8 +40,8 @@ replacements = [
     ),
     # chooser title hint
     (
-        "Choose your data folder",
-        "Choose your data folder (containing .cdt files)"
+        "Choose your study folder",
+        "Choose your study folder (containing .cdt files)"
     ),
 ]
 
