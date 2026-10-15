@@ -412,7 +412,9 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
   first.
 - **Plan-first**: draft the plan with the most capable available model, write it to a temporary
   `tools/plan_<task>.md` for the user to read/annotate, and start implementing **only** after explicit
-  confirmation. Delete the plan file when the task is done and confirmed.
+  confirmation. **Stage the plan with `git add` as soon as it is written** (the user commits it, then its later
+  versions), so it stays in the git history. Delete the plan file when the task is done and confirmed (staged
+  as its own deletion commit): it can always be recovered from the history.
 - **Keep docs in sync (details go to SPEC.md, not CLAUDE.md)**: add any directly-imported package to
   `environment.yml` (conda-forge if available, else pip). Put the *details* of any design decision (offsets,
   thresholds, widget names, defaults, output files) in **SPEC.md** (the *Cross-cutting procedures* section
