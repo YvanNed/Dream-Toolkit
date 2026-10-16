@@ -2573,6 +2573,17 @@ under the `pip:` block). These were bumped for Curry. The EDF tools continue to 
 
 Modules still in development. The quality-overview (6), preprocessing (7) and QC-of-rejected-epochs (8) tools above are stable and were promoted out of this section.
 
+### Simulated recording generator in tool 0 + rework of the `test_data` defect set (TODO)
+
+Add to tool 0 the option to generate a simulated recording and inject chosen noise / artifact types, to try the
+plots of every step. Fold in a rework of `tools/generate_test_data.py` (defect files 731–738): some defects are not
+what their name says. `734_dead_channel` is a ×0.01 **attenuation** of C3, not a dead electrode: the EEG is intact,
+shifted by −40 dB at every frequency, so its hypnospectrogram looks normal on the per-channel colour scale (only the
+dB colorbar and `std_uV` reveal it). A real disconnected electrode rather picks up 50 Hz, drifts or saturates.
+Candidates: rename it (low gain), add a realistic disconnected-electrode defect, and share one set of injectors
+between tool 0, `generate_test_data.py` and `tests/synthetic.py`. Renaming or regenerating these files changes the
+test datasets: the goldens must be regenerated (`tests/make_golden.py`).
+
 ### EDF reading of tools 2, 4, 6, 7 through `edf_io_lib` (TODO, needs a user test on Curry data)
 
 Left out of the tool-0 redesign's phase 8 (user decision, 2026-10-14: reduced scope + a sync test). Tool 2's header
@@ -2612,6 +2623,7 @@ delimiting the sections** used by tools 1, 2 and 3 for every tool, and the same 
 pickers and fields, button styles, information / warning colours and progress bars. Layout only: no output may
 change (the HTML reports are a separate question). Tool 0's display conventions (*Display conventions* above) are
 for the figures.
+Could also harmonize the file selection and automatic detection (1st I wanted to force users to select the correct file they need to use to force them to really understand what they need to do and what is required for each step, but with the increase of generated files and report, I think it is better to direct to the files directly (but still editable if the user want to use  another file) with warnings when a file is missing)
 
 ### Tool 0: interactive canvas for the epoch explorer (TODO)
 
