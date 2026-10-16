@@ -2615,6 +2615,7 @@ the data**: groups (sub-folders, name prefixes), several recordings per particip
 companion files present per recording, and the files that break the convention. The audit lists what the current
 code assumes and where it fails on real databases; the inferred structure could then pre-fill a participant table
 for the later tools.
+this part could also checks the companion files (hypno, events etc), and gives warning if some are missing
 
 ### Display harmonization across the Voila tools (TODO)
 
@@ -2623,7 +2624,8 @@ delimiting the sections** used by tools 1, 2 and 3 for every tool, and the same 
 pickers and fields, button styles, information / warning colours and progress bars. Layout only: no output may
 change (the HTML reports are a separate question). Tool 0's display conventions (*Display conventions* above) are
 for the figures.
-Could also harmonize the file selection and automatic detection (1st I wanted to force users to select the correct file they need to use to force them to really understand what they need to do and what is required for each step, but with the increase of generated files and report, I think it is better to direct to the files directly (but still editable if the user want to use  another file) with warnings when a file is missing)
+Could also harmonize the file selection and automatic detection (1st I wanted to force users to select the correct file they need to use to force them to really understand what they need to do and what is required for each step, but with the increase of generated files and report, I think it is better to direct to the files directly (but still editable if the user want to use  another file) with warnings when a file is missing).
+And also propose and harmonize a way to rename the output ? Could be interesting for tool 2 to have multiple remap_reref_ to run the tools on different configuration of channels (but ask the question of how to seperate the next outputs of the different tools if they are run on different configuration)  
 
 ### Tool 0: interactive canvas for the epoch explorer (TODO)
 
