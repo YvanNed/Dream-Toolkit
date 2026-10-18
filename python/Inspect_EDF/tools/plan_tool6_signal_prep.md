@@ -119,11 +119,13 @@ filtré côte à côte) est **reporté** et n'est pas dans ce plan.
 
 ## TODO
 
-- [ ] B1 bibliothèque
-- [ ] B2 notebook du tool 6 (rapport, dataset_overview, Skip)
-- [ ] A texte d'aide (EDF)
-- [ ] Tool 0 cellule 10
-- [ ] B3 générateur Curry + régénération du twin
-- [ ] Test dédié + niveau de tests (à demander)
-- [ ] SPEC.md
+- [x] B1 bibliothèque
+- [x] B2 notebook du tool 6 (rapport, dataset_overview, Skip)
+- [x] A texte d'aide (EDF)
+- [x] Tool 0 cellule 10
+- [x] B3 générateur Curry + régénération du twin
+- [x] Tests dédiés (`test_quality_lib.py` quick, `test_known_answers.py` défaut `none`, variante dans `test_variants.py`)
+- [x] Niveau de tests : standard ciblé `(tool0 or tool6 or tool7) and not full` (36 passed) + la variante tool 6
+      (passed sur synthetic, skipped sur real comme prévu), 2026-10-18
+- [x] SPEC.md + TESTS.md
 - [ ] Supprimer ce plan à la fin (commit de suppression séparé)

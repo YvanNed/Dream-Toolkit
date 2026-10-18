@@ -429,6 +429,27 @@ replace_in_cell(cell3,
     "    value=0.1, min=0.01, max=5.0, step=0.05,\n",
     "cell3 high-pass default freq (Curry)")
 
+# The hint under 'Signal preparation': the EDF one recommends a first run without high-pass, which does not
+# fit DC-coupled Curry data (high-pass ticked by default above).
+replace_in_cell(cell3,
+    "# Why a first run without preparation: the metrics are computed on the prepared signal, and a high-pass\n"
+    "# smooths away part of the defects this overview looks for.\n"
+    "signal_prep_hint = widgets.HTML(\n"
+    "    '<small style=\"color:#555;\">First run: leave both unticked to see the data as recorded. A high-pass '\n"
+    "    'attenuates or erases clipping, quantization, flat segments and DC drift (the metrics are computed on '\n"
+    "    'the prepared signal). Use it in a second run, to harmonise a dataset with different acquisition '\n"
+    "    'high-passes or to judge the signal as tool 7 will filter it.</small>'\n"
+    ")\n",
+    "# Curry data are DC-coupled: the high-pass is ticked by default to remove the DC offset, and the hint\n"
+    "# says what it costs (the metrics are computed on the prepared signal).\n"
+    "signal_prep_hint = widgets.HTML(\n"
+    "    '<small style=\"color:#555;\">Curry data are DC-coupled, so the high-pass is ticked by default (0.1 Hz) '\n"
+    "    'to remove the DC offset. Untick it only to look at the raw offsets. A high-pass attenuates clipping, '\n"
+    "    'quantization, flat segments and drift in the metrics (they are computed on the prepared '\n"
+    "    'signal).</small>'\n"
+    ")\n",
+    "cell3 signal-preparation hint (Curry)")
+
 # 3h. Acquisition scan: the EDF byte parser (read_edf_sf_highpass) does not apply to .cdt, so read
 # the Curry header via MNE instead. Curry is DC-coupled → no acquisition high-pass (none/DC).
 # (read_edf_sf_highpass stays defined but unused in the Curry twin — harmless.)

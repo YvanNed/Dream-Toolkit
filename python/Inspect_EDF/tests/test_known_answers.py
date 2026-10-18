@@ -3,10 +3,11 @@ never read from a golden snapshot. A golden comparison only proves that nothing 
 golden was taken would pass forever); these tests prove the tools find what is really in the data.
 
     tool 5   sleep metrics recomputed from the generated hypnogram (exact)
-    tool 6   flags exactly the two injected defective channels
+    tool 6   flags exactly the two injected defective channels; records its default signal preparation ('none')
     tool 7   flags the 10 injected movement bursts, and nothing else on that channel
     tool 9   the generated physiology: alpha in wake (occipital), spindles in N2, steeper 1/f in N3
 """
+import re
 import sys
 from pathlib import Path
 
@@ -70,6 +71,22 @@ def test_tool6_flags_exactly_the_injected_defects(syn):
     q = tsv(data / 'reports_quality_overview' / 'quality_summary.tsv')
     flagged = sorted(map(tuple, q.loc[q['exclude'].astype(bool), ['file_id', 'channel']].values.tolist()))
     assert flagged == [(ids[0], 'Fp1'), (ids[1], 'C3')]          # clipped Fp1, dead C3, nothing else
+
+
+@pytest.mark.tool6
+def test_tool6_records_the_default_signal_preparation(syn):
+    """The chain runs tool 6 with its defaults (no resampling, no high-pass): the tables, every report and the
+    dataset overview say so."""
+    data, ids = syn
+    reports = data / 'reports_quality_overview'
+    q = tsv(reports / 'quality_summary.tsv')
+    assert (q['signal_preparation'] == 'none').all()
+    for fid in ids:
+        html = next(reports.rglob(f'{fid}_quality_overview.html')).read_text(encoding='utf-8')
+        assert 'Signal preparation:</b> none (the EEG as recorded)' in html, fid
+    overview = (reports / 'dataset_overview.html').read_text(encoding='utf-8')
+    assert re.search(r'Signal preparation:</b> none \(\d+\)', overview)
+    assert 'Mixed signal preparations' not in overview
 
 
 # ----------------------------------------------------------------------------------------------- tool 7
