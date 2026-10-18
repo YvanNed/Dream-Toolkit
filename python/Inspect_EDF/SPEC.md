@@ -2612,6 +2612,16 @@ Candidates: rename it (low gain), add a realistic disconnected-electrode defect,
 between tool 0, `generate_test_data.py` and `tests/synthetic.py`. Renaming or regenerating these files changes the
 test datasets: the goldens must be regenerated (`tests/make_golden.py`).
 
+### Tool 6: keep a raw run and a prepared run side by side (TODO)
+
+Follow-up of the recorded signal preparation (§6, *Recommended first run and recorded preparation*, 2026-10-18).
+Today every tool-6 run writes to `reports_quality_overview/`, so a second run with a high-pass replaces the raw one
+(or, with *Skip already processed* ticked, skips every participant with a ⚠ naming the mix). Idea: an optional
+output-folder suffix (e.g. `reports_quality_overview_hp0.5`), pre-filled from the signal preparation, like tool 7's
+optional output folder. To decide: whether the suffix is free text or derived from the preparation, and who reads
+which folder: tool 7 picks `quality_summary.tsv` through a file chooser (any folder works), but tool 0 looks for
+`reports_quality_overview/` by a hard-coded path.
+
 ### EDF reading of tools 2, 4, 6, 7 through `edf_io_lib` (TODO, needs a user test on Curry data)
 
 Left out of the tool-0 redesign's phase 8 (user decision, 2026-10-14: reduced scope + a sync test). Tool 2's header
