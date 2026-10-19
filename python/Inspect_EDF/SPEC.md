@@ -2665,6 +2665,23 @@ for the figures.
 Could also harmonize the file selection and automatic detection (1st I wanted to force users to select the correct file they need to use to force them to really understand what they need to do and what is required for each step, but with the increase of generated files and report, I think it is better to direct to the files directly (but still editable if the user want to use  another file) with warnings when a file is missing).
 And also propose and harmonize a way to rename the output ? Could be interesting for tool 2 to have multiple remap_reref_ to run the tools on different configuration of channels (but ask the question of how to seperate the next outputs of the different tools if they are run on different configuration)  
 
+### English everywhere: harmonize the language of every tool (TODO)
+
+Project rule: every user-facing string is in English. Some tools still show French. Found on 2026-10-19 (quick
+search, to be completed by a full audit):
+- **Tool 2** (`2_select&remap_channels_edf_voila.ipynb`, ~20 lines, and its Curry twin): the channel-selection
+  messages, e.g. `4 / 12 sélectionnés`, `Sélections enregistrées dans :`, `config. 1 (n=1): 4 canaux choisis =>`.
+  They show on the poster's tool-2 screenshot: retake it once fixed.
+- `tools/check_hypno_config.py`: its messages (`fichier`, `Erreur`).
+- Code comments in French in tools 6 and 7 (e.g. tool 7's `[B]` / `[H]` blocks; they pass into the Curry twins
+  through `_make_tool{6,7}_curry.py`). Not user-facing, but worth translating at the same time.
+
+Audit scope: every Voila notebook, the `tools/*_lib.py` libraries (messages, HTML reports, figure labels), the batch
+`.py` scripts and the Curry twins. Edit the EDF notebook, then re-run its Curry generator (tool 1's twin is
+hand-edited). Leave alone: the French parsing vocabulary (Compumedics French exports, `FRENCH_EVENT_RULES`) and the
+archived `tools/jupyter_notebook/` versions (frozen). Check the tests that match message text, and the goldens if an
+HTML report changes.
+
 ### Tool 0: interactive canvas for the epoch explorer (TODO)
 
 Tool 0's explorer redraws static matplotlib PNGs (fast, reliable under Voila, easy to embed in the inspection
