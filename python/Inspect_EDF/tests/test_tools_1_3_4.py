@@ -38,7 +38,7 @@ def test_tool1_inspects_the_headers(fresh_db):
     with NotebookSession(T1) as nb:
         nb.pick('chooser', fresh_db)
         nb.click('run_button')
-    out = fresh_db / 'summary_inspection'
+    out = fresh_db / 'reports_inspection'
     full = pd.read_csv(out / 'FULL_summary_table_edf.tsv', sep='\t', dtype=str)
     assert sorted(full['subject'].unique()) == IDS
     channels = {fid: sorted(chs) for fid, chs in full.groupby('subject')['channel']}

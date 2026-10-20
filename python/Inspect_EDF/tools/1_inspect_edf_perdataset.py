@@ -42,88 +42,19 @@ except ImportError as e:
 else:
     print("\nPackages and functions successfully imported!")
 
-# custom function to detect automatically and return the encoding of edf file
-def detect_encoding(byte_string, min_confidence=0.6):
-    result = chardet.detect(byte_string)
-    encoding = result['encoding']
-    confidence = result['confidence']
-    if encoding is None or confidence < min_confidence:
-        raise UnicodeDecodeError("chardet", byte_string, 0, len(byte_string),
-                                 f"\tUnable to reliably detect encoding. Detected: {encoding} with confidence {confidence}")
-    return encoding
-
-# custom function to read information from EDF headers, without using the pyedflib package (that was too strict for ICEBERG)
-# EDF file should follow a strict format, dedicating a specific number of octets for each type of information.
-# it means that we can read the info octet by octet by specifying the number of octets we expect for the next variable (that is known from the EDF norm)
-def read_edf_header_custom(file_path):
-    with open(file_path, 'rb') as f: # open the file in binary mode, to read octet by octet. 
-        header = {}
-        # detect encoding
-        raw_header = f.read(256)
-        encoding = detect_encoding(raw_header)
-        # print(f"\tDetected encoding for {file_path} : {encoding}")
-        # Rewind to the beginning of the file
-        f.seek(0)
-        
-        # the first 256 octets are global subject info
-        header['version'] = f.read(8).decode(encoding).strip()
-        header['patient_id'] = f.read(80).decode(encoding).strip()
-        header['recording_id'] = f.read(80).decode(encoding).strip()
-        header['start_date'] = f.read(8).decode(encoding).strip()
-        header['start_time'] = f.read(8).decode(encoding).strip()
-        header['header_bytes'] = int(f.read(8).decode(encoding).strip())
-        header['reserved'] = f.read(44).decode(encoding).strip()
-        header['n_data_records'] = int(f.read(8).decode(encoding).strip())
-        header['duration_data_record'] = float(f.read(8).decode(encoding).strip())
-        header['n_channels'] = int(f.read(4).decode(encoding).strip())
-        
-        # get info per channel
-        n = header['n_channels']
-        channel_fields = {
-            'channel': [],
-            'transducer_type': [],
-            'dimension': [],
-            'physical_min': [],
-            'physical_max': [],
-            'digital_min': [],
-            'digital_max': [],
-            'prefiltering': [],
-            'samples_per_record': [],
-            'reserved': [],
-        }
-
-        for key in channel_fields:
-            length = {
-                'channel': 16,
-                'transducer_type': 80,
-                'dimension': 8,
-                'physical_min': 8,
-                'physical_max': 8,
-                'digital_min': 8,
-                'digital_max': 8,
-                'prefiltering': 80,
-                'samples_per_record': 8,
-                'reserved': 32,
-            }[key]
-            channel_fields[key] = [f.read(length).decode(encoding).strip() for _ in range(n)]
-
-        header.update(channel_fields)
-
-        # The per-channel EDF header field is the NUMBER OF SAMPLES PER DATA RECORD,
-        # not the sampling frequency. In classic EDF the data-record duration is 1 s, so the
-        # two coincide; but in EDF+ the record duration often differs (e.g. 0.1 s or 2 s), so the
-        # true sampling frequency must be obtained by dividing (e.g. 40 / 0.1 = 400 Hz).
-        dur = header['duration_data_record']
-        sf_list = []
-        for s in header['samples_per_record']:
-            try:
-                sf = float(s) / dur
-                sf_list.append(str(int(sf)) if sf == int(sf) else str(sf))
-            except (ValueError, ZeroDivisionError):
-                sf_list.append(s)  # fall back to the raw field if non-numeric or zero duration
-        header['sampling_frequency'] = sf_list
-
-    return header
+# Shared EDF reading (tools/edf_io_lib.py, also used by tool 1's Voila app and tool 0): found beside this script,
+# or from the repo root / tools/ when the cells are run one by one (Spyder: no __file__).
+import sys
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    _here = os.getcwd()
+for _p in [_here, os.getcwd(), os.path.join(os.getcwd(), 'tools')]:
+    if os.path.isfile(os.path.join(_p, 'edf_io_lib.py')):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+        break
+from edf_io_lib import detect_encoding, read_edf_header_custom, extract_filter_value, check_anonymization
 
 # custum function to get the path of a folder by selecting it from a browsing window 
 def get_folder_path():
@@ -134,54 +65,6 @@ def get_folder_path():
     folder = filedialog.askdirectory(title="Select the study folder that contains your dataset", parent = root)
     root.destroy()          # close the graphic initialysation
     return folder
-
-# function to extract filter information from the string in headers
-def extract_filter_value(s, tag):
-    if pd.isna(s):
-        return None
-    match = re.search(rf'{tag}[:\s]*([\d\.]+)\s*', s, re.IGNORECASE)
-    return float(match.group(1)) if match else None
-
-def check_anonymization(patient_id, file_stem):
-    """
-    Inspect the EDF+ 'Local Patient ID' field for a real patient name.
-    EDF+ format: 'code sex birthdate name' (space-separated).
-    Compumedics encodes the name as 'LASTNAME_FIRSTNAME'; anonymized = 'X_X'.
-    The name subfield (4th token onward) is isolated, placeholder chars
-    (X/x/_ and whitespace) are stripped; anything remaining is a real name.
-    Filename cross-check: each name token with >=3 chars is searched in the
-    file stem (case-insensitive) to detect PII leaking into the file name.
-    """
-    parts = str(patient_id).split()
-    if len(parts) >= 4:
-        name_subfield = ' '.join(parts[3:])
-        id_format = 'edf+'
-    else:
-        name_subfield = str(patient_id).strip()
-        id_format = 'non-standard'
-    cleaned = re.sub(r'[Xx_,;\s]', '', name_subfield)
-    header_anonymized = (cleaned == '')
-    name_in_filename = False
-    if not header_anonymized:
-        stem_low = file_stem.lower()
-        for token in re.split(r'[_\s]+', name_subfield):
-            if len(token) >= 3 and token.lower() in stem_low:
-                name_in_filename = True
-                break
-    warning = ''
-    if not header_anonymized:
-        if name_in_filename:
-            warning = 'PII in header AND file name'
-        else:
-            warning = 'header NOT anonymized (file name looks clean)'
-    return {
-        'patient_id'        : str(patient_id).strip(),
-        'name_subfield'     : name_subfield,
-        'patient_id_format' : id_format,
-        'header_anonymized' : header_anonymized,
-        'name_in_filename'  : name_in_filename,
-        'anon_warning'      : warning,
-    }
 
 # function to plot df columns more properly
 def join_uniq(series):
@@ -196,7 +79,7 @@ def join_values(series):
     return ", ".join(map(html.escape, vals))
 
 
-#%% get data folder path and file list
+#%% get study folder path and file list
 folder_path = get_folder_path()
 print(f'\nSelected folder: {folder_path}')
 
@@ -216,11 +99,11 @@ if not edf_files:
 else:
     print(f"\nThere is {len(edf_files)} .edf files in your folder.\n")
     
-summary_path = f'{folder_path}/summary_inspection'
+summary_path = f'{folder_path}/reports_inspection'
 if not os.path.exists(summary_path):
     os.makedirs(summary_path)
     readme_text = (
-        "# summary_inspection — Output files\n\n"
+        "# reports_inspection — Output files\n\n"
         "This folder is created automatically by the EDF inspection tools (Dream-Toolkit).\n"
         "It contains summary tables (.tsv) and HTML reports generated from the EDF files in the parent study folder.\n\n"
         "## Output files\n\n"
@@ -241,7 +124,6 @@ if not os.path.exists(summary_path):
         "| failed_edf_read.tsv | all | EDF files that could not be read |\n\n"
         "## Tools that generate this folder\n\n"
         "- **1_inspect_edf_voila.ipynb** — Interactive UI (run with `voila tools/1_inspect_edf_voila.ipynb`). Recommended for non-programmers.\n"
-        "- **1_inspect_edf.ipynb** — Jupyter notebook version with visible code cells. Use for debugging.\n"
         "- **1_inspect_edf_perdataset.py** — Script version; processes a full dataset folder in one shot.\n"
         "- **1_inspect_edf_perparticipant.py** — Script version; generates one report per participant.\n"
     )
@@ -255,7 +137,7 @@ if not os.path.exists(summary_path):
 
 # check if there is a participants.tsv file to get different groups or sessions
 # if there is not a participants.tsv we will try to infer groups from subfolder organization or filename components (additional part from subject number)
-# in ICEBERG, subfolders define groups within the data folder
+# in ICEBERG, subfolders define groups within the study folder
 # in APOMORPHEE, suffixes define nights ("session") 
 table_found = False
 for root, dirs, files in os.walk(folder_path):
@@ -960,20 +842,5 @@ with open(f"{summary_path}/EDF_inspection_report.html", "w", encoding="utf-8") a
 print("\n----------------------------------------------------------------------")
 print("----------------------- End of the inspection ------------------------")
 print("----------------------------------------------------------------------")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

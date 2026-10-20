@@ -34,10 +34,22 @@ def sort(df):
     return df.sort_values(keys, kind='stable').reset_index(drop=True)
 
 
+# Power minus the aperiodic fit, in dB: a difference of two nearly equal numbers (often ~0.01 dB), so the
+# floating-point noise of the specparam fit, which changes with the BLAS library (OpenBLAS -> MKL when
+# pytorch was installed for tool 3bis), exceeds the relative tolerance. 1e-5 dB is far below anything meaningful.
+AP_REMOVED_ATOL_DB = 1e-5
+
+
 def same(new, old, ignore=('source',), atol=1e-9):
     cols = [c for c in old.columns if c not in ignore]
-    return snapshot.compare_tables(new[cols].reset_index(drop=True), old[cols].reset_index(drop=True),
-                                   atol=atol)
+    # 'in', not endswith: the per-stage tables aggregate it as e.g. power_ap_removed_db_from_log_median
+    ap_cols = [c for c in cols if '_ap_removed_db' in c]
+    other_cols = [c for c in cols if c not in ap_cols]
+    new, old = new.reset_index(drop=True), old.reset_index(drop=True)
+    diffs = snapshot.compare_tables(new[other_cols], old[other_cols], atol=atol)
+    if ap_cols and len(new) == len(old):                  # a row-count change is already reported above
+        diffs += snapshot.compare_tables(new[ap_cols], old[ap_cols], atol=AP_REMOVED_ATOL_DB)
+    return diffs
 
 
 # 8bis's default reference stages = the former scope of its decision (the golden clean-epo held only
@@ -79,7 +91,7 @@ def test_tool9_computes_every_epoch_and_channel(chain):
     p = minidb.PARTICIPANTS[chain['dataset']]
     feat, dec = data / 'derivatives' / 'features_spectral', data / 'derivatives' / 'rejection_auto'
     for fid in p:
-        ep = mne.read_epochs(str(data / 'derivatives' / 'raw_epo' / f'{fid}_all-epo.fif'),
+        ep = mne.read_epochs(str(data / 'derivatives' / 'preproc_epo' / f'{fid}_all-epo.fif'),
                              preload=False, verbose=False)
         ed = tsv(dec / f'{fid}_epoch_decision.tsv').set_index('epoch_idx')
         cd = tsv(dec / f'{fid}_channel_decision.tsv')
@@ -122,7 +134,7 @@ def test_tool9_reaggregate_equals_a_full_run(chain, data_copy):
     ed.to_csv(dec_path, sep='\t', index=False)
     before = tsv(feat / f'{fid}_spectral_stage.tsv')
 
-    raw_dir, dec_dir = data_copy / 'derivatives' / 'raw_epo', data_copy / 'derivatives' / 'rejection_auto'
+    raw_dir, dec_dir = data_copy / 'derivatives' / 'preproc_epo', data_copy / 'derivatives' / 'rejection_auto'
     log = pipeline.run_tool9(data_copy, raw_dir, dec_dir, subset=[fid], reaggregate=True)
     assert 'Re-aggregate only' in log and '1 processed' in log and 'failed:' not in log, log[-2000:]
     reagg = {n: tsv(feat / f'{fid}_{n}.tsv') for n in EPOCH_TABLES + STAGE_TABLES + ['spectral_stage_third']}

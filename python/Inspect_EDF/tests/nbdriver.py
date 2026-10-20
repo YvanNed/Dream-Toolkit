@@ -11,16 +11,53 @@ Usage:
         nb.click('btn_scan')
         n = nb.value('len(S["parts"])')
 """
+import asyncio
 import json
 import os
 import re
+import sys
 from contextlib import ExitStack
 from pathlib import Path
+from queue import Empty
+from time import monotonic
 
 import nbformat
 from nbclient import NotebookClient
 
 REPO_ROOT = Path(__file__).resolve().parent.parent      # Inspect_EDF/ = the canonical launch cwd
+
+# Windows: the Selector event loop is the one zmq supports natively (the default Proactor loop makes
+# it run an extra selector thread). Not enough on its own against the hangs: see _repoll_channel.
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# Safety net: a cell that runs longer than this fails the test instead of hanging the run.
+# The slowest real cells (tool 7 on a full night) take a few minutes.
+CELL_TIMEOUT_S = 1800
+REPOLL_S = 2.0
+
+
+def _repoll_channel(channel):
+    """Make the kernel channel look at its socket again every REPOLL_S seconds.
+
+    nbclient waits for the kernel's reply with one asynchronous poll and relies on a single wake-up
+    signal from zmq. That signal was occasionally lost (kernel idle, its reply already queued, client
+    waiting forever: seen in tools 5, 5bis and 8, never reproducible alone). Each new poll reads the
+    socket's real state, so a reply that is already there is picked up at the next round.
+    """
+    get_msg_once = channel.get_msg
+
+    async def get_msg(timeout=None):
+        deadline = None if timeout is None else monotonic() + timeout
+        while True:
+            step = REPOLL_S if deadline is None else max(0.0, min(REPOLL_S, deadline - monotonic()))
+            try:
+                return await get_msg_once(timeout=step)
+            except Empty:
+                if deadline is not None and monotonic() >= deadline:
+                    raise
+
+    channel.get_msg = get_msg
 
 # Helpers defined inside the kernel once the notebook has run.
 _PRELUDE = r'''
@@ -84,10 +121,12 @@ class NotebookSession:
     # -- lifecycle ---------------------------------------------------------
     def __enter__(self):
         self.nb = nbformat.read(str(self.path), as_version=4)
-        self.client = NotebookClient(self.nb, timeout=None, kernel_name='python3',
+        self.client = NotebookClient(self.nb, timeout=CELL_TIMEOUT_S, kernel_name='python3',
                                      resources={'metadata': {'path': str(self.cwd)}})
         self._stack = ExitStack()
         self._stack.enter_context(self.client.setup_kernel(cwd=str(self.cwd)))
+        _repoll_channel(self.client.kc.shell_channel)
+        _repoll_channel(self.client.kc.iopub_channel)
         if self.run_all_cells:
             for i, cell in enumerate(list(self.nb.cells)):
                 if cell.cell_type == 'code':

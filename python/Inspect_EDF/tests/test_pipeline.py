@@ -15,7 +15,7 @@ TOOL_OUTPUTS = {
     '5bis': ['reports_features_macrostructure/participant_selection',
              'config_param/participant_exclusions.tsv'],     # the registry: in the chain, 5bis rows only
     '6': ['reports_quality_overview/'],
-    '7': ['derivatives/raw_epo/', 'reports_preprocessing/'],
+    '7': ['derivatives/preproc_epo/', 'reports_preproc/'],
     '8bis': ['derivatives/clean_epo_auto/', 'derivatives/rejection_auto/', 'reports_rejection_auto/'],
     '8': ['derivatives/clean_epo_manual/', 'derivatives/rejection_manual/', 'reports_rejection_manual/'],
     '9': ['derivatives/features_spectral/', 'reports_features_spectral/'],
@@ -33,7 +33,7 @@ def test_every_golden_file_is_owned_by_a_tool(golden):
 # Outputs whose values are MEANT to differ from the pre-refactor golden, each with its own test:
 INTENDED_CHANGES = {
     # pooled over the NON-excluded participants only (test_exclusion_tools.py)
-    '7': ['reports_preprocessing/global_rejection_by_stage.tsv'],
+    '7': ['reports_preproc/global_rejection_by_stage.tsv'],
     # the decision covers every epoch: n_epochs / pct_epochs_rejected now count the whole night (the
     # former in-scope counts moved to the *_ref columns), checked by
     # test_exclusion_tools.py::test_tool8bis_decision_tables_match_the_clean_epochs
