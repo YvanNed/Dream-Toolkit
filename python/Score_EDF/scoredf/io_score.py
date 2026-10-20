@@ -96,11 +96,34 @@ def detect_and_read_scoring(path: str | Path) -> tuple[pd.DataFrame, float]:
     raise ValueError(f"Unsupported scoring file format: {path.name} (expected .xml, .txt, or .csv)")
 
 
+def _extract_subject_night(name: str) -> tuple[str, str] | None:
+    """Extract (subject_id, night_id) from a filename.
+
+    subject_id = first 4 characters, night_id = 2 characters after the first '_'.
+    Returns None if the name is too short or has no '_'.
+    """
+    stem = Path(name).stem
+    # Strip a trailing .edf for double-extension names like "foo.edf.XML"
+    if stem.lower().endswith(".edf"):
+        stem = stem[:-4]
+    if len(stem) < 4 or "_" not in stem:
+        return None
+    subject = stem[:4]
+    after_us = stem.split("_", 1)[1]
+    if len(after_us) < 2:
+        return None
+    night = after_us[:2]
+    return (subject.lower(), night.lower())
+
+
 def match_files(
     edf_folder: str | Path,
     scoring_folder: str | Path,
 ) -> tuple[list[dict], list[Path], list[Path]]:
-    """Match EDF files with scoring files by filename stem.
+    """Match EDF files with scoring files by subject ID and night ID.
+
+    Subject ID = first 4 characters of the filename.
+    Night ID   = 2 characters immediately after the first '_'.
 
     Returns (matched, unmatched_edfs, unmatched_scorings).
     Each matched entry: {"edf": Path, "scoring": Path, "stem": str}.
@@ -117,32 +140,23 @@ def match_files(
         if f.suffix.lower() in (".xml", ".txt", ".csv") and not f.name.startswith("._")
     )
 
-    scoring_by_lower = {f.name.lower(): f for f in scorings}
+    scoring_by_key: dict[tuple[str, str], Path] = {}
+    for sc in scorings:
+        key = _extract_subject_night(sc.name)
+        if key is not None:
+            scoring_by_key[key] = sc
+
     matched: list[dict] = []
     used_scorings: set[Path] = set()
 
     for edf in edfs:
-        stem = edf.stem
-        found = None
-
-        # Try exact patterns: stem.edf.XML, stem_*Hypnogram*.txt, stem.xml, stem.txt, stem.csv
-        candidates = [
-            f"{stem}.edf.xml",
-            f"{stem}.xml",
-        ]
-        for sc_name, sc_path in scoring_by_lower.items():
-            if sc_path in used_scorings:
-                continue
-            if sc_name in candidates:
-                found = sc_path
-                break
-            if sc_name.startswith(stem.lower()) and sc_path.suffix.lower() in (".xml", ".txt", ".csv"):
-                found = sc_path
-                break
-
-        if found is not None:
-            matched.append({"edf": edf, "scoring": found, "stem": stem})
-            used_scorings.add(found)
+        key = _extract_subject_night(edf.name)
+        if key is None:
+            continue
+        sc_path = scoring_by_key.get(key)
+        if sc_path is not None and sc_path not in used_scorings:
+            matched.append({"edf": edf, "scoring": sc_path, "stem": edf.stem})
+            used_scorings.add(sc_path)
 
     unmatched_edfs = [e for e in edfs if not any(m["edf"] == e for m in matched)]
     unmatched_scorings = [s for s in scorings if s not in used_scorings]
