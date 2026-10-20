@@ -1,4 +1,4 @@
-name: autoscore
+name: sleephd
 channels:
   - conda-forge
   - pytorch
