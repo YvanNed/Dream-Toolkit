@@ -75,21 +75,34 @@ def lagged_cross_correlation(
     return pd.DataFrame(rows)
 
 
-def _load_edf_channels(edf_path: str | Path) -> tuple[dict[str, np.ndarray], float]:
-    """Load EDF channels in SI units, matching SleepFM's current MNE reader."""
+def _load_edf_channels(
+    edf_path: str | Path,
+    rename: dict[str, str] | None = None,
+) -> tuple[dict[str, np.ndarray], float]:
+    """Load EDF channels in SI units, matching SleepFM's current MNE reader.
+
+    *rename* maps ``{edf_name: standard_name}`` — when provided, every loaded
+    channel whose EDF name appears as a key is emitted under the standard name
+    instead.  Channels not in the dict keep their original name.
+    """
     raw = mne.io.read_raw_edf(edf_path, preload=True, verbose="ERROR")
-    return {
+    signals = {
         name: raw.get_data(picks=[name])[0].astype(float, copy=False)
         for name in raw.ch_names
-    }, float(raw.info["sfreq"])
+    }
+    sfreq = float(raw.info["sfreq"])
+    if rename:
+        signals = {rename.get(name, name): data for name, data in signals.items()}
+    return signals, sfreq
 
 
 def referenced_eeg(
     edf_path: str | Path,
     derivations: Sequence[str] = tuple(EEG_DERIVATIONS),
+    rename: dict[str, str] | None = None,
 ) -> tuple[dict[str, np.ndarray], float]:
     """Return requested EEG derivations in volts on MNE's common time grid."""
-    signals, sfreq = _load_edf_channels(edf_path)
+    signals, sfreq = _load_edf_channels(edf_path, rename=rename)
     unknown = sorted(set(derivations) - set(EEG_DERIVATIONS))
     if unknown:
         raise ValueError(f"Unknown EEG derivations: {unknown}")
@@ -130,6 +143,7 @@ def prepare_sleepfm_montage(
     include_eog: bool = True,
     force: bool = False,
     filters: dict[str, tuple[float, float]] | None = SLEEPFM_BANDPASS,
+    rename: dict[str, str] | None = None,
 ) -> Path:
     """Create a SleepFM HDF5 with explicit Compumedics channel semantics.
 
@@ -148,7 +162,7 @@ def prepare_sleepfm_montage(
             )
         return output_path
 
-    signals, sfreq = _load_edf_channels(edf_path)
+    signals, sfreq = _load_edf_channels(edf_path, rename=rename)
     selected: dict[str, np.ndarray] = {}
     for name in eeg_derivations:
         if name not in EEG_DERIVATIONS:
@@ -206,6 +220,7 @@ def infer_sleepfm_montage(
     device: str = "cpu",
     force: bool = False,
     cover_tail: bool = False,
+    rename: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Prepare an explicit montage and run the official SleepFM checkpoints.
 
@@ -225,6 +240,7 @@ def infer_sleepfm_montage(
         eeg_derivations=eeg_derivations,
         include_eog=include_eog,
         force=force,
+        rename=rename,
     )
     primary = infer_hypnodensity(
         edf_path,

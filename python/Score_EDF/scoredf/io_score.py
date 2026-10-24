@@ -116,17 +116,30 @@ def _extract_subject_night(name: str) -> tuple[str, str] | None:
     return (subject.lower(), night.lower())
 
 
+_REMAPPED_SUFFIX = "_Hypnogram_remapped.txt"
+
+
+def _is_remapped(path: Path) -> bool:
+    return path.name.endswith(_REMAPPED_SUFFIX)
+
+
 def match_files(
     edf_folder: str | Path,
     scoring_folder: str | Path,
+    prefer_remapped: bool = True,
 ) -> tuple[list[dict], list[Path], list[Path]]:
     """Match EDF files with scoring files by subject ID and night ID.
 
     Subject ID = first 4 characters of the filename.
     Night ID   = 2 characters immediately after the first '_'.
 
+    When *prefer_remapped* is True (the default), files ending with
+    ``_Hypnogram_remapped.txt`` (produced by notebook 3) are preferred over
+    raw scoring files for the same subject/night.
+
     Returns (matched, unmatched_edfs, unmatched_scorings).
-    Each matched entry: {"edf": Path, "scoring": Path, "stem": str}.
+    Each matched entry: ``{"edf": Path, "scoring": Path, "stem": str,
+    "scoring_remapped": bool}``.
     """
     edf_folder = Path(edf_folder)
     scoring_folder = Path(scoring_folder)
@@ -143,8 +156,14 @@ def match_files(
     scoring_by_key: dict[tuple[str, str], Path] = {}
     for sc in scorings:
         key = _extract_subject_night(sc.name)
-        if key is not None:
+        if key is None:
+            continue
+        existing = scoring_by_key.get(key)
+        if existing is None:
             scoring_by_key[key] = sc
+        elif prefer_remapped:
+            if _is_remapped(sc) and not _is_remapped(existing):
+                scoring_by_key[key] = sc
 
     matched: list[dict] = []
     used_scorings: set[Path] = set()
@@ -155,7 +174,12 @@ def match_files(
             continue
         sc_path = scoring_by_key.get(key)
         if sc_path is not None and sc_path not in used_scorings:
-            matched.append({"edf": edf, "scoring": sc_path, "stem": edf.stem})
+            matched.append({
+                "edf": edf,
+                "scoring": sc_path,
+                "stem": edf.stem,
+                "scoring_remapped": _is_remapped(sc_path),
+            })
             used_scorings.add(sc_path)
 
     unmatched_edfs = [e for e in edfs if not any(m["edf"] == e for m in matched)]

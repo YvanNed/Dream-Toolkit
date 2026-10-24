@@ -1,7 +1,6 @@
 """Channel alias detection, requirement checking, and transparent renaming."""
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Sequence
 
@@ -124,39 +123,39 @@ def check_stager_requirements(
     return len(missing) == 0, missing
 
 
-# ---------------------------------------------------------------------------
-# Channel renaming via monkeypatch
-# ---------------------------------------------------------------------------
-_original_load = None
-_current_mapping: dict[str, str] | None = None
+def load_remap_json(json_path: str | Path) -> dict[str, dict]:
+    """Load a remap_reref_persubject.json from notebook 2.
+
+    Returns ``{subject_id: {"remap": {...}, "ref_channels": ..., ...}}``.
+    """
+    import json
+    with open(json_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def _patched_load_edf_channels(edf_path):
-    """Wrapper that renames channel dict keys to standard names."""
-    signals, sfreq = _original_load(edf_path)
-    if _current_mapping is None:
-        return signals, sfreq
+def mapping_from_remap_entry(remap_dict: dict[str, str]) -> dict[str, str | None]:
+    """Convert a notebook-2 ``remap`` dict to the standard mapping format.
 
-    reverse = {edf_name: standard for standard, edf_name in _current_mapping.items() if edf_name is not None}
-    renamed = {}
-    for name, data in signals.items():
-        standard = reverse.get(name, name)
-        renamed[standard] = data
-    return renamed, sfreq
+    Notebook 2 stores ``{edf_name: canonical_name, ...}`` (e.g.
+    ``{"EEG C4-REF": "C4", "EEG M1-REF": "M1"}``).  This function inverts it
+    into the ``{standard: edf_name}`` shape that :func:`rename_dict` expects,
+    filling missing standard names with ``None``.
+    """
+    inverse = {canonical: edf_name for edf_name, canonical in remap_dict.items()}
+    return {standard: inverse.get(standard) for standard in ALIASES}
 
 
-@contextmanager
-def channel_mapping(mapping: dict[str, str | None]):
-    """Context manager that patches channel loading to use the given mapping."""
-    global _original_load, _current_mapping
-    import sleephd.signals as _signals
+def rename_dict(mapping: dict[str, str | None]) -> dict[str, str]:
+    """Build an ``{edf_name: standard_name}`` dict from a channel mapping.
 
-    _original_load = _signals._load_edf_channels
-    _current_mapping = {k: v for k, v in mapping.items() if v is not None}
-    _signals._load_edf_channels = _patched_load_edf_channels
-    try:
-        yield
-    finally:
-        _signals._load_edf_channels = _original_load
-        _original_load = None
-        _current_mapping = None
+    The result is passed as ``rename=`` to ``_load_edf_channels`` and the
+    stager functions so that EDF-specific channel names (e.g. ``"EEG C4-REF"``)
+    are translated to the standard names (``"C4"``) that the derivation logic
+    expects.  Entries where the EDF name already equals the standard name are
+    omitted (no rename needed).
+    """
+    return {
+        edf_name: standard
+        for standard, edf_name in mapping.items()
+        if edf_name is not None and edf_name != standard
+    }
