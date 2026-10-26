@@ -2698,6 +2698,32 @@ Tool 0 reads the EDF through `edf_io_lib`; a Curry version needs the Curry reade
 companions) of `tools_curry/curry_header.py` / `curry_io.py` behind the same functions, and is best done after the
 *EDF reading of tools 2, 4, 6, 7 through `edf_io_lib`* item above (same reader-as-argument design).
 
+### Lighter conda environments + a dedicated autoscoring environment (TODO)
+
+Goal: a user installs the **strict minimum**, so setup stays fast (the current `inspect_edf` env weighs ~4.7 GB).
+Related open question: *light / full install* in `tools/plan_rename_somnolens.md` (§6c). Audit of 2026-10-19
+(every package of `environment.yml` checked against the imports of `tools/`, `tools_curry/`, `tests/`):
+- **`mne` → `mne-base`**: conda-forge's `mne` is a metapackage that pulls the 3D/GUI stack (PySide6/Qt6, VTK,
+  PyVista, trame, dipy, nilearn, openmeeg), used by no tool. `mne-base` is the same library without it, and YASA
+  only depends on `mne-base`. The packages the tools need that `mne` brought (`edfio`, `statsmodels`, `h5py`
+  for the autoscoring) must then be listed explicitly (`edfio` and `statsmodels` already are).
+- **Developer-only packages out of the user env**: `spyder` (IDE, pulls PyQt5 + QtWebEngine), `pytest` (tests)
+  and `notebook` (pulls JupyterLab; Voila runs without it) → a separate `environment-dev.yml` (user env + these).
+- **A dedicated autoscoring environment** (user decision, 2026-10-19): `pytorch-cpu` and `gssc` leave the user
+  env for an autoscoring env, which will also hold SleepFM (`pyedflib`, `einops` + the `sleepfm-clinical`
+  checkout pointed to by `SLEEPFM_ROOT`). Tool 3bis then runs from that env, and its "GSSC missing" message
+  must say so. Versions to reconcile when `python/Score_EDF/` is integrated into 3bis (the user tests Score_EDF
+  first): Score_EDF asks python 3.10 / numpy 1.26 / torch < 2.6 (its `torch.load` calls need
+  `weights_only=False`), the user env is python 3.12 / numpy 2.2 / torch 2.8 (3bis sets
+  `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`). A working Windows recipe is `Score_EDF/environment_autoscore_debugyn.yml`.
+- **Windows gotchas found on the way**: the `pytorch` conda channel is retired (HTTP 403): use conda-forge's
+  `pytorch`. conda-forge's `libtorch 2.5.1` fails to load (`DLL load failed ... torch._C`) with
+  `intel-openmp 2024.2`, which no longer exports the `_vcomp_*` functions its `fbgemm.dll` imports: pin
+  `intel-openmp=2024.1`. When an env's `Scripts` folder is on the user PATH (here `inspect_edf\Scripts`), a
+  bare `voila` runs that env whatever env the user meant: launchers must call the env's own Voila.
+- **Validation**: build an env from the slimmed file (plus `pytest`) and run the test suite in it (full level), plus a launch of
+  every Voila tool; then update *Conda environment* above and the installation tutorial.
+
 ### Event-based epoch rejection (Phase A): **implemented in tool 7**
 
 Promoted out of this section: the **"Event overlap"** rejection method is now part of `7_preprocessing_voila.ipynb` (Section 2 → *Epoch rejection*). See the tool-7 description above for the UI, the `event_remap.json` chooser + auto-detected `Event CSV suffix`, the "Count affected epochs" button, and the additive `flag_event` outputs. (Tool 0's step 6 will run it through `preprocessing_lib`, plan phase 5.)
