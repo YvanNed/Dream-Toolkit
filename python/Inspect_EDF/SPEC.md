@@ -1323,7 +1323,9 @@ No EOG declared → EEG only, with a ⚠. No other preprocessing: GSSC filters 0
 **Scoring mode** (`tb_mode`): **Several electrodes (consensus)** (default since 2026-10-27, Score_EDF's choice:
 one checkbox per electrode, `eeg_checks`, ticked by default = the electrodes GSSC was mostly trained on,
 `GSSC_TRAINED_EEG` = C3, C4, F3, F4, those present, else the first electrode; never every electrode, which on a
-dense montage would multiply the combinations; *Tick all* / *Untick all* buttons) or **One electrode (fast)**
+dense montage would multiply the combinations; *Tick all* / *Untick all* buttons; a hint under them,
+`consensus_hint`, says why these are ticked, advises 2 to 4 electrodes and counts live the passes over the night,
+`(n EEG + 1) × (EOG choices) − 1`, orange above 4 electrodes) or **One electrode (fast)**
 (`dd_eeg`, C3 else C4 else the first; GSSC's authors advise 1-2 EEG for speed). A participant lacking the single
 electrode is **not** scored (no silent substitution); in consensus mode the electrodes present are used. On the
 test datasets (C3 the only one of the four) the consensus gives the former one-electrode results, only
