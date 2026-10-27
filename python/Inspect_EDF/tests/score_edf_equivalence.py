@@ -323,7 +323,7 @@ def baseline_real():
 # =====================================================================================================
 # Tool 3bis (new)
 # =====================================================================================================
-T3BIS = 'tools/3bis_autoscoring_gssc_voila.ipynb'
+T3BIS = 'tools/3bis_autoscoring_voila.ipynb'
 
 
 def _clean_outputs(study):

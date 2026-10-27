@@ -1,6 +1,6 @@
 """
 Automatic sleep scoring with GSSC, YASA and SleepFM: the computation and the figures of tool 3bis step 1
-(3bis_autoscoring_gssc_voila.ipynb), shared with tool 0 (tool-0 redesign, tools/plan_tool0_redesign.md).
+(3bis_autoscoring_voila.ipynb), shared with tool 0 (tool-0 redesign, tools/plan_tool0_redesign.md).
 
 The GSSC functions were MOVED VERBATIM from tool 3bis (its cell 2), plus its guarded GSSC import (cell 1) and
 `score_night`, the scoring part of its `score_one`, so both tools chain the same steps. YASA and SleepFM were
@@ -844,22 +844,28 @@ def read_signals(edf_path, cfg_entry, electrodes, reference, extra):
     return sfreq, eeg, out_extra, ref_desc, notes
 
 
-def score_night_yasa(edf_path, cfg_entry, eeg, eog_side, reference=REFERENCE_CONTRALATERAL):
+YASA_EMG_DECLARED = 'Chin EMG declared in tool 2'
+
+
+def score_night_yasa(edf_path, cfg_entry, eeg, eog_side, reference=REFERENCE_CONTRALATERAL, emg=YASA_EMG_DECLARED):
     """YASA (Vallat & Walker 2021) on one night, as Score_EDF ran it: one EEG (C4-M1 preferred by YASA), one EOG
-    (`eog_side` 'Left' / 'Right' / 'None', from tool 2's context channels) and the chin EMG when declared,
-    unfiltered (YASA filters itself and says not to filter before). The recording is scored whole, from t = 0:
-    epoch i = expert line i. Returns a dict (stages, onsets, probs, used, reference, notes)."""
+    (`eog_side` 'Left' / 'Right' / 'None', from tool 2's context channels) and one chin EMG, unfiltered (YASA
+    filters itself and says not to filter before). `emg`: YASA_EMG_DECLARED (tool 2's context channel), 'None'
+    (no EMG) or the name of an EDF channel chosen by hand (absent from a recording: scored without EMG, noted).
+    The recording is scored whole, from t = 0: epoch i = expert line i. Returns a dict (stages, onsets, probs,
+    used, reference, notes)."""
     if not YASA_OK:
         raise RuntimeError('YASA is not installed')
     ctx = cfg_entry.get('context_channels') or {}
     eog_orig = {'Left': ctx.get('eog_left'), 'Right': ctx.get('eog_right')}.get(eog_side)
+    emg_orig = ctx.get('emg') if emg == YASA_EMG_DECLARED else (None if emg in (None, 'None') else emg)
     sfreq, eeg_sig, extra, ref_desc, notes = read_signals(
-        edf_path, cfg_entry, [eeg], reference, {'eog': eog_orig, 'emg': ctx.get('emg')})
+        edf_path, cfg_entry, [eeg], reference, {'eog': eog_orig, 'emg': emg_orig})
     if not eeg_sig:
         raise RuntimeError(f'electrode {eeg} absent (not substituted)')
     if eog_side != 'None' and not eog_orig:
         notes.append(f'{eog_side.lower()} EOG not declared in tool 2 (context channels): scored without EOG')
-    if not ctx.get('emg'):
+    if emg == YASA_EMG_DECLARED and not ctx.get('emg'):
         notes.append('no chin EMG declared in tool 2 (context channels): scored without EMG')
     eeg_label = next(iter(eeg_sig))
     chans = {eeg_label: ('eeg', eeg_sig[eeg_label])}
@@ -883,7 +889,7 @@ def score_night_yasa(edf_path, cfg_entry, eeg, eog_side, reference=REFERENCE_CON
     probs = proba[STAGES].to_numpy(float)
     stages = np.array([STAGES[i] for i in probs.argmax(axis=1)])
     used = {'eeg': eeg_label, 'eog': eog_orig if extra['eog'] is not None else None,
-            'emg': ctx.get('emg') if extra['emg'] is not None else None}
+            'emg': emg_orig if extra['emg'] is not None else None}
     return {'stages': stages, 'onsets': 30.0 * np.arange(len(stages)), 'probs': probs, 'used': used,
             'reference': ref_desc, 'notes': notes}
 

@@ -1,4 +1,4 @@
-# Plan: tool 3bis — automatic sleep scoring with GSSC (`3bis_autoscoring_gssc_voila.ipynb`)
+# Plan: tool 3bis — automatic sleep scoring with GSSC (`3bis_autoscoring_voila.ipynb`)
 
 ## Context
 Some recordings have no expert hypnogram, and where one exists the user wants to compare it with an
@@ -38,7 +38,7 @@ Decisions taken with the user:
   refuses GSSC's packaged weights → set `os.environ['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD'] = '1'` before
   `EEGInfer()` (Nico's approach; simpler than monkey-patching `torch.load`), with a comment.
 
-## Notebook layout (`tools/3bis_autoscoring_gssc_voila.ipynb`)
+## Notebook layout (`tools/3bis_autoscoring_voila.ipynb`)
 Pattern copied from tool 7 (folder chooser + hypnogram-suffix detection + load/re-reference block) and
 the `ParticipantSelector` from `tools/participant_selection_lib.py` (called with `excluded=None`: like
 tool 5, tool 3bis knows nothing of exclusions).
@@ -117,7 +117,7 @@ Skip gate: `_Hypnogram_gssc.txt` **and** `_hypnodensity.tsv` **and** report pres
 All path comparisons through `os.path.normcase`.
 
 ## Files touched
-- **New** `tools/3bis_autoscoring_gssc_voila.ipynb`.
+- **New** `tools/3bis_autoscoring_voila.ipynb`.
 - `environment.yml` (pytorch-cpu + gssc).
 - `SPEC.md` (proposed for confirmation): repository tree, *How to run* list, new §3bis section (inputs,
   channels, outputs, alignment, comparison rules), `Conda environment` (torch, gssc).

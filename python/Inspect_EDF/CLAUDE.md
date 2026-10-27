@@ -169,7 +169,7 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **Anonymization (`1bis_anonymize_edf*`)**: copy the file, then overwrite **only** `patient_id` and
   `recording_id` in the 256-byte header. Everything from byte 256 on stays byte-identical (verified by
   `sha256(file[256:])`). Originals are **never** modified.
-- **Automatic scoring (`3bis_autoscoring_gssc_voila`)**: GSSC, YASA, SleepFM (step 1) + their comparison
+- **Automatic scoring (`3bis_autoscoring_voila`)**: GSSC, YASA, SleepFM (step 1) + their comparison
   with the expert (Section 4, Score_EDF's computation ported 2026-10-27), Voila only, knows nothing of
   exclusions. Channels from tool 2's JSON (EOG/EMG/ECG = `context_channels`), but the **EEG reference given
   to the models is the contralateral mastoid by default** (what they were trained on), not tool 2's (option).

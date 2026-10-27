@@ -36,7 +36,7 @@ Inspect_EDF/
 │   ├── 2_select&remap_channels_edf_voila.ipynb  # Channel selection & harmonization (Voila)
 │   ├── check_hypno_config.py                  # Hypnogram validation (legacy script)
 │   ├── 3_remap_hypno_voila.ipynb                # Hypnogram label remapping (Voila GUI)
-│   ├── 3bis_autoscoring_gssc_voila.ipynb        # Automatic sleep scoring (GSSC, YASA, SleepFM) + comparison of the models with the expert (Voila GUI)
+│   ├── 3bis_autoscoring_voila.ipynb        # Automatic sleep scoring (GSSC, YASA, SleepFM) + comparison of the models with the expert (Voila GUI)
 │   ├── 4_remap_events_edf_voila.ipynb           # Event label harmonization (Voila GUI)
 │   ├── 5_compute_sleep_macrostructure_voila.ipynb   # Sleep macrostructure metrics: TIB/SOL/TST/WASO/SE, latencies, AHI, PLM, ODI, T90 (Voila GUI)
 │   ├── sleep_metrics_formulas.txt             # Metric definitions tool 5 implements
@@ -118,10 +118,13 @@ Defined in `environment.yml`. Key packages:
 - **specparam**: aperiodic/periodic spectral decomposition (1/f fitting)
 - **statsmodels 0.14**: LOWESS smoother (`smoothers_lowess.lowess`), used by tool 7 (and `qc_rejected_epochs_lib.py`) for the optional PSD smoothing before the 1/f fit (see tool 7)
 - **pytorch-cpu + gssc 0.0.9** (pip, pinned): tool 3bis's automatic sleep scoring. Install: `conda install -n inspect_edf -c conda-forge pytorch-cpu`, then `python -m pip install gssc==0.0.9`
-- **Tool 3bis's SleepFM** needs `h5py`, `einops`, `loguru`, `pyyaml`, absent from `inspect_edf`: it runs in the
-  dedicated autoscoring environment `autoscore` (python 3.10, torch 2.5.1 + `intel-openmp=2024.1`, YASA 0.7, mne-base,
-  + `chardet` for `edf_io_lib`), built from `python/Score_EDF/environment_autoscore_debugyn.yml`. GSSC and YASA run in
-  both environments; without the SleepFM packages the tool greys SleepFM out with an install message.
+- **h5py, einops, loguru, pyyaml**: tool 3bis's SleepFM (imported by its official code; listed explicitly for the
+  coming light / full split, see *Planned modules*). Its model files are not a package: tool 3bis downloads them.
+  SleepFM gives the same results here as in the autoscoring environment `autoscore` (python 3.10, torch 2.5.1,
+  `python/Score_EDF/environment_autoscore_debugyn.yml`): night 100, max difference 2e-6, same stage on 5,652 / 5,652
+  5-s steps (2026-10-27). Without these packages the tool greys SleepFM out with an install message. SleepFM's
+  official code starts a multiprocessing pool: from a plain Python script on Windows, the calling code must sit
+  under `if __name__ == '__main__':` (no issue in Voila / Jupyter).
 - **openpyxl 3.1**: writes tool 9's `.xlsx` workbook (via `pandas.ExcelWriter`). Its absence is non-fatal (the TSV tables stay complete)
 
 ## How to run the tools
@@ -189,7 +192,7 @@ voila tools/1_inspect_edf_voila.ipynb
 voila tools/1bis_anonymize_edf_voila.ipynb
 voila "tools/2_select&remap_channels_edf_voila.ipynb"
 voila tools/3_remap_hypno_voila.ipynb
-voila tools/3bis_autoscoring_gssc_voila.ipynb
+voila tools/3bis_autoscoring_voila.ipynb
 voila tools/4_remap_events_edf_voila.ipynb
 voila tools/5_compute_sleep_macrostructure_voila.ipynb
 voila tools/5bis_exclude_sleep_macrostructure_voila.ipynb
@@ -1181,7 +1184,7 @@ Interactive tool to harmonize sleep stage labels across a heterogeneous database
 
 `check_hypno_config.py` is the legacy script that preceded this notebook. Kept for reference.
 
-### 3bis. Automatic sleep scoring: GSSC, YASA, SleepFM and their comparison (`3bis_autoscoring_gssc_voila.ipynb`)
+### 3bis. Automatic sleep scoring: GSSC, YASA, SleepFM and their comparison (`3bis_autoscoring_voila.ipynb`)
 
 Scores every 30-s epoch automatically with up to three published models: **GSSC** (Greifswald Sleep Stage
 Classifier, `gssc==0.0.9`, pip-only, CPU torch from conda-forge), **YASA** (`SleepStaging`, 0.6 in `inspect_edf`,
@@ -1190,8 +1193,9 @@ hypnogram and to compare with the expert one where it exists. Two steps: **step 
 ticked model on each night and writes that model's outputs; **step 2** (Section 4) compares the models with the
 expert hypnogram on every night together, the computation of `python/Score_EDF` ported on 2026-10-27
 (`tools/plan_score_edf_fixes.md`, part F). **Voila only**: no Curry twin, no batch `.py`. Like tool 5, it knows
-nothing of exclusions (no registry read or write, `ParticipantSelector` called with `excluded=None`). The file
-keeps its `…_gssc_…` name (tool 0, the tests and the docs point to it).
+nothing of exclusions (no registry read or write, `ParticipantSelector` called with `excluded=None`). Renamed
+from `3bis_autoscoring_gssc_voila.ipynb` on 2026-10-27 (no longer GSSC only); its GSSC output folders keep
+their names (`derivatives/autoscoring_gssc/`, `reports_autoscoring_gssc/`).
 
 **Models (step 1, Section 2)**: checkboxes `cb_gssc` (ticked by default: the defaults give GSSC's former
 outputs), `cb_yasa`, `cb_sleepfm` (disabled when the model's packages are missing: `GSSC_OK`, `YASA_OK`,
@@ -1199,9 +1203,12 @@ outputs), `cb_yasa`, `cb_sleepfm` (disabled when the model's packages are missin
 - **GSSC**: unchanged (below), EOG modes `L − R bipolar` (default), `L and R separately`, `Left only`,
   `Right only`, `None` (the single-side modes reproduce Score_EDF, which gave GSSC one EOG channel).
 - **YASA** (`score_night_yasa`, Score_EDF's `infer_yasa`): one EEG (`dd_yasa_eeg`, C4 by default, else C3, YASA's
-  preference), one EOG (`dd_yasa_eog`: `Left` default, YASA's recommendation, `Right`, `None`) and the chin EMG
-  of `context_channels.emg` when declared (else without EMG, noted), unfiltered (YASA filters itself and says
-  not to filter before), the recording scored whole from t = 0 (epoch i = expert line i). No demographics.
+  preference), one EOG (`dd_yasa_eog`: `Left` default, YASA's recommendation, `Right`, `None`) and one chin EMG
+  (`dd_yasa_emg`: `Chin EMG declared in tool 2` = `context_channels.emg`, default; `None`; or an EDF channel picked
+  by hand, the list filled at scan with every channel name of the recordings, EMG / chin / menton names first,
+  read from the headers; the same name for every recording, a recording without it scored without EMG, noted;
+  recorded as `emg_choice` / `emg_used`), unfiltered (YASA filters itself and says not to filter before), the
+  recording scored whole from t = 0 (epoch i = expert line i). No demographics.
 - **SleepFM** (`score_night_sleepfm`): the AASM derivations present among F3, F4, C3, C4, O1, O2 (else up to 3
   other electrodes under generic BAS names), both EOG (`EOG1` = left, `EOG2` = right), chin EMG and ECG from
   `context_channels`, the respiratory channels found by name with Score_EDF's aliases (`sleepfm_lib.RESP_ALIASES`:
@@ -1260,7 +1267,12 @@ saved features, penalty by inner cross-validation, leave one out. Outputs = **Sc
 `<study>/autoscore_outputs/`: `epochs_all_stagers.csv` (Score_EDF's columns and stage names Wake/N1/N2/N3/REM,
 its empty `tet` column included), `agreement_summary.csv` (epochs, accuracy, pooled kappa, F1 per stage, kappa
 per night), `agreement_by_stager.png`, `confusion_by_stager.png`, `hypnograms_by_stager.png`,
-`hypnodensities_<id>.png` (toolkit stage colours, expert hypnogram W on top with REM red, Greens confusion).
+`hypnodensities_<id>.png` (toolkit stage colours, expert hypnogram W on top with REM red, Greens confusion), plus
+`channels_used.csv` (not in Score_EDF; also shown under the agreement table): per night and model, the EEG, EOG,
+chin EMG, other channels (GSSC: mode and number of combinations; SleepFM: ECG, respiration) and EEG reference,
+read from step 1's `_scoring_params.json`. Each model is given its own training channels, so two models may not
+see the same EEG (night 100: YASA on C4-M1 fails, κ 0.11, a poor C4-A1; GSSC's consensus does not): to compare
+them on equal inputs, give them the same electrode in Section 2.
 Intended changes from Score_EDF: an epoch with no 5-s step is left out of the recalibration fit (Score_EDF divided
 by 0); **N3 is fitted** by both recalibrations when the training nights have N3 (`RECAL_FREE_N3 = 'auto'` in
 cell 10; Score_EDF fixed it, its naps had none; `False` reproduces it); torch's thread count is restored after
@@ -1308,9 +1320,14 @@ length. EOG mode: **`L − R bipolar`** (default, Thomas's example script) / `L 
 No EOG declared → EEG only, with a ⚠. No other preprocessing: GSSC filters 0.3–30 Hz itself and cuts
 2560-sample (30 s) epochs from t = 0, dropping the incomplete tail, so epoch *i* = expert line *i*.
 
-**Scoring mode** (`tb_mode`): **One electrode (fast)** (default, `dd_eeg`, C3 else C4 else the first) or
-**Several electrodes (consensus)** (one checkbox per electrode, `eeg_checks`, all ticked by default, with *Tick all* / *Untick all* buttons). A participant lacking the single electrode is
-**not** scored (no silent substitution); in consensus mode the electrodes present are used.
+**Scoring mode** (`tb_mode`): **Several electrodes (consensus)** (default since 2026-10-27, Score_EDF's choice:
+one checkbox per electrode, `eeg_checks`, ticked by default = the electrodes GSSC was mostly trained on,
+`GSSC_TRAINED_EEG` = C3, C4, F3, F4, those present, else the first electrode; never every electrode, which on a
+dense montage would multiply the combinations; *Tick all* / *Untick all* buttons) or **One electrode (fast)**
+(`dd_eeg`, C3 else C4 else the first; GSSC's authors advise 1-2 EEG for speed). A participant lacking the single
+electrode is **not** scored (no silent substitution); in consensus mode the electrodes present are used. On the
+test datasets (C3 the only one of the four) the consensus gives the former one-electrode results, only
+`scoring_mode` changes.
 
 **Consensus rule = GSSC's native `loudest_vote`**: every combination of the signals is scored (each EEG or
 none × each EOG or none, minus "nothing": 3 combinations for 1 EEG + 1 EOG, 7 for 3 EEG + 1 EOG) and, **per
@@ -2823,8 +2840,9 @@ Related open question: *light / full install* in `tools/plan_rename_somnolens.md
   missing" message must say so. Today's env, `autoscore`, is python 3.10 / numpy 1.26 / torch 2.5.1 (Score_EDF's
   versions; `Score_EDF/environment_autoscore_debugyn.yml`, + `chardet`), the user env python 3.12 / numpy 2.2 /
   torch 2.8. Tool 3bis no longer needs torch < 2.6 (`weights_only=False` in `sleepfm_lib`,
-  `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for GSSC): to align the autoscoring env on the user env's versions, run
-  SleepFM on a test night in both and compare the probabilities (plan 4.2).
+  `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for GSSC), and SleepFM gives the same results under python 3.12 / numpy 2.2 /
+  torch 2.8 (checked 2026-10-27, *Conda environment* above): the autoscoring env can take the user env's versions.
+  Until the split, `inspect_edf` holds the autoscoring packages too (user decision 2026-10-27: `einops` added).
 - **Windows gotchas found on the way**: the `pytorch` conda channel is retired (HTTP 403): use conda-forge's
   `pytorch`. conda-forge's `libtorch 2.5.1` fails to load (`DLL load failed ... torch._C`) with
   `intel-openmp 2024.2`, which no longer exports the `_vcomp_*` functions its `fbgemm.dll` imports: pin
@@ -2841,8 +2859,7 @@ purpose (user decision, plan Q6): `<study>/autoscore_outputs/` with `epochs_all_
 measure of the nap study it came from). To harmonise with the rest of the toolkit: data in
 `derivatives/autoscoring_comparison/` and an HTML report in `reports_autoscoring_comparison/` (TSV, the toolkit's
 stage names W / R, per-night tables globbed for the database ones), the recalibration parameters saved (today only
-in the log), and the "Skip already processed" / cumulative logic of the other tools. Also: rename the notebook
-(`3bis_autoscoring_voila.ipynb`, it is no longer GSSC only) together with tool 0, the tests and the docs.
+in the log), and the "Skip already processed" / cumulative logic of the other tools.
 
 ### Event-based epoch rejection (Phase A): **implemented in tool 7**
 

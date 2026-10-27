@@ -206,7 +206,7 @@ def test_step3_gssc_equals_tool3bis(chain, tmp_path):
         pytest.skip('one dataset is enough: GSSC is deterministic and the code path is the same')
     fid = minidb.PARTICIPANTS['synthetic'][0]
     study = study_copy(chain, tmp_path / 'study')
-    with NotebookSession('tools/3bis_autoscoring_gssc_voila.ipynb') as nb:
+    with NotebookSession('tools/3bis_autoscoring_voila.ipynb') as nb:
         nb.pick('fc_data', study)
         nb.click('btn_scan')
         pipeline.select_subset(nb, [fid], skip=False)
