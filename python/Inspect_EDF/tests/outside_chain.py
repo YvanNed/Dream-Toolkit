@@ -28,7 +28,7 @@ CHAIN_ROOT = Path(os.path.realpath(os.path.join(tempfile.gettempdir(), 'dtk_test
 ROOT = Path(os.path.realpath(os.path.join(tempfile.gettempdir(), 'dtk_outside_chain')))
 T1 = 'tools/1_inspect_edf_voila.ipynb'
 T3 = 'tools/3_remap_hypno_voila.ipynb'
-T3BIS = 'tools/3bis_autoscoring_gssc_voila.ipynb'
+T3BIS = 'tools/3bis_autoscoring_voila.ipynb'
 T6 = 'tools/6_quality_overview_voila.ipynb'
 T7 = 'tools/7_preprocessing_voila.ipynb'
 INPUT_SUFFIXES = ('.edf', '.txt', '.csv', '.xml', '.tsv')
@@ -74,7 +74,8 @@ def run_tool3(data):
 
 
 def run_tool3bis(data):
-    """Score every participant with the defaults (one electrode, C3, EOG L-R when declared)."""
+    """Score every participant with the defaults (GSSC alone, consensus over C3/C4/F3/F4 present: C3 on the test
+    datasets, EOG L-R when declared, contralateral mastoid reference)."""
     with NotebookSession(T3BIS) as nb:
         nb.pick('fc_data', data)
         nb.click('btn_scan')

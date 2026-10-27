@@ -147,7 +147,8 @@ generator itself:
 
 - **Tool 5**: total sleep time, sleep efficiency, sleep onset latency, WASO, time and percentage in each stage,
   stage latencies: all recomputed from the generated hypnogram, and **exactly** equal.
-- **Tool 6**: exactly two channels flagged, the clipped Fp1 and the dead C3. Nothing else.
+- **Tool 6**: exactly two channels flagged, the clipped Fp1 and the dead C3. Nothing else. Run with its defaults,
+  it records its signal preparation as `none` in the tables, in every report and in `dataset_overview.html`.
 - **Tool 7**: the 10 movement bursts are re-created with the same random seed on a silent signal, which gives
   their exact position. Every epoch holding at least 1 s of burst is flagged on Fp1, and no other Fp1 epoch.
 - **Tool 9**, the generated physiology:
@@ -200,7 +201,9 @@ the saved epochs file of tool 7 unreadable for tools 8 and 9. It is fixed, and t
 
 The tool 6 variant also documents a deliberate choice: tool 6 measures the signal **after** its optional
 filtering (a high-pass can rescue a channel worth keeping). The filtering smooths the flat tops of a clipped
-channel, so with these options the clipped Fp1 of the synthetic set is no longer flagged.
+channel, so with these options the clipped Fp1 of the synthetic set is no longer flagged. The same variant
+checks that this preparation is recorded (tables and report), and that a second run without it, with
+"Skip already processed" ticked, warns on every skipped participant that its tables were made differently.
 
 ### 10. Moving code into a shared library changes nothing (before / after check)
 

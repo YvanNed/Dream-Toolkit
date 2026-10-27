@@ -26,6 +26,10 @@ dependencies:
   - openpyxl=3.1.*
   - pytest            # tests/ (headless notebook pipeline tests); nbclient comes with voila
   - pytorch-cpu       # tool 3bis (GSSC automatic sleep scoring)
+  - h5py=3.14.*       # tool 3bis: SleepFM's input file (also brought by mne; explicit for the light / full split)
+  - einops=0.8.*      # tool 3bis: SleepFM (imported by its official code)
+  - loguru=0.7.*      # tool 3bis: SleepFM (imported by its official code)
+  - pyyaml=6.0.*      # tool 3bis: SleepFM (imported by its official code)
   - pip
   - pip:
     - specparam

@@ -2,7 +2,8 @@
 light copy of the database (one participant where possible) and is checked for what its option must do.
 
     tool 7   10 s epochs (then 8bis and 9 on them), resampling to 128 Hz, notch off, custom stage N4
-    tool 6   resampling + high-pass: the dead channel stays flagged, no healthy channel gets flagged
+    tool 6   resampling + high-pass: the dead channel stays flagged, no healthy channel gets flagged; the
+             preparation is recorded, and a second run without it warns on each skipped participant
     tool 9   multitaper PSD (same order as Welch), 'knee' aperiodic mode
     tool 8   a flagged epoch rescued / a kept epoch added in the navigator; an unticked stage stays in
              the decision (focus only, overrides kept);
@@ -169,7 +170,19 @@ def test_tool6_resampling_and_highpass(src, tmp_path):
         nb.set('hp_check', True)
         nb.set('hp_freq', 0.5)
         nb.click('btn_run')
-    q = tsv(data / 'reports_quality_overview' / 'quality_summary.tsv')
+        # A second run without preparation, 'Skip already processed' ticked (default): every participant is
+        # skipped, each with a warning naming the preparation its tables were made with.
+        nb.set('cb_resample', False)
+        nb.set('hp_check', False)
+        nb.click('btn_run')
+        second_log = nb.widget_text()
+    assert second_log.count('⚠ made with resampled to 128 Hz, high-pass 0.5 Hz, this run: none '
+                            '(untick Skip to redo it)') == len(IDS), second_log[-2000:]
+    reports = data / 'reports_quality_overview'
+    q = tsv(reports / 'quality_summary.tsv')
+    assert (q['signal_preparation'] == 'resampled to 128 Hz, high-pass 0.5 Hz').all()
+    html = next(reports.rglob(f'{IDS[0]}_quality_overview.html')).read_text(encoding='utf-8')
+    assert 'Signal preparation:</b> resampled to 128 Hz, high-pass 0.5 Hz &middot; analysed at 128 Hz' in html
     assert sorted(q['file_id'].unique()) == IDS and len(q) == 4 * 4
     flagged = sorted(map(tuple, q.loc[q['exclude'].astype(bool), ['file_id', 'channel']].values.tolist()))
     # The metrics are computed on the FILTERED signal on purpose (a high-pass can rescue a channel worth

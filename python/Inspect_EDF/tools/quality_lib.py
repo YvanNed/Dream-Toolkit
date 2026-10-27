@@ -768,10 +768,45 @@ def hypno_vector(expert_hypno, custom_stages):
     return hypno_vec, hypno_warning, hypno_warning_plain
 
 
+def signal_preparation_label(resampled_to=None, highpassed_at=None):
+    """Tool 6's signal-preparation label, written in the `signal_preparation` column of its tables and shown in
+    its reports: 'none', 'resampled to 128 Hz', 'high-pass 0.5 Hz' or 'resampled to 128 Hz, high-pass 0.5 Hz'
+    (the steps in the order prepare_signal applies them)."""
+    steps = []
+    if resampled_to is not None:
+        steps.append(f'resampled to {resampled_to:g} Hz')
+    if highpassed_at is not None:
+        steps.append(f'high-pass {highpassed_at:g} Hz')
+    return ', '.join(steps) if steps else 'none'
+
+
+def signal_preparation_mismatch(stored, do_resample, target_freq, do_highpass, hp_freq_val):
+    """Why a participant's stored `signal_preparation` label differs from this run's settings ('' when it does
+    not, or cannot be told). The high-pass is always compared. The resampling only when the stored file was
+    resampled: a file that was not may simply have been at or below the target rate already (prepare_signal
+    never upsamples), which only its header would tell. An empty label (a table written before the column
+    existed) is never reported."""
+    if not isinstance(stored, str) or not stored.strip():
+        return ''
+    parts = [p.strip() for p in stored.split(',')]
+    stored_hp = next((p for p in parts if p.startswith('high-pass')), None)
+    stored_rs = next((p for p in parts if p.startswith('resampled to')), None)
+    run_hp = f'high-pass {hp_freq_val:g} Hz' if (do_highpass and hp_freq_val is not None) else None
+    run_rs = f'resampled to {target_freq:g} Hz' if (do_resample and target_freq is not None) else None
+    if stored_hp == run_hp and (stored_rs is None or stored_rs == run_rs):
+        return ''
+    run_label = signal_preparation_label(target_freq if do_resample else None,
+                                         hp_freq_val if do_highpass else None)
+    return f'made with {stored.strip()}, this run: {run_label}'
+
+
 def prepare_signal(raw, sf, file_id, do_resample, target_freq, do_highpass, hp_freq_val, warn=print, status=None):
     """Tool 6's two optional signal steps, in place on `raw`: resampling (never upsamples) THEN high-pass
     (analysis only). `status(text)` is called before each step, `warn(text)` when a step fails (the run goes
-    on without it). Returns the sampling frequency after the resampling."""
+    on without it). Returns (the sampling frequency after the resampling, the signal_preparation_label of
+    the steps actually applied: a skipped or failed step is not in it)."""
+    resampled_to = None
+    highpassed_at = None
     # --- Optional resampling (speeds up processing; off by default) ---
     # Resampling changes the signal, so shape metrics (flat_pct, histograms) and the
     # spectrogram are computed on the resampled data. Guarded to never upsample.
@@ -784,6 +819,7 @@ def prepare_signal(raw, sf, file_id, do_resample, target_freq, do_highpass, hp_f
         try:
             raw.resample(target_freq, npad='auto', verbose=False)
             sf = raw.info['sfreq']
+            resampled_to = sf
         except Exception as _rs_err:
             warn(f'  ⚠ {file_id}: resample to {target_freq} Hz failed: {_rs_err}')
 
@@ -800,9 +836,10 @@ def prepare_signal(raw, sf, file_id, do_resample, target_freq, do_highpass, hp_f
             status(f'{file_id} · high-pass {hp_freq_val:g} Hz…')
         try:
             raw.filter(l_freq=hp_freq_val, h_freq=None, verbose=False)
+            highpassed_at = hp_freq_val
         except Exception as _hp_err:
             warn(f'  ⚠ {file_id}: high-pass ({hp_freq_val:g} Hz) failed: {_hp_err}')
-    return sf
+    return sf, signal_preparation_label(resampled_to, highpassed_at)
 
 
 def check_hypno_length(raw, sf, expert_hypno, hypno_vec, hypno_warning, hypno_warning_plain):
@@ -842,11 +879,12 @@ def check_hypno_length(raw, sf, expert_hypno, hypno_vec, hypno_warning, hypno_wa
 
 
 def compute_channel_metrics(raw, sf, file_id, thresholds, hypno_vec, custom_stages, phys_bounds_by_name,
-                            final_to_orig, on_channel=None):
+                            final_to_orig, on_channel=None, signal_preparation=None):
     """Tool 6's metrics and flags of every channel on the whole night, plus the per-stage metrics when a
     valid hypnogram vector is given (the 30 s epochs of each stage, concatenated). `phys_bounds_by_name`
     {original channel name: (min, max) µV} and `final_to_orig` {harmonised name: original name} give the EDF
     physical range of each channel (bounds_pct). `on_channel(ci, ch)` is called before each channel.
+    `signal_preparation` (prepare_signal's label) fills the column of the same name of every whole-night row.
     Returns (ch_metrics, ch_flags, file_rows, file_stage_rows): the rows of {file_id}_quality_metrics.tsv
     and of {file_id}_quality_by_stage.tsv."""
     file_rows = []        # this file's per-channel metric rows → {file_id}_quality_metrics.tsv
@@ -883,6 +921,7 @@ def compute_channel_metrics(raw, sf, file_id, thresholds, hypno_vec, custom_stag
             'bounds_pct': m['bounds_pct'],
             'hist_extreme_pct': m['hist_extreme_pct'],
             'n_peaks': m['n_peaks'],
+            'signal_preparation': signal_preparation,
             'suspect_reason': '; '.join(ch_flags[ch]),
             'exclude': bool(ch_flags[ch]),
         })
