@@ -48,14 +48,21 @@ def _grid_offset(window: NapWindow, epoch_seconds: float = 30.0) -> float:
     return window.lights_off_seconds % epoch_seconds
 
 
-def _raw_array(edf_path: str | Path, channels: dict[str, str], start_seconds: float):
+def _raw_array(
+    edf_path: str | Path,
+    channels: dict[str, str],
+    start_seconds: float,
+    rename: dict[str, str] | None = None,
+):
     """MNE Raw with referenced derivations (volts) and per-channel types.
 
     `channels` maps a derivation or EDF channel name to its MNE type.
+    `rename` is forwarded to ``_load_edf_channels`` to translate EDF names to
+    standard names before the derivations are computed.
     """
     import mne
 
-    signals, sfreq = _load_edf_channels(edf_path)
+    signals, sfreq = _load_edf_channels(edf_path, rename=rename)
     data = []
     for name in channels:
         if name in EEG_DERIVATIONS:
@@ -83,6 +90,7 @@ def infer_gssc(
     eog: Sequence[str] = GSSC_EOG,
     cache_path: str | Path | None = None,
     force: bool = False,
+    rename: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """GSSC hypnodensity with its default channel combinations and 0.3-30 Hz filter."""
     if cache_path is not None and Path(cache_path).exists() and not force:
@@ -93,7 +101,7 @@ def infer_gssc(
     from scipy.special import softmax
 
     offset = _grid_offset(window)
-    raw = _raw_array(edf_path, {**{c: "eeg" for c in eeg}, **{c: "eog" for c in eog}}, offset)
+    raw = _raw_array(edf_path, {**{c: "eeg" for c in eeg}, **{c: "eog" for c in eog}}, offset, rename=rename)
 
     # Patch loudest_vote to capture the raw logits before they are argmax'd.
     _captured = {}
@@ -142,6 +150,7 @@ def infer_yasa(
     emg: str | None = YASA_EMG,
     cache_path: str | Path | None = None,
     force: bool = False,
+    rename: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """YASA hypnodensity from unfiltered EEG/EOG/EMG (its classifier filters internally)."""
     if cache_path is not None and Path(cache_path).exists() and not force:
@@ -150,7 +159,7 @@ def infer_yasa(
 
     offset = _grid_offset(window)
     channels = {eeg: "eeg", **({eog: "eog"} if eog else {}), **({emg: "emg"} if emg else {})}
-    raw = _raw_array(edf_path, channels, offset)
+    raw = _raw_array(edf_path, channels, offset, rename=rename)
     level = yasa.logger.level
     yasa.logger.setLevel(logging.ERROR)
     try:

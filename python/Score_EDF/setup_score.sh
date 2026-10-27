@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Create (or update) the autoscore conda environment.
+# Create (or update) the sleephd conda environment.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ENV_NAME="autoscore"
+ENV_NAME="sleephd"
 ENV_FILE="$SCRIPT_DIR/environment_autoscore.yml"
 
 if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
