@@ -169,14 +169,18 @@ The "what to do / what not to break" reminders, grouped by theme. Each points to
 - **Anonymization (`1bis_anonymize_edf*`)**: copy the file, then overwrite **only** `patient_id` and
   `recording_id` in the 256-byte header. Everything from byte 256 on stays byte-identical (verified by
   `sha256(file[256:])`). Originals are **never** modified.
-- **Automatic scoring (`3bis_autoscoring_gssc_voila`)**: GSSC, Voila only, knows nothing of exclusions.
-  Channels from tool 2's JSON (EEG re-referenced as declared, EOG = `context_channels`). Consensus =
-  gssc's native `loudest_vote`. gssc 0.0.9's `mne_infer` returns no probabilities, so
-  `gssc_combination_logits` **reproduces its loop** (verified identical stages): **gssc is pinned to 0.0.9**,
-  re-check that loop before any upgrade. `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for torch ≥ 2.6. The automatic
-  hypnogram goes beside the EDF (tool-3 format) and the run refuses an output suffix equal to the expert one.
-  **Its computation + figures live in `tools/autoscoring_lib.py`** (shared with tool 0's step 3): edit the
-  library, not the notebook. → SPEC §3bis.
+- **Automatic scoring (`3bis_autoscoring_gssc_voila`)**: GSSC, YASA, SleepFM (step 1) + their comparison
+  with the expert (Section 4, Score_EDF's computation ported 2026-10-27), Voila only, knows nothing of
+  exclusions. Channels from tool 2's JSON (EOG/EMG/ECG = `context_channels`), but the **EEG reference given
+  to the models is the contralateral mastoid by default** (what they were trained on), not tool 2's (option).
+  Defaults (GSSC alone) keep GSSC's former outputs. Consensus = gssc's native `loudest_vote`. gssc 0.0.9's
+  `mne_infer` returns no probabilities, so `gssc_combination_logits` **reproduces its loop** (verified identical
+  stages): **gssc is pinned to 0.0.9**, re-check that loop before any upgrade. `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`
+  for torch ≥ 2.6. Each model's hypnogram goes beside the EDF (tool-3 format, one suffix per model). SleepFM needs
+  the `autoscore` env; its 9 model files are downloaded and checked by SHA-256 (`sleepfm_lib`). **Computation +
+  figures: `tools/autoscoring_lib.py` (step 1, shared with tool 0's step 3), `sleepfm_lib.py`,
+  `autoscoring_compare_lib.py` (step 2)**: edit the libraries, not the notebook. Section 4 must keep reproducing
+  Score_EDF with its settings: re-run `tests/score_edf_equivalence.py` after changing it. → SPEC §3bis.
 - **Sleep macrostructure (`5_compute_sleep_macrostructure_voila`)**: hypnogram + scored events + **EDF header only**
   (never the epochs, never the EEG signal, single-channel `include=` reads for the optional `Light`/`SpO2`
   only): the documented exception to *feature tools start from the clean epochs*. Binary header read, **not

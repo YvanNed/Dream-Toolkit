@@ -12,6 +12,7 @@ hypothèses « sieste » sont restées (voir 2.7). Premier test sur 6 nuits ICM 
 ---
 
 ## Partie A. Introduction de référence
+==> à mettre en anglais dans le notebook, compréhensible pour un non-initier (on pourrait imaginer une description "simple" pour tout le monde comme sur quel type de données il a été entrainé et donc est le plus performant, et une description détaillé (comme celles ci-dessous) pour expert dans une section à ouvrir)
 
 ### A1. Les modèles : comment ils ont été entraînés, de quoi ils ont vraiment besoin
 
@@ -65,7 +66,12 @@ Détails utiles :
 1. **Section 1** : on choisit le dossier des EDF et le dossier des hypnogrammes (`.edf.XML` Compumedics, `.txt` un
    stade par ligne, ou `.csv`). Les fichiers sont appariés par nom.
 2. **Section 2** : la correspondance des voies est détectée sur le premier EDF (modifiable dans les menus), puis on
-   coche les modèles à lancer.
+   coche les modèles à lancer. Pour chaque enregistrement, les voies sont redétectées par leur nom, mais **un choix
+   fait à la main s'applique à tous les fichiers** : si les montages diffèrent d'un fichier à l'autre, un nom choisi
+   à la main peut manquer ailleurs (erreur). Les modèles, eux, n'exigent pas un montage identique (chaque nuit est
+   traitée seule, et SleepFM accepte un nombre variable de voies) ; mais des montages homogènes rendent les
+   comparaisons entre nuits et les recalibrations (apprises sur les autres nuits) plus justes. Dans SomnoLens, le
+   JSON de l'outil 2 donne les voies **par participant** : le problème disparaît à l'intégration.
 3. **Run** : pour chaque enregistrement, lecture de l'hypnogramme ; fenêtre d'analyse = du premier au dernier epoch
    scoré ; lancement des modèles (résultats mis en cache dans `autoscore_outputs/cache/`, à côté du dossier des EDF) ;
    puis les recalibrations.
@@ -124,6 +130,7 @@ Les couleurs des stades ne suivent pas les conventions de SomnoLens (REM en roug
 | B1 | `KeyError: 'hEOG'` sur 6 nuits sur 6 | Les noms ICM (`EOG G`, `EOG D`, `EMG 1`…) ne sont pas dans la liste d'alias ; YASA déclare l'EOG « optionnel » mais le réclame toujours ; et l'erreur de YASA arrête tout l'enregistrement, donc GSSC n'a jamais tourné | 1.2, 1.3, 1.4, 1.5 |
 | B2 | `MemoryError` sur la nuit 283 | `_load_edf_channels` lit les **58 voies**, toutes remontées à 512 Hz, puis les copie : ~16 Go pour 9 h | 1.1 |
 | B3 | SleepFM serait sauté | Score_EDF exige 17 voies fixes, dont F4, absente du montage ICM | 1.6 |
+| B4 | `KeyError: 'F4'` dans GSSC (2e test, avec `hEOG` → `EOG G` ; YASA a tourné) | `infer_gssc` réclame toujours les 4 dérivations, même si F4 n'existe pas | 1.4 |
 
 Contournement en attendant : dans la section 2, mettre `hEOG` → `EOG G` (une seule voie : convient à YASA, et GSSC
 accepte un EOG gauche seul) et `vEOG` → `EOG D` (utilisé seulement par SleepFM). Le vrai HEOG (G − D) demande la 1.3.
@@ -148,8 +155,11 @@ accepte un EOG gauche seul) et `vEOG` → `EOG D` (utilisé seulement par SleepF
 - **1.3 EOG : rôles « EOG gauche » / « EOG droit »** au lieu de `vEOG` / `hEOG` (dans le code d'origine, `hEOG` est en
   fait une voie droite seule). HEOG dérivé = gauche − droit pour GSSC (comme l'outil 3bis par défaut), EOG gauche
   pour YASA, les deux voies pour SleepFM.
-- **1.4 YASA : EOG et EMG vraiment optionnels** : s'ils ne sont pas mappés, YASA tourne sans eux (ils sont déclarés
-  optionnels mais le code les réclame).
+- **1.4 Chaque modèle n'utilise que les voies présentes** : le contrôle des exigences et le code de chaque modèle ne
+  disent pas la même chose. YASA déclare l'EOG et l'EMG optionnels mais les réclame toujours ; GSSC n'exige qu'une
+  paire EEG mais réclame toujours ses 4 dérivations `C3-M2`, `C4-M1`, `F3-M2`, `F4-M1` (constaté le 2026-10-26 :
+  `KeyError: 'F4'` sur le montage ICM). → construire la liste des dérivations / voies de chaque modèle à partir de ce
+  qui est mappé, et afficher dans le log ce qui a été réellement utilisé.
 - **1.5 Isoler les erreurs par modèle** : un `try/except` par modèle et par enregistrement, pour qu'une erreur de
   YASA n'empêche plus GSSC et SleepFM sur la même nuit (règle de gestion d'erreurs du projet).
 - **1.6 Exigences de SleepFM = celles du modèle** : au moins une voie par modalité, et les dérivations EEG construites
@@ -199,6 +209,7 @@ accepte un EOG gauche seul) et `vEOG` → `EOG D` (utilisé seulement par SleepF
   caractéristiques). Gain : un passage complet de plus par nuit.
 - **3.4 GSSC : 9 passages par nuit** (consensus de permutations). Option : limiter à 1-2 EEG, comme le recommande
   GSSC. Mesurer l'effet sur l'accord avant d'en faire un réglage par défaut.
+  ==> pour l'instant j'aimerais qu'on garde au plus proche le fonctionnement de l'outils de la version actuelle de Score_EDF
 - **3.5 Threads et lots** : fixer explicitement le nombre de threads torch ; essayer des lots > 1 pour l'encodeur
   SleepFM (aujourd'hui 1), en surveillant la mémoire.
 - **3.6 Parallélisme entre enregistrements** (joblib) : seulement pour YASA (léger), et seulement si la mémoire suit.
@@ -216,10 +227,39 @@ accepte un EOG gauche seul) et `vEOG` → `EOG D` (utilisé seulement par SleepF
   (remplacent les fichiers `_debugyn`).
 
 ### Phase 5. Intégration dans l'outil 3bis de SomnoLens (plan séparé, plus tard)
-Réutiliser le JSON de l'outil 2 (voies + `context_channels`), l'arborescence d'étude (`derivatives/…`,
-`reports_…`), les conventions d'affichage, « Skip already processed », les tests, l'anglais partout. Décider ce
-qui migre (SleepFM, recalibrations). La question des licences (AGPL de GSSC, CC BY-NC de SleepFM) est déjà notée dans
-`plan_rename_somnolens.md` §6c.
+**Idée retenue (2026-10-26)** : 3bis en **deux étapes**.
+1. **Autoscoring « simple »** avec l'algorithme choisi (GSSC aujourd'hui ; + YASA, + SleepFM) : pour chaque nuit, un
+   hypnogramme automatique au format de l'outil 3 (comme aujourd'hui), **plus les probabilités** (hypnodensité) de
+   chaque algorithme, sauvées sur disque. L'étape 2 les relit sans rien relancer, et « Skip already processed »
+   fonctionne comme dans les autres outils. Pour SleepFM, sauver aussi ce qu'il faut pour les recalibrations
+   (probabilités à 5 s, et les caractéristiques internes si on garde la recal B).
+2. **Comparaison des algorithmes** avec le hypnogramme expert, comme Score_EDF : tableau d'accord (kappa, F1),
+   matrices de confusion, grille des hypnogrammes, hypnodensités, et les recalibrations SleepFM A/B. Elle ne lit que
+   les sorties de l'étape 1 et le hypnogramme expert (réécrit par l'outil 3) : aucune lecture d'EDF.
+
+Ce que l'intégration apporte ou impose :
+- **Voies par participant** depuis le JSON de l'outil 2 (dérivations déclarées + `context_channels` pour l'EOG,
+  l'EMG, l'ECG), au lieu des alias et du mapping unique : les points 1.2, 1.3, 1.4 et 1.6 se règlent là.
+- **Voies respiratoires (seulement pour SleepFM) : ne pas les ajouter aux outils 1 et 2 pour l'instant.** YASA et
+  GSSC n'en ont pas besoin, et 3 des 4 modalités de SleepFM viennent déjà de l'outil 2 (EEG ; EOG, EMG et ECG via
+  `context_channels`). Pour la 4e (RESP), SleepFM reconnaît par leur nom, dans sa propre liste, les voies ICM
+  `Thoracic`, `Abdominal`, `SpO2`, `Pulse` (vérifié le 2026-10-26 sur `100.edf` ; `Flux`, `Flow`, `Thermistance` ne
+  sont pas reconnues, mais 1 à 7 voies RESP suffisent). → 3bis les choisit automatiquement par nom et écrit dans le
+  log / le rapport lesquelles il a utilisées (avertissement si aucune). Attention, cette liste range aussi `Pleth`
+  parmi les EMG : l'EOG, l'EMG et l'ECG doivent venir de l'outil 2, jamais de la liste de noms de SleepFM.
+  À reconsidérer seulement si SleepFM se montre nettement meilleur sur nos données **et** que d'autres bases ont des
+  noms RESP non reconnus : on ajouterait alors des menus RESP optionnels au bloc `context_channels` de l'outil 2
+  (bloc additif, omis quand il est vide). Test utile avant : SleepFM avec la modalité RESP masquée (sa tête de
+  stadification accepte un masque par modalité) ; si les stades ne changent pas, RESP est inutile.
+- **Hypnogramme expert = celui de l'outil 3** (étiquettes canoniques) : le point 1.8 se règle là.
+- **Code partagé** : le calcul va dans des bibliothèques `tools/*_lib.py` (l'actuel `autoscoring_lib.py` s'étend
+  avec les adaptateurs YASA / SleepFM ; une bibliothèque de comparaison reprend `alignment`, `recalibration` et les
+  figures). Tool 0 pourra les importer.
+- **Le reste des conventions** : arborescence d'étude (`derivatives/…`, `reports_…`), conventions d'affichage (REM en
+  rouge…), anglais partout, tests sur les deux jeux de données ; 3bis ne connaît pas les exclusions de participants.
+- **Environnement** : 3bis tourne dans l'env d'autoscoring dédié (décision du 2026-10-19). Aligner ses versions sur
+  SomnoLens (4.2) évite de maintenir deux codes.
+- **Licences** (AGPL de GSSC, CC BY-NC de SleepFM) : déjà notées dans `plan_rename_somnolens.md` §6c.
 
 ---
 
@@ -235,6 +275,7 @@ qui migre (SleepFM, recalibrations). La question des licences (AGPL de GSSC, CC 
 3. les range dans un dossier cache de l'utilisateur (ex. `%LOCALAPPDATA%\SomnoLens\sleepfm-clinical-2bcbae04\`), en
    affichant la progression dans le notebook ;
 4. les fois suivantes, ne retélécharge rien.
+==> il faudra mettre un message et un suivi de cette étape si on l'implémente
 
 `SLEEPFM_ROOT` reste possible pour forcer une copie locale (PC hors ligne). L'outil prévu pour ça, **pooch**, est
 celui qu'utilise MNE pour ses jeux de données : il est déjà installé avec `mne-base`. Testé le 2026-10-26 : les
@@ -252,16 +293,89 @@ ou un installeur `.exe` qui embarque l'environnement (fonctionne hors ligne, mai
 ---
 
 ## Partie E. Questions ouvertes
-- **Q1 Montage ICM** : comment sont enregistrés `EOG G` / `EOG D` (référencés à A1/A2, ou à autre chose) ? Quel est
-  l'EMG menton (`EMG 1`, `EMG 2`, la bipolaire `EMG 1 − EMG 2` ?) ? Tes 6 nuits ont-elles le même montage ?
+- **Q1 Montage ICM** : comment sont enregistrés `EOG G` / `EOG D` (référencés à A1/A2, ou à autre chose) ?
+ ==> normalement avec la même réference que les EEG
+ Quel est  l'EMG menton (`EMG 1`, `EMG 2`, la bipolaire `EMG 1 − EMG 2` ?) ? Tes 6 nuits ont-elles le même montage ?
+ ==> EMG 1 et 2 devraient être le menton mais ce n'est pas complètement sûr. Mes 6 nuits ont potentiellement des montages différents (en terme de capteurs disponnible surtout, plus qu'en label). Si on passe à une implémentation direct en 3bis ces problèmes être résoudre par le notebook 2 non ?
 - **Q2 Noms de voies** : liste en dur étendue, petit JSON modifiable, ou le JSON de l'outil 2 dès maintenant ?
-- **Q3 Où travailler** : corriger Score_EDF sur place (phases 1-4), puis l'intégrer à 3bis ? Ou aller directement vers
-  3bis ?
+==> si on passe directement par l'implémentation en 3bis, pas besoin de ça, sinon on peut envisager un module comme celui du notebook 2 
+- **Q3 Où travailler** : l'intégration se fera en deux étapes dans 3bis (phase 5). Reste à choisir l'ordre.
+  **Recommandation : porter directement vers 3bis** en corrigeant au passage (phases 2 à 4 appliquées au code porté),
+  et laisser Score_EDF tel quel comme référence. Une bonne partie de la phase 1 (noms de voies, EOG, exigences de
+  SleepFM, lecture des stades) disparaît d'elle-même avec le JSON de l'outil 2 et le hypnogramme de l'outil 3 :
+  la corriger d'abord dans Score_EDF serait du travail jeté. Alternative : corriger d'abord Score_EDF (utile
+  seulement si d'autres l'utilisent tel quel d'ici là).
+==> pour l'instant faire un portage sur 3bis direct, mais je veux bien qu'on fasse un plan de modification de Score_EDF aussi, pour avoir un outil un peu stand alone en plus du pipeline SomnoLens, si on veut juste faire de l'autoscoring
 - **Q4 Validation** : Score_EDF n'a pas de tests. Proposition : un petit script de comparaison avant/après sur 1-2
   nuits (pas de nouveau cadre de tests), plus ton test dans Voila.
+==> parfait pour un test sur 1 vrai nuit (100.edf par exemple, si les données sont relativement de bonnes qualités) et sur une nuit simulée !
 - **Q5 Queue SleepFM (3.2)** : une queue calculée avec un contexte réduit (ex. 30 min) te convient-elle, si les
   prédictions restent proches ?
+==> yes
 - **Q6 Sorties** : on garde `autoscore_outputs/` à côté du dossier des EDF jusqu'à l'intégration ?
+==> on peut rester sur la structure des output actuelle, mais rajouter un todo dans SPEC.md pour harmoniser les output au reste du pipeline SomnoLens
+
+## Partie F. Mise en œuvre retenue (2026-10-27, après relecture)
+
+Décisions : portage direct dans 3bis (Q3), Score_EDF laissé tel quel (un plan séparé pour sa version autonome
+sera écrit à la fin), GSSC gardé au plus près de Score_EDF (3.4 : pas de réduction des combinaisons).
+
+**Étape 1 de 3bis : autoscoring (sections 2 et 3 existantes, étendues)**
+- Choix des algorithmes : cases **GSSC** (cochée par défaut), **YASA**, **SleepFM** (décochées). Avec les réglages
+  par défaut, les sorties de GSSC restent **identiques octet par octet** (tests existants, outil 0).
+- **Référence EEG** (nouveau menu, commun aux 3 algorithmes) : « telle que déclarée dans l'outil 2 » (défaut,
+  comportement actuel) ou « mastoïde controlatérale (AASM : C3-M2, C4-M1…) », celle de Score_EDF et des données
+  d'entraînement des trois modèles. Exige les deux mastoïdes (M1/M2 ou A1/A2) dans le JSON de l'outil 2, sinon le
+  participant n'est pas scoré (pas de substitution silencieuse, règle de 3bis).
+- **EOG** : deux modes ajoutés à GSSC, « gauche seule » / « droite seule » (Score_EDF donnait une seule voie à GSSC).
+- **YASA** : une électrode EEG (défaut C4, sinon C3), EOG gauche (recommandé par YASA) / droite / aucun, EMG =
+  `context_channels.emg` s'il est déclaré (sinon sans EMG). Lecture conjointe des seules voies utiles.
+- **SleepFM** : EEG = les dérivations AASM présentes (F3, F4, C3, C4, O1, O2) ; EOG gauche et droite ; EMG
+  (filtré 10-100 Hz) et ECG depuis `context_channels` ; respiration détectée par nom avec les alias de Score_EDF
+  (Thoracic, Abdominal, Flux/Airflow, SpO2, Pulse), écrite dans le log et les paramètres. Prétraitement identique
+  à Score_EDF (filtres, 128 Hz, z-score). Caractéristiques internes capturées dès le premier passage (3.3), queue
+  calculée sur 30 min de contexte (3.2, accord Q5), `weights_only=False` (4.1).
+- **Téléchargement automatique de SleepFM** (partie D) avec barre de progression et messages ; `SLEEPFM_ROOT`
+  garde la priorité. Sans ses dépendances (`einops`, `loguru`), SleepFM est grisé avec un message.
+- **Sorties par algorithme**, calquées sur celles de GSSC : `{id}_hypnogram_<algo>.txt` à côté de l'EDF,
+  `derivatives/autoscoring_<algo>/` (hypnodensité 30 s, paramètres ; pour SleepFM en plus l'hypnodensité native
+  5 s et les caractéristiques pour la recal B), `reports_autoscoring_<algo>/` (rapport, comparaison, base).
+
+**Étape 2 de 3bis : comparaison des algorithmes (nouvelle section 4)**
+- Ne lit que les sorties de l'étape 1 et l'hypnogramme expert (aucune lecture d'EDF). Même calcul que Score_EDF :
+  epochs de 30 s calés sur le premier epoch scoré, agrégation des probabilités, accord, kappa, F1, figures,
+  recalibrations A et B (validation croisée en laissant un enregistrement de côté).
+- **Sorties : la structure de Score_EDF** (Q6) dans `<étude>/autoscore_outputs/` (`epochs_all_stagers.csv`,
+  `agreement_summary.csv`, les 4 figures PNG) ; harmonisation avec SomnoLens notée en TODO dans SPEC.md.
+- Corrections appliquées : 2.1, 2.2, 2.3, 2.4, 2.6 ; 2.7 (N3 libre dans les recalibrations quand les nuits
+  d'apprentissage en contiennent) ; couleurs des stades de SomnoLens.
+
+**Code** : `tools/autoscoring_lib.py` étendu (YASA, sorties multi-algorithmes), `tools/sleepfm_lib.py` (nouveau :
+téléchargement, montage, inférence), `tools/autoscoring_compare_lib.py` (nouveau : étape 2). L'introduction du
+notebook (anglais) : une description simple de chaque modèle pour tous, et le détail pour experts dans une section
+dépliable (annotation de la partie A).
+
+**Environnements** : 3bis tourne dans `inspect_edf` (GSSC, YASA 0.6) et dans `autoscore` (+ SleepFM, YASA 0.7).
+`chardet` et `edfio` ajoutés à `autoscore` (lecture d'en-tête de la boîte à outils, données de test).
+
+**Validation** : `tests/score_edf_equivalence.py` compare Score_EDF (notebook inchangé, 3 nuits simulées ; fonctions
+appelées directement sur la nuit 100, sans F4) et le nouveau 3bis, dans le même environnement. Différences voulues,
+listées par le script : N3 libre (2.7), queue courte (3.2), couleurs. Non-régression de GSSC : `outside_chain.py` +
+`refactor_check.py` et le test de l'outil 0.
+
+**Résultats (2026-10-27)** :
+- **Non-régression GSSC** (ancien vs nouveau 3bis, 86 fichiers des deux jeux de test) : tout identique, sauf le
+  champ ajouté `eeg_reference` et sa ligne dans les rapports.
+- **Nuits simulées, réglages de Score_EDF** : même stade prédit sur les 720 epochs pour les 5 modèles,
+  `agreement_summary.csv` identique. Réglages par défaut : seules les recalibrations changent (N3 ajusté :
+  κ 0,893 → 0,911 pour A, 0,979 → 0,983 pour B).
+- **Nuit 100** : GSSC et YASA identiques, passage principal de SleepFM identique ; 1 epoch sur 941 diffère (queue).
+  Il a fallu retirer de la copie la voie `DHR` (seule voie à 512 Hz : Score_EDF suréchantillonnait tout l'EEG
+  à 512 Hz à cause d'elle).
+- **Vitesse, nuit 100** : 89 s pour les trois modèles dans 3bis, contre 259 s dans Score_EDF (544 s et 17 Go de
+  pic sur le fichier d'origine).
+- **Observation sur les données** : sur la nuit 100, la dérivation C4-A1 a une amplitude très faible (médiane
+  10 µV, contre ~70 µV pour C3-A2) : YASA sur C4 ne voit aucun N3 (κ 0,11), sur C3 κ 0,50-0,58. Ce n'est pas l'EMG.
 
 ## Hors périmètre : points du rapport qui concernent d'autres dossiers
 - **Inspect_EDF** (à vérifier, puis éventuellement un TODO dans SPEC.md) : #8 `edf_io_lib` ouvre un fichier sans le
